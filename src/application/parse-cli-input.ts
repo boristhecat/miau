@@ -16,7 +16,8 @@ export function getUsageText(): string {
   return [
     "Usage: miau-trader",
     "",
-    "Interactive input format: SYMBOL [LEVERAGE] [SIZE_USD]",
-    "Examples: BTC | ETH 3x 250 | SOL 5 1000"
+    "Interactive input format: SYMBOL [-l LEVERAGE] [-s SIZE_USD] [--sl PCT|--sl-usd USD] [--tp PCT|--tp-usd USD] [-v]",
+    "Examples: BTC | ETH -l 3 -s 250 --sl 0.8 --tp 1.6 | SOL --sl-usd 40 --tp-usd 90 -v",
+    "Flags: -l/--leverage, -s/--size, --sl, --tp, --sl-usd, --tp-usd, -v/--verbose|--details"
   ].join("\n");
 }

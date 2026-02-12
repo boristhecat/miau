@@ -45,24 +45,17 @@ function divider(): string {
   return `${colors.brightBlack}${"-".repeat(78)}${colors.reset}`;
 }
 
-function confidenceBar(confidence: number): string {
-  const width = 24;
-  const filled = Math.max(0, Math.min(width, Math.round((confidence / 100) * width)));
-  const empty = width - filled;
-  const color = confidenceColor(confidence);
-  return `${color}${"#".repeat(filled)}${colors.brightBlack}${"-".repeat(empty)}${colors.reset}`;
-}
-
 export class RecommendationPrinter {
-  print(rec: Recommendation): void {
+  print(rec: Recommendation, options?: { showDetails?: boolean }): void {
     const confColor = confidenceColor(rec.confidence);
     const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
+    const showDetails = options?.showDetails === true;
 
     console.log(`${colors.bgDark}${colors.white}${colors.bold}  MIAU TRADER  ${colors.reset}`);
     console.log(
       `${label("PAIR")} ${colors.bold}${colors.white}${rec.pair}${colors.reset}   ` +
       `${label("SIGNAL")} ${colorSignal(rec.signal)}   ` +
-      `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}%${colors.reset} ${confidenceBar(rec.confidence)}`
+      `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}%${colors.reset}`
     );
     console.log(divider());
 
@@ -87,32 +80,34 @@ export class RecommendationPrinter {
     }
     console.log(divider());
 
-    console.log(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
-    console.log(
-      `${label("RSI(14)")} ${fmt(rec.indicators.rsi14)}   ` +
-      `${label("ADX(14)")} ${fmt(rec.indicators.adx14)}   ` +
-      `${label("ATR(14)")} ${fmt(rec.indicators.atr14)}`
-    );
-    console.log(
-      `${label("EMA(20)")} ${fmt(rec.indicators.ema20)}   ` +
-      `${label("EMA(50)")} ${fmt(rec.indicators.ema50)}   ` +
-      `${label("VWAP")} ${fmt(rec.indicators.vwap)}`
-    );
-    console.log(
-      `${label("MACD")} ${fmt(rec.indicators.macd)}   ` +
-      `${label("MACD Sig")} ${fmt(rec.indicators.macdSignal)}   ` +
-      `${label("MACD Hist")} ${fmt(rec.indicators.macdHistogram)}`
-    );
-    console.log(
-      `${label("BB Upper")} ${fmt(rec.indicators.bbUpper)}   ` +
-      `${label("BB Middle")} ${fmt(rec.indicators.bbMiddle)}   ` +
-      `${label("BB Lower")} ${fmt(rec.indicators.bbLower)}`
-    );
-    console.log(
-      `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
-      `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
-    );
-    console.log(divider());
+    if (showDetails) {
+      console.log(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
+      console.log(
+        `${label("RSI(14)")} ${fmt(rec.indicators.rsi14)}   ` +
+        `${label("ADX(14)")} ${fmt(rec.indicators.adx14)}   ` +
+        `${label("ATR(14)")} ${fmt(rec.indicators.atr14)}`
+      );
+      console.log(
+        `${label("EMA(20)")} ${fmt(rec.indicators.ema20)}   ` +
+        `${label("EMA(50)")} ${fmt(rec.indicators.ema50)}   ` +
+        `${label("VWAP")} ${fmt(rec.indicators.vwap)}`
+      );
+      console.log(
+        `${label("MACD")} ${fmt(rec.indicators.macd)}   ` +
+        `${label("MACD Sig")} ${fmt(rec.indicators.macdSignal)}   ` +
+        `${label("MACD Hist")} ${fmt(rec.indicators.macdHistogram)}`
+      );
+      console.log(
+        `${label("BB Upper")} ${fmt(rec.indicators.bbUpper)}   ` +
+        `${label("BB Middle")} ${fmt(rec.indicators.bbMiddle)}   ` +
+        `${label("BB Lower")} ${fmt(rec.indicators.bbLower)}`
+      );
+      console.log(
+        `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
+        `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
+      );
+      console.log(divider());
+    }
 
     console.log(`${colors.bold}${colors.cyan}PERP CONTEXT${colors.reset}`);
     console.log(
@@ -130,10 +125,12 @@ export class RecommendationPrinter {
     );
     console.log(divider());
 
-    console.log(`${colors.bold}${colors.cyan}RATIONALE${colors.reset}`);
-    rec.rationale.forEach((item) => {
-      console.log(`${colors.dim}${colors.brightBlack}>${colors.reset} ${item}`);
-    });
-    console.log("");
+    if (showDetails) {
+      console.log(`${colors.bold}${colors.cyan}RATIONALE${colors.reset}`);
+      rec.rationale.forEach((item) => {
+        console.log(`${colors.dim}${colors.brightBlack}>${colors.reset} ${item}`);
+      });
+      console.log("");
+    }
   }
 }

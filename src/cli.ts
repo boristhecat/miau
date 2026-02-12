@@ -42,7 +42,9 @@ async function main(): Promise<void> {
   const rl = readline.createInterface({ input, output });
   try {
     while (true) {
-      const raw = await rl.question("Enter SYMBOL [LEVERAGE] [SIZE_USD] or 'exit' (e.g. BTC 5x 500): ");
+      const raw = await rl.question(
+        "Enter SYMBOL and flags (e.g. BTC -l 5 -s 500 --sl 0.8 --tp 1.6 -v) or 'exit': "
+      );
       const normalized = raw.trim().toLowerCase();
       if (normalized === "exit" || normalized === "quit") {
         break;
@@ -53,9 +55,15 @@ async function main(): Promise<void> {
         const recommendation = await useCase.execute({
           pair: `${tradeInput.symbol}-USD`,
           leverage: tradeInput.leverage,
-          positionSizeUsd: tradeInput.positionSizeUsd
+          positionSizeUsd: tradeInput.positionSizeUsd,
+          slPct: tradeInput.slPct,
+          tpPct: tradeInput.tpPct,
+          slUsd: tradeInput.slUsd,
+          tpUsd: tradeInput.tpUsd
         });
-        new RecommendationPrinter().print(recommendation);
+        new RecommendationPrinter().print(recommendation, {
+          showDetails: tradeInput.showDetails
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unhandled error";
         logger.error(`Failed to generate recommendation: ${message}`);

@@ -18,6 +18,10 @@ export class GenerateRecommendationUseCase {
     limit?: number;
     leverage?: number;
     positionSizeUsd?: number;
+    slPct?: number;
+    tpPct?: number;
+    slUsd?: number;
+    tpUsd?: number;
   }): Promise<Recommendation> {
     const interval = input.interval ?? "1h";
     const limit = input.limit ?? 120;
@@ -42,7 +46,11 @@ export class GenerateRecommendationUseCase {
       indicators,
       perp,
       leverage: input.leverage,
-      positionSizeUsd: input.positionSizeUsd
+      positionSizeUsd: input.positionSizeUsd,
+      slPct: input.slPct,
+      tpPct: input.tpPct,
+      slUsd: input.slUsd,
+      tpUsd: input.tpUsd
     });
   }
 }

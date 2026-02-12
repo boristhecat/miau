@@ -7,11 +7,15 @@ interface BuildRecommendationInput {
   perp: PerpMarketSnapshot;
   leverage?: number;
   positionSizeUsd?: number;
+  slPct?: number;
+  tpPct?: number;
+  slUsd?: number;
+  tpUsd?: number;
 }
 
 export class RecommendationEngine {
   build(input: BuildRecommendationInput): Recommendation {
-    const { pair, lastPrice, indicators, perp, leverage, positionSizeUsd } = input;
+    const { pair, lastPrice, indicators, perp, leverage, positionSizeUsd, slPct, tpPct, slUsd, tpUsd } = input;
     const { signal, confidence, rationale } = this.evaluate(indicators, perp, lastPrice);
 
     const atr = indicators.atr14;
@@ -32,6 +36,23 @@ export class RecommendationEngine {
         takeProfit = lastPrice - 1.8 * atr;
       }
     }
+
+    stopLoss = this.applyStopLossOverride({
+      signal,
+      entry,
+      current: stopLoss,
+      slPct,
+      slUsd
+    });
+    takeProfit = this.applyTakeProfitOverride({
+      signal,
+      entry,
+      current: takeProfit,
+      tpPct,
+      tpUsd
+    });
+
+    this.validateLevels(signal, entry, stopLoss, takeProfit);
 
     const pnl = this.computeEstimatedPnL({
       signal,
@@ -201,6 +222,59 @@ export class RecommendationEngine {
 
   private round(value: number): number {
     return Number(value.toFixed(4));
+  }
+
+  private applyStopLossOverride(input: {
+    signal: Signal;
+    entry: number;
+    current: number;
+    slPct?: number;
+    slUsd?: number;
+  }): number {
+    if (input.slPct !== undefined) {
+      const move = input.entry * (input.slPct / 100);
+      return input.signal === "LONG" ? input.entry - move : input.entry + move;
+    }
+    if (input.slUsd !== undefined) {
+      return input.signal === "LONG" ? input.entry - input.slUsd : input.entry + input.slUsd;
+    }
+    return input.current;
+  }
+
+  private applyTakeProfitOverride(input: {
+    signal: Signal;
+    entry: number;
+    current: number;
+    tpPct?: number;
+    tpUsd?: number;
+  }): number {
+    if (input.tpPct !== undefined) {
+      const move = input.entry * (input.tpPct / 100);
+      return input.signal === "LONG" ? input.entry + move : input.entry - move;
+    }
+    if (input.tpUsd !== undefined) {
+      return input.signal === "LONG" ? input.entry + input.tpUsd : input.entry - input.tpUsd;
+    }
+    return input.current;
+  }
+
+  private validateLevels(signal: Signal, entry: number, stopLoss: number, takeProfit: number): void {
+    if (signal === "LONG") {
+      if (!(stopLoss < entry)) {
+        throw new Error("Invalid stop loss for LONG: stop loss must be below entry.");
+      }
+      if (!(takeProfit > entry)) {
+        throw new Error("Invalid take profit for LONG: take profit must be above entry.");
+      }
+      return;
+    }
+
+    if (!(stopLoss > entry)) {
+      throw new Error("Invalid stop loss for SHORT: stop loss must be above entry.");
+    }
+    if (!(takeProfit < entry)) {
+      throw new Error("Invalid take profit for SHORT: take profit must be below entry.");
+    }
   }
 
   private computeEstimatedPnL(input: {
