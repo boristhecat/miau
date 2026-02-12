@@ -2,64 +2,117 @@ import type { Recommendation } from "../../domain/types.js";
 
 const colors = {
   reset: "\u001b[0m",
+  dim: "\u001b[2m",
   green: "\u001b[32m",
   red: "\u001b[31m",
   yellow: "\u001b[33m",
-  blue: "\u001b[34m",
-  magenta: "\u001b[35m",
+  cyan: "\u001b[36m",
+  white: "\u001b[37m",
+  brightBlack: "\u001b[90m",
+  brightGreen: "\u001b[92m",
+  brightRed: "\u001b[91m",
+  brightYellow: "\u001b[93m",
   bold: "\u001b[1m",
-  gray: "\u001b[90m"
+  bgDark: "\u001b[48;5;235m",
+  bgPanel: "\u001b[48;5;236m"
 };
 
 function colorSignal(signal: Recommendation["signal"]): string {
-  if (signal === "LONG") return `${colors.green}${signal}${colors.reset}`;
-  return `${colors.red}${signal}${colors.reset}`;
+  if (signal === "LONG") return `${colors.bold}${colors.brightGreen}${signal}${colors.reset}`;
+  return `${colors.bold}${colors.brightRed}${signal}${colors.reset}`;
+}
+
+function confidenceColor(confidence: number): string {
+  if (confidence >= 70) return colors.brightGreen;
+  if (confidence >= 50) return colors.brightYellow;
+  return colors.brightRed;
+}
+
+function fmt(value: number): string {
+  return Number(value.toFixed(4)).toString();
+}
+
+function label(name: string): string {
+  return `${colors.brightBlack}${name.padEnd(18)}${colors.reset}`;
+}
+
+function divider(): string {
+  return `${colors.brightBlack}${"-".repeat(78)}${colors.reset}`;
+}
+
+function confidenceBar(confidence: number): string {
+  const width = 24;
+  const filled = Math.max(0, Math.min(width, Math.round((confidence / 100) * width)));
+  const empty = width - filled;
+  const color = confidenceColor(confidence);
+  return `${color}${"#".repeat(filled)}${colors.brightBlack}${"-".repeat(empty)}${colors.reset}`;
 }
 
 export class RecommendationPrinter {
   print(rec: Recommendation): void {
-    console.log(`${colors.bold}${colors.blue}miau-trader recommendation${colors.reset}`);
-    console.log(`${colors.gray}pair:${colors.reset} ${rec.pair}`);
-    console.log(`${colors.gray}signal:${colors.reset} ${colorSignal(rec.signal)}`);
-    console.log(`${colors.gray}confidence:${colors.reset} ${colors.magenta}${rec.confidence}%${colors.reset}`);
-    console.log("");
+    const confColor = confidenceColor(rec.confidence);
 
-    console.log(`${colors.bold}Levels${colors.reset}`);
-    console.log(`- Entry: ${rec.entry}`);
-    console.log(`- Stop Loss: ${rec.stopLoss}`);
-    console.log(`- Take Profit: ${rec.takeProfit}`);
-    console.log("");
+    console.log(`${colors.bgDark}${colors.white}${colors.bold}  MIAU TRADER  ${colors.reset}`);
+    console.log(
+      `${label("PAIR")} ${colors.bold}${colors.white}${rec.pair}${colors.reset}   ` +
+      `${label("SIGNAL")} ${colorSignal(rec.signal)}   ` +
+      `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}%${colors.reset} ${confidenceBar(rec.confidence)}`
+    );
+    console.log(divider());
 
-    console.log(`${colors.bold}Indicators${colors.reset}`);
-    console.log(`- RSI(14): ${rec.indicators.rsi14}`);
-    console.log(`- EMA(20): ${rec.indicators.ema20}`);
-    console.log(`- EMA(50): ${rec.indicators.ema50}`);
-    console.log(`- MACD(12,26,9): ${rec.indicators.macd}`);
-    console.log(`- MACD Signal: ${rec.indicators.macdSignal}`);
-    console.log(`- MACD Histogram: ${rec.indicators.macdHistogram}`);
-    console.log(`- ATR(14): ${rec.indicators.atr14}`);
-    console.log(`- ADX(14): ${rec.indicators.adx14}`);
-    console.log(`- Bollinger Upper: ${rec.indicators.bbUpper}`);
-    console.log(`- Bollinger Middle: ${rec.indicators.bbMiddle}`);
-    console.log(`- Bollinger Lower: ${rec.indicators.bbLower}`);
-    console.log(`- StochRSI K: ${rec.indicators.stochRsiK}`);
-    console.log(`- StochRSI D: ${rec.indicators.stochRsiD}`);
-    console.log(`- VWAP: ${rec.indicators.vwap}`);
-    console.log("");
+    console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
+    console.log(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
+    console.log(`${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}`);
+    console.log(`${label("Take Profit")} ${colors.brightGreen}${fmt(rec.takeProfit)}${colors.reset}`);
+    console.log(divider());
 
-    console.log(`${colors.bold}Perp Context${colors.reset}`);
-    console.log(`- Symbol: ${rec.perp.symbol}`);
-    console.log(`- Funding Rate: ${rec.perp.fundingRate}`);
-    console.log(`- Funding Rate Avg: ${rec.perp.fundingRateAvg}`);
-    console.log(`- Open Interest: ${rec.perp.openInterest}`);
-    console.log(`- Mark Price: ${rec.perp.markPrice}`);
-    console.log(`- Index Price: ${rec.perp.indexPrice}`);
-    console.log(`- Mark/Index Premium %: ${rec.perp.premiumPct}`);
-    console.log("");
+    console.log(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
+    console.log(
+      `${label("RSI(14)")} ${fmt(rec.indicators.rsi14)}   ` +
+      `${label("ADX(14)")} ${fmt(rec.indicators.adx14)}   ` +
+      `${label("ATR(14)")} ${fmt(rec.indicators.atr14)}`
+    );
+    console.log(
+      `${label("EMA(20)")} ${fmt(rec.indicators.ema20)}   ` +
+      `${label("EMA(50)")} ${fmt(rec.indicators.ema50)}   ` +
+      `${label("VWAP")} ${fmt(rec.indicators.vwap)}`
+    );
+    console.log(
+      `${label("MACD")} ${fmt(rec.indicators.macd)}   ` +
+      `${label("MACD Sig")} ${fmt(rec.indicators.macdSignal)}   ` +
+      `${label("MACD Hist")} ${fmt(rec.indicators.macdHistogram)}`
+    );
+    console.log(
+      `${label("BB Upper")} ${fmt(rec.indicators.bbUpper)}   ` +
+      `${label("BB Middle")} ${fmt(rec.indicators.bbMiddle)}   ` +
+      `${label("BB Lower")} ${fmt(rec.indicators.bbLower)}`
+    );
+    console.log(
+      `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
+      `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
+    );
+    console.log(divider());
 
-    console.log(`${colors.bold}Rationale${colors.reset}`);
+    console.log(`${colors.bold}${colors.cyan}PERP CONTEXT${colors.reset}`);
+    console.log(
+      `${label("Perp Symbol")} ${rec.perp.symbol}   ` +
+      `${label("Open Interest")} ${rec.perp.openInterest}`
+    );
+    console.log(
+      `${label("Funding")} ${rec.perp.fundingRate}   ` +
+      `${label("Funding Avg")} ${rec.perp.fundingRateAvg}   ` +
+      `${label("Premium %")} ${rec.perp.premiumPct}`
+    );
+    console.log(
+      `${label("Mark Price")} ${rec.perp.markPrice}   ` +
+      `${label("Index Price")} ${rec.perp.indexPrice}`
+    );
+    console.log(divider());
+
+    console.log(`${colors.bold}${colors.cyan}RATIONALE${colors.reset}`);
     rec.rationale.forEach((item) => {
-      console.log(`- ${item}`);
+      console.log(`${colors.dim}${colors.brightBlack}>${colors.reset} ${item}`);
     });
+    console.log("");
   }
 }
