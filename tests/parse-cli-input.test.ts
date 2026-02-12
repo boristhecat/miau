@@ -2,14 +2,13 @@ import { describe, expect, it } from "vitest";
 import { getUsageText, parseCliInput } from "../src/application/parse-cli-input.js";
 
 describe("parseCliInput", () => {
-  it("parses valid pair and defaults logIndicators false", () => {
-    const result = parseCliInput(["node", "cli", "btc-usd"]);
-    expect(result).toEqual({ pair: "BTC-USD", logIndicators: false });
+  it("accepts no flags in early dev mode", () => {
+    expect(() => parseCliInput(["node", "cli"])).not.toThrow();
   });
 
-  it("parses --logIndicators flag", () => {
-    const result = parseCliInput(["node", "cli", "ETH-USD", "--logIndicators"]);
-    expect(result).toEqual({ pair: "ETH-USD", logIndicators: true });
+  it("throws for any provided argument", () => {
+    expect(() => parseCliInput(["node", "cli", "--logIndicators"]))
+      .toThrowError("takes no flags");
   });
 
   it("throws usage sentinel on --help", () => {
@@ -17,19 +16,14 @@ describe("parseCliInput", () => {
       .toThrowError("USAGE");
   });
 
-  it("throws for invalid pair format", () => {
-    expect(() => parseCliInput(["node", "cli", "BTCUSD"]))
-      .toThrowError("Expected format BASE-QUOTE");
-  });
-
-  it("throws for unknown flags", () => {
-    expect(() => parseCliInput(["node", "cli", "BTC-USD", "--verbose"]))
-      .toThrowError("Unknown flag");
+  it("throws for unknown argument", () => {
+    expect(() => parseCliInput(["node", "cli", "BTC"]))
+      .toThrowError("Unknown argument");
   });
 });
 
 describe("getUsageText", () => {
   it("returns usage string", () => {
-    expect(getUsageText()).toContain("miau-trader <PAIR>");
+    expect(getUsageText()).toContain("Usage: miau-trader");
   });
 });
