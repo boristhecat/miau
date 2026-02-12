@@ -16,6 +16,7 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Add Backpack PERP context (funding/open interest/mark premium) and extended indicators
 - [x] Add optional leverage/position-size input and estimated PnL at SL/TP
 - [x] Add user SL/TP overrides with percent (`--sl`, `--tp`) and USD (`--sl-usd`, `--tp-usd`) flags
+- [x] Add intraday defaults (`1m`) and higher-timeframe bias via `--tf` and `--bias-tf`
 
 ## Completion Criteria
 - `npm run dev -- BTC-USD` prints a structured recommendation

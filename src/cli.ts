@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   try {
     while (true) {
       const raw = await rl.question(
-        "Enter SYMBOL and flags (e.g. BTC -l 5 -s 500 --sl 0.8 --tp 1.6 -v) or 'exit': "
+        "Enter SYMBOL and flags (e.g. BTC --tf 1m --bias-tf 15m -l 5 -s 500 --sl 0.8 --tp 1.6 -v) or 'exit': "
       );
       const normalized = raw.trim().toLowerCase();
       if (normalized === "exit" || normalized === "quit") {
@@ -54,6 +54,8 @@ async function main(): Promise<void> {
         const tradeInput = parseTradingInput(raw);
         const recommendation = await useCase.execute({
           pair: `${tradeInput.symbol}-USD`,
+          interval: tradeInput.timeframe,
+          biasInterval: tradeInput.biasTimeframe,
           leverage: tradeInput.leverage,
           positionSizeUsd: tradeInput.positionSizeUsd,
           slPct: tradeInput.slPct,

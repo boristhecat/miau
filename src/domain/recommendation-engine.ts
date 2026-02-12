@@ -5,6 +5,8 @@ interface BuildRecommendationInput {
   lastPrice: number;
   indicators: IndicatorSnapshot;
   perp: PerpMarketSnapshot;
+  biasTrend?: Signal;
+  biasInterval?: string;
   leverage?: number;
   positionSizeUsd?: number;
   slPct?: number;
@@ -15,8 +17,9 @@ interface BuildRecommendationInput {
 
 export class RecommendationEngine {
   build(input: BuildRecommendationInput): Recommendation {
-    const { pair, lastPrice, indicators, perp, leverage, positionSizeUsd, slPct, tpPct, slUsd, tpUsd } = input;
-    const { signal, confidence, rationale } = this.evaluate(indicators, perp, lastPrice);
+    const { pair, lastPrice, indicators, perp, leverage, positionSizeUsd, slPct, tpPct, slUsd, tpUsd, biasTrend, biasInterval } =
+      input;
+    const { signal, confidence, rationale } = this.evaluate(indicators, perp, lastPrice, biasTrend, biasInterval);
 
     const atr = indicators.atr14;
     let entry = lastPrice;
@@ -80,7 +83,13 @@ export class RecommendationEngine {
     };
   }
 
-  private evaluate(indicators: IndicatorSnapshot, perp: PerpMarketSnapshot, lastPrice: number): {
+  private evaluate(
+    indicators: IndicatorSnapshot,
+    perp: PerpMarketSnapshot,
+    lastPrice: number,
+    biasTrend?: Signal,
+    biasInterval?: string
+  ): {
     signal: Signal;
     confidence: number;
     rationale: string[];
@@ -186,6 +195,16 @@ export class RecommendationEngine {
       longScore += 2;
       shortScore += 2;
       rationale.push("Open interest confirms active participation.");
+    }
+
+    if (biasTrend) {
+      if (biasTrend === "LONG") {
+        longScore += 12;
+        rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bullish.`);
+      } else {
+        shortScore += 12;
+        rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bearish.`);
+      }
     }
 
     const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;

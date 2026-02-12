@@ -5,6 +5,8 @@ describe("parseTradingInput", () => {
   it("parses symbol only", () => {
     expect(parseTradingInput("btc")).toEqual({
       symbol: "BTC",
+      timeframe: undefined,
+      biasTimeframe: undefined,
       leverage: undefined,
       positionSizeUsd: undefined,
       slPct: undefined,
@@ -16,8 +18,10 @@ describe("parseTradingInput", () => {
   });
 
   it("parses short leverage/size flags", () => {
-    expect(parseTradingInput("ETH -l 5 -s 250 --sl 0.8 --tp 1.6")).toEqual({
+    expect(parseTradingInput("ETH --tf 1m --bias-tf 15m -l 5 -s 250 --sl 0.8 --tp 1.6")).toEqual({
       symbol: "ETH",
+      timeframe: "1m",
+      biasTimeframe: "15m",
       leverage: 5,
       positionSizeUsd: 250,
       slPct: 0.8,
@@ -31,6 +35,8 @@ describe("parseTradingInput", () => {
   it("parses long leverage/size flags", () => {
     expect(parseTradingInput("ETH --leverage 5 --size 250")).toEqual({
       symbol: "ETH",
+      timeframe: undefined,
+      biasTimeframe: undefined,
       leverage: 5,
       positionSizeUsd: 250,
       slPct: undefined,
@@ -44,6 +50,8 @@ describe("parseTradingInput", () => {
   it("parses symbol with leverage only", () => {
     expect(parseTradingInput("SOL -l 3")).toEqual({
       symbol: "SOL",
+      timeframe: undefined,
+      biasTimeframe: undefined,
       leverage: 3,
       positionSizeUsd: undefined,
       slPct: undefined,
@@ -57,6 +65,8 @@ describe("parseTradingInput", () => {
   it("parses symbol with position size only", () => {
     expect(parseTradingInput("SOL -s 250")).toEqual({
       symbol: "SOL",
+      timeframe: undefined,
+      biasTimeframe: undefined,
       leverage: undefined,
       positionSizeUsd: 250,
       slPct: undefined,
@@ -70,6 +80,8 @@ describe("parseTradingInput", () => {
   it("parses verbose flag", () => {
     expect(parseTradingInput("SOL -l 5 -s 100 -v")).toEqual({
       symbol: "SOL",
+      timeframe: undefined,
+      biasTimeframe: undefined,
       leverage: 5,
       positionSizeUsd: 100,
       slPct: undefined,
@@ -83,6 +95,8 @@ describe("parseTradingInput", () => {
   it("parses usd target overrides", () => {
     expect(parseTradingInput("SOL --sl-usd 30 --tp-usd 90")).toEqual({
       symbol: "SOL",
+      timeframe: undefined,
+      biasTimeframe: undefined,
       leverage: undefined,
       positionSizeUsd: undefined,
       slPct: undefined,
@@ -106,6 +120,8 @@ describe("parseTradingInput", () => {
     expect(() => parseTradingInput("SOL -s")).toThrowError("Missing value for size");
     expect(() => parseTradingInput("SOL --sl")).toThrowError("Missing value for --sl");
     expect(() => parseTradingInput("SOL --tp")).toThrowError("Missing value for --tp");
+    expect(() => parseTradingInput("SOL --tf")).toThrowError("Missing value for --tf");
+    expect(() => parseTradingInput("SOL --bias-tf")).toThrowError("Missing value for --bias-tf");
   });
 
   it("rejects invalid leverage", () => {
@@ -120,5 +136,10 @@ describe("parseTradingInput", () => {
   it("rejects mixed sl/tp unit flags", () => {
     expect(() => parseTradingInput("SOL --sl 1 --sl-usd 30")).toThrowError("either --sl");
     expect(() => parseTradingInput("SOL --tp 2 --tp-usd 50")).toThrowError("either --tp");
+  });
+
+  it("rejects invalid timeframe formats", () => {
+    expect(() => parseTradingInput("SOL --tf 1min")).toThrowError("Invalid timeframe");
+    expect(() => parseTradingInput("SOL --bias-tf 15min")).toThrowError("Invalid bias timeframe");
   });
 });

@@ -2,6 +2,8 @@ import { parseTradingSymbol } from "./parse-trading-symbol.js";
 
 export interface TradingInput {
   symbol: string;
+  timeframe?: string;
+  biasTimeframe?: string;
   leverage?: number;
   positionSizeUsd?: number;
   slPct?: number;
@@ -17,6 +19,8 @@ export function parseTradingInput(raw: string): TradingInput {
     throw new Error("Symbol is required.");
   }
   const symbol = parseTradingSymbol(parts[0] ?? "");
+  let timeframe: string | undefined;
+  let biasTimeframe: string | undefined;
   let leverage: number | undefined;
   let positionSizeUsd: number | undefined;
   let slPct: number | undefined;
@@ -49,6 +53,26 @@ export function parseTradingInput(raw: string): TradingInput {
         throw new Error("Missing value for size flag.");
       }
       positionSizeUsd = parseOptionalPositiveNumber(value, "position size");
+      i++;
+      continue;
+    }
+
+    if (token === "--tf") {
+      const value = parts[i + 1];
+      if (!value) {
+        throw new Error("Missing value for --tf flag.");
+      }
+      timeframe = parseInterval(value, "timeframe");
+      i++;
+      continue;
+    }
+
+    if (token === "--bias-tf") {
+      const value = parts[i + 1];
+      if (!value) {
+        throw new Error("Missing value for --bias-tf flag.");
+      }
+      biasTimeframe = parseInterval(value, "bias timeframe");
       i++;
       continue;
     }
@@ -95,11 +119,13 @@ export function parseTradingInput(raw: string): TradingInput {
 
     if (token.startsWith("-")) {
       throw new Error(
-        `Unknown option '${token}'. Supported: -l/--leverage, -s/--size, --sl, --tp, --sl-usd, --tp-usd, -v/--verbose`
+        `Unknown option '${token}'. Supported: --tf, --bias-tf, -l/--leverage, -s/--size, --sl, --tp, --sl-usd, --tp-usd, -v/--verbose`
       );
     }
 
-    throw new Error("Use format: SYMBOL [-l LEVERAGE] [-s SIZE_USD] [--sl PCT|--sl-usd USD] [--tp PCT|--tp-usd USD] [-v].");
+    throw new Error(
+      "Use format: SYMBOL [--tf INTERVAL] [--bias-tf INTERVAL] [-l LEVERAGE] [-s SIZE_USD] [--sl PCT|--sl-usd USD] [--tp PCT|--tp-usd USD] [-v]."
+    );
   }
 
   if (slPct !== undefined && slUsd !== undefined) {
@@ -109,7 +135,7 @@ export function parseTradingInput(raw: string): TradingInput {
     throw new Error("Use either --tp (percent) or --tp-usd, not both.");
   }
 
-  return { symbol, leverage, positionSizeUsd, slPct, tpPct, slUsd, tpUsd, showDetails };
+  return { symbol, timeframe, biasTimeframe, leverage, positionSizeUsd, slPct, tpPct, slUsd, tpUsd, showDetails };
 }
 
 function parseOptionalLeverage(value: string | undefined): number | undefined {
@@ -132,4 +158,12 @@ function parseOptionalPositiveNumber(value: string | undefined, label: string): 
     throw new Error(`Invalid ${label}. Use a positive number.`);
   }
   return parsed;
+}
+
+function parseInterval(value: string, label: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^\d+[mhd]$/.test(normalized)) {
+    throw new Error(`Invalid ${label}. Use format like 1m, 5m, 15m, 1h.`);
+  }
+  return normalized;
 }

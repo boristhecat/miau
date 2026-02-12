@@ -15,6 +15,7 @@ export class GenerateRecommendationUseCase {
   async execute(input: {
     pair: string;
     interval?: string;
+    biasInterval?: string;
     limit?: number;
     leverage?: number;
     positionSizeUsd?: number;
@@ -23,8 +24,9 @@ export class GenerateRecommendationUseCase {
     slUsd?: number;
     tpUsd?: number;
   }): Promise<Recommendation> {
-    const interval = input.interval ?? "1h";
-    const limit = input.limit ?? 120;
+    const interval = input.interval ?? "1m";
+    const biasInterval = input.biasInterval ?? "15m";
+    const limit = input.limit ?? 180;
 
     const candles = await this.deps.marketData.getCandles({
       pair: input.pair,
@@ -37,6 +39,16 @@ export class GenerateRecommendationUseCase {
     }
 
     const indicators = this.deps.indicatorService.calculate(candles);
+    const biasCandles =
+      biasInterval === interval
+        ? candles
+        : await this.deps.marketData.getCandles({
+            pair: input.pair,
+            interval: biasInterval,
+            limit
+          });
+    const biasIndicators = this.deps.indicatorService.calculate(biasCandles);
+    const biasTrend = biasIndicators.ema20 >= biasIndicators.ema50 ? "LONG" : "SHORT";
     const lastPrice = candles[candles.length - 1]!.close;
     const perp = await this.deps.marketData.getPerpSnapshot({ pair: input.pair });
 
@@ -50,7 +62,9 @@ export class GenerateRecommendationUseCase {
       slPct: input.slPct,
       tpPct: input.tpPct,
       slUsd: input.slUsd,
-      tpUsd: input.tpUsd
+      tpUsd: input.tpUsd,
+      biasTrend,
+      biasInterval
     });
   }
 }
