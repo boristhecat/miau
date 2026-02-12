@@ -1,5 +1,10 @@
 # Project Plan
 
+## Task: README usage documentation (2026-02-12)
+- [x] Audit current CLI behavior and available commands
+- [x] Add README with installation, run modes, and examples
+- [x] Ensure documented commands align with `package.json` scripts
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
