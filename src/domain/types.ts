@@ -1,4 +1,4 @@
-export type Signal = "LONG" | "SHORT" | "HOLD";
+export type Signal = "LONG" | "SHORT";
 
 export interface Candle {
   timestamp: number;

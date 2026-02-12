@@ -161,19 +161,24 @@ export class RecommendationEngine {
       rationale.push("ATR indicates elevated volatility (lower reliability).");
     }
 
-    let signal: Signal = "HOLD";
-    let confidence = 50;
-
     const diff = Math.abs(longScore - shortScore);
-    if (longScore > shortScore && diff >= 15) {
+    let signal: Signal;
+    let confidence: number;
+
+    if (longScore > shortScore) {
       signal = "LONG";
-      confidence = Math.min(100, 50 + diff);
-    } else if (shortScore > longScore && diff >= 15) {
+    } else if (shortScore > longScore) {
       signal = "SHORT";
+    } else {
+      signal = indicators.ema20 >= indicators.ema50 ? "LONG" : "SHORT";
+      rationale.push("Scores are tied; trend direction used as tie-breaker.");
+    }
+
+    if (diff >= 15) {
       confidence = Math.min(100, 50 + diff);
     } else {
-      confidence = Math.max(35, 50 - Math.floor(diff / 2));
-      rationale.push("Indicator confluence is weak; HOLD preferred.");
+      confidence = Math.max(35, 45 + diff);
+      rationale.push("Indicator confluence is weak; confidence is reduced.");
     }
 
     return { signal, confidence, rationale };

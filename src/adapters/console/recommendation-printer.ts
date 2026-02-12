@@ -13,8 +13,7 @@ const colors = {
 
 function colorSignal(signal: Recommendation["signal"]): string {
   if (signal === "LONG") return `${colors.green}${signal}${colors.reset}`;
-  if (signal === "SHORT") return `${colors.red}${signal}${colors.reset}`;
-  return `${colors.yellow}${signal}${colors.reset}`;
+  return `${colors.red}${signal}${colors.reset}`;
 }
 
 export class RecommendationPrinter {
