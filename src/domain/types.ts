@@ -1,4 +1,4 @@
-export type Signal = "LONG" | "SHORT";
+export type Signal = "LONG" | "SHORT" | "NO_TRADE";
 
 export interface Candle {
   timestamp: number;
@@ -39,6 +39,8 @@ export interface PerpMarketSnapshot {
 export interface Recommendation {
   pair: string;
   signal: Signal;
+  action: "GREEN" | "YELLOW" | "RED";
+  regime: "TRADEABLE" | "CHOPPY";
   entry: number;
   stopLoss: number;
   takeProfit: number;
@@ -46,6 +48,9 @@ export interface Recommendation {
   positionSizeUsd?: number;
   estimatedPnLAtStopLoss?: number;
   estimatedPnLAtTakeProfit?: number;
+  riskRewardRatio: number;
+  dailyTargetUsd: number;
+  tradesToDailyTarget?: number;
   confidence: number;
   rationale: string[];
   indicators: IndicatorSnapshot;

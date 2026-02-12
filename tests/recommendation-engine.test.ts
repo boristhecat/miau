@@ -42,6 +42,8 @@ describe("RecommendationEngine", () => {
 
     expect(rec.stopLoss).toBe(49500);
     expect(rec.takeProfit).toBe(51000);
+    expect(rec.riskRewardRatio).toBeGreaterThan(0);
+    expect(rec.dailyTargetUsd).toBe(100);
   });
 
   it("applies usd SL/TP overrides", () => {
@@ -78,6 +80,7 @@ describe("RecommendationEngine", () => {
       expect(rec.stopLoss).toBe(49750);
       expect(rec.takeProfit).toBe(50500);
     }
+    expect(rec.regime).toBeDefined();
   });
 
   it("uses higher timeframe bias in scoring", () => {
@@ -117,5 +120,65 @@ describe("RecommendationEngine", () => {
 
     expect(recLongBias.rationale.some((line) => line.includes("15m") && line.includes("bullish"))).toBe(true);
     expect(recShortBias.rationale.some((line) => line.includes("15m") && line.includes("bearish"))).toBe(true);
+  });
+
+  it("computes trades needed to daily target when position sizing is provided", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 60,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 10,
+      macdSignal: 8,
+      macdHistogram: 2,
+      atr14: 140,
+      adx14: 28,
+      bbUpper: 51000,
+      bbMiddle: 50000,
+      bbLower: 49000,
+      stochRsiK: 58,
+      stochRsiD: 50,
+      vwap: 50300
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      leverage: 5,
+      positionSizeUsd: 250,
+      dailyTargetUsd: 100
+    });
+
+    expect(rec.tradesToDailyTarget).toBeDefined();
+  });
+
+  it("returns NO_TRADE with RED action in choppy low-quality regime", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 50,
+      ema20: 50001,
+      ema50: 50000,
+      macd: 0,
+      macdSignal: 0,
+      macdHistogram: 0,
+      atr14: 10,
+      adx14: 12,
+      bbUpper: 50020,
+      bbMiddle: 50000,
+      bbLower: 49980,
+      stochRsiK: 50,
+      stochRsiD: 50,
+      vwap: 50000
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp
+    });
+
+    expect(rec.signal).toBe("NO_TRADE");
+    expect(rec.action).toBe("RED");
   });
 });

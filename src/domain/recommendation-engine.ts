@@ -7,6 +7,7 @@ interface BuildRecommendationInput {
   perp: PerpMarketSnapshot;
   biasTrend?: Signal;
   biasInterval?: string;
+  dailyTargetUsd?: number;
   leverage?: number;
   positionSizeUsd?: number;
   slPct?: number;
@@ -19,7 +20,8 @@ export class RecommendationEngine {
   build(input: BuildRecommendationInput): Recommendation {
     const { pair, lastPrice, indicators, perp, leverage, positionSizeUsd, slPct, tpPct, slUsd, tpUsd, biasTrend, biasInterval } =
       input;
-    const { signal, confidence, rationale } = this.evaluate(indicators, perp, lastPrice, biasTrend, biasInterval);
+    const { signal, confidence, rationale, regime } = this.evaluate(indicators, perp, lastPrice, biasTrend, biasInterval);
+    const dailyTargetUsd = input.dailyTargetUsd ?? 100;
 
     const atr = indicators.atr14;
     let entry = lastPrice;
@@ -38,6 +40,9 @@ export class RecommendationEngine {
       if (takeProfit >= entry) {
         takeProfit = lastPrice - 1.8 * atr;
       }
+    } else {
+      stopLoss = entry;
+      takeProfit = entry;
     }
 
     stopLoss = this.applyStopLossOverride({
@@ -65,17 +70,35 @@ export class RecommendationEngine {
       leverage,
       positionSizeUsd
     });
+    const riskRewardRatio = this.computeRiskReward(entry, stopLoss, takeProfit);
+    const finalSignal = this.applyTradeGuards({
+      signal,
+      regime,
+      confidence,
+      riskRewardRatio,
+      rationale
+    });
+    const action = this.toAction(finalSignal, confidence, regime);
+    const tradesToDailyTarget =
+      finalSignal !== "NO_TRADE" && pnl?.atTakeProfit && pnl.atTakeProfit > 0
+        ? Math.ceil(dailyTargetUsd / pnl.atTakeProfit)
+        : undefined;
 
     return {
       pair,
-      signal,
+      signal: finalSignal,
+      action,
+      regime,
       entry: this.round(entry),
       stopLoss: this.round(stopLoss),
       takeProfit: this.round(takeProfit),
       leverage,
       positionSizeUsd,
-      estimatedPnLAtStopLoss: pnl?.atStopLoss,
-      estimatedPnLAtTakeProfit: pnl?.atTakeProfit,
+      estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : pnl?.atStopLoss,
+      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : pnl?.atTakeProfit,
+      riskRewardRatio: this.round(riskRewardRatio),
+      dailyTargetUsd,
+      tradesToDailyTarget,
       confidence,
       rationale,
       indicators,
@@ -90,134 +113,136 @@ export class RecommendationEngine {
     biasTrend?: Signal,
     biasInterval?: string
   ): {
-    signal: Signal;
+    signal: Exclude<Signal, "NO_TRADE">;
     confidence: number;
     rationale: string[];
+    regime: "TRADEABLE" | "CHOPPY";
   } {
     let longScore = 0;
     let shortScore = 0;
     const rationale: string[] = [];
+    let regime: "TRADEABLE" | "CHOPPY" = "TRADEABLE";
 
     if (indicators.ema20 > indicators.ema50) {
-      longScore += 24;
+      longScore += 28;
       rationale.push("EMA20 is above EMA50 (bullish trend).");
     } else {
-      shortScore += 24;
+      shortScore += 28;
       rationale.push("EMA20 is below EMA50 (bearish trend).");
     }
 
     if (indicators.adx14 >= 25) {
       if (indicators.ema20 >= indicators.ema50) {
-        longScore += 12;
+        longScore += 10;
       } else {
-        shortScore += 12;
+        shortScore += 10;
       }
       rationale.push("ADX confirms a strong trend regime.");
+    } else if (indicators.adx14 < 18) {
+      regime = "CHOPPY";
+      rationale.push("ADX is very low; market is likely choppy.");
     } else {
-      rationale.push("ADX indicates a weaker trend regime.");
+      rationale.push("ADX indicates a moderate trend regime.");
     }
 
     if (indicators.macdHistogram > 0 && indicators.macd > indicators.macdSignal) {
-      longScore += 16;
+      longScore += 18;
       rationale.push("MACD momentum is positive.");
     } else if (indicators.macdHistogram < 0 && indicators.macd < indicators.macdSignal) {
-      shortScore += 16;
+      shortScore += 18;
       rationale.push("MACD momentum is negative.");
     } else {
       rationale.push("MACD momentum is mixed.");
     }
 
     if (indicators.rsi14 > 55 && indicators.rsi14 < 70) {
-      longScore += 10;
+      longScore += 4;
       rationale.push("RSI supports continuation to the upside.");
     } else if (indicators.rsi14 < 45 && indicators.rsi14 > 30) {
-      shortScore += 10;
+      shortScore += 4;
       rationale.push("RSI supports continuation to the downside.");
     } else if (indicators.rsi14 >= 70) {
-      shortScore += 8;
+      shortScore += 5;
       rationale.push("RSI is overbought; upside may be exhausted.");
     } else if (indicators.rsi14 <= 30) {
-      longScore += 8;
+      longScore += 5;
       rationale.push("RSI is oversold; rebound risk is elevated.");
     } else {
       rationale.push("RSI is neutral.");
     }
 
     if (indicators.stochRsiK > indicators.stochRsiD && indicators.stochRsiK < 80) {
-      longScore += 8;
+      longScore += 3;
       rationale.push("StochRSI timing is aligned for long continuation.");
     } else if (indicators.stochRsiK < indicators.stochRsiD && indicators.stochRsiK > 20) {
-      shortScore += 8;
+      shortScore += 3;
       rationale.push("StochRSI timing is aligned for short continuation.");
     } else {
       rationale.push("StochRSI timing is neutral.");
     }
 
     if (lastPrice >= indicators.vwap) {
-      longScore += 6;
+      longScore += 10;
       rationale.push("Price is above VWAP (intraday buyer control).");
     } else {
-      shortScore += 6;
+      shortScore += 10;
       rationale.push("Price is below VWAP (intraday seller control).");
     }
 
     if (lastPrice > indicators.bbUpper) {
-      shortScore += 5;
+      shortScore += 3;
       rationale.push("Price is stretched above Bollinger upper band.");
     } else if (lastPrice < indicators.bbLower) {
-      longScore += 5;
+      longScore += 3;
       rationale.push("Price is stretched below Bollinger lower band.");
     } else {
       rationale.push("Price is inside Bollinger bands.");
     }
 
     if (perp.fundingRate > 0.00005 && perp.fundingRateAvg > 0) {
-      shortScore += 8;
+      shortScore += 4;
       rationale.push("Funding is persistently positive (long crowding risk).");
     } else if (perp.fundingRate < -0.00005 && perp.fundingRateAvg < 0) {
-      longScore += 8;
+      longScore += 4;
       rationale.push("Funding is persistently negative (short crowding risk).");
     } else {
       rationale.push("Funding is neutral.");
     }
 
     if (perp.premiumPct > 0.15) {
-      shortScore += 6;
+      shortScore += 4;
       rationale.push("Mark trades at a premium to index (possible long overheating).");
     } else if (perp.premiumPct < -0.15) {
-      longScore += 6;
+      longScore += 4;
       rationale.push("Mark trades at a discount to index (possible short exhaustion).");
     } else {
       rationale.push("Mark/index premium is balanced.");
     }
 
-    if (perp.openInterest > 0) {
-      longScore += 2;
-      shortScore += 2;
-      rationale.push("Open interest confirms active participation.");
-    }
-
     if (biasTrend) {
       if (biasTrend === "LONG") {
-        longScore += 12;
+        longScore += 16;
         rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bullish.`);
       } else {
-        shortScore += 12;
+        shortScore += 16;
         rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bearish.`);
       }
     }
 
     const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
-    if (atrPct < 1.5) {
-      longScore += 4;
-      shortScore += 4;
-      rationale.push("ATR indicates stable volatility (higher signal reliability).");
+    if (atrPct < 0.12) {
+      regime = "CHOPPY";
+      rationale.push("ATR is very low for intraday; avoid chop-heavy entries.");
+    } else if (atrPct < 0.8) {
+      longScore += 3;
+      shortScore += 3;
+      rationale.push("ATR indicates controlled intraday volatility.");
     } else {
-      rationale.push("ATR indicates elevated volatility (lower reliability).");
+      rationale.push("ATR indicates elevated volatility; execution risk rises.");
     }
 
     const diff = Math.abs(longScore - shortScore);
-    let signal: Signal;
+    let signal: Exclude<Signal, "NO_TRADE">;
     let confidence: number;
 
     if (longScore > shortScore) {
@@ -236,7 +261,12 @@ export class RecommendationEngine {
       rationale.push("Indicator confluence is weak; confidence is reduced.");
     }
 
-    return { signal, confidence, rationale };
+    if (regime === "CHOPPY") {
+      confidence = Math.max(25, confidence - 18);
+      rationale.push("Regime filter reduced confidence due to intraday chop risk.");
+    }
+
+    return { signal, confidence, rationale, regime };
   }
 
   private round(value: number): number {
@@ -244,7 +274,7 @@ export class RecommendationEngine {
   }
 
   private applyStopLossOverride(input: {
-    signal: Signal;
+    signal: Exclude<Signal, "NO_TRADE">;
     entry: number;
     current: number;
     slPct?: number;
@@ -261,7 +291,7 @@ export class RecommendationEngine {
   }
 
   private applyTakeProfitOverride(input: {
-    signal: Signal;
+    signal: Exclude<Signal, "NO_TRADE">;
     entry: number;
     current: number;
     tpPct?: number;
@@ -277,7 +307,7 @@ export class RecommendationEngine {
     return input.current;
   }
 
-  private validateLevels(signal: Signal, entry: number, stopLoss: number, takeProfit: number): void {
+  private validateLevels(signal: Exclude<Signal, "NO_TRADE">, entry: number, stopLoss: number, takeProfit: number): void {
     if (signal === "LONG") {
       if (!(stopLoss < entry)) {
         throw new Error("Invalid stop loss for LONG: stop loss must be below entry.");
@@ -311,6 +341,9 @@ export class RecommendationEngine {
     if (leverage <= 0 || positionSizeUsd <= 0 || input.entry <= 0) {
       return undefined;
     }
+    if (input.signal === "NO_TRADE") {
+      return undefined;
+    }
 
     const notional = leverage * positionSizeUsd;
     const slReturn =
@@ -326,5 +359,50 @@ export class RecommendationEngine {
       atStopLoss: this.round(notional * slReturn),
       atTakeProfit: this.round(notional * tpReturn)
     };
+  }
+
+  private computeRiskReward(entry: number, stopLoss: number, takeProfit: number): number {
+    const risk = Math.abs(entry - stopLoss);
+    const reward = Math.abs(takeProfit - entry);
+    if (risk <= 0) {
+      return 0;
+    }
+    return reward / risk;
+  }
+
+  private applyTradeGuards(input: {
+    signal: Exclude<Signal, "NO_TRADE">;
+    regime: "TRADEABLE" | "CHOPPY";
+    confidence: number;
+    riskRewardRatio: number;
+    rationale: string[];
+  }): Signal {
+    if (input.regime === "CHOPPY") {
+      input.rationale.push("No-trade guard: choppy regime.");
+      return "NO_TRADE";
+    }
+    if (input.riskRewardRatio < 1.2) {
+      input.rationale.push("No-trade guard: risk/reward below 1.2.");
+      return "NO_TRADE";
+    }
+    if (input.confidence < 45) {
+      input.rationale.push("No-trade guard: confidence too low.");
+      return "NO_TRADE";
+    }
+    return input.signal;
+  }
+
+  private toAction(
+    signal: Signal,
+    confidence: number,
+    regime: "TRADEABLE" | "CHOPPY"
+  ): "GREEN" | "YELLOW" | "RED" {
+    if (signal === "NO_TRADE") {
+      return "RED";
+    }
+    if (regime === "CHOPPY" || confidence < 60) {
+      return "YELLOW";
+    }
+    return "GREEN";
   }
 }

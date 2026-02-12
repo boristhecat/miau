@@ -19,6 +19,7 @@ const colors = {
 
 function colorSignal(signal: Recommendation["signal"]): string {
   if (signal === "LONG") return `${colors.bold}${colors.brightGreen}${signal}${colors.reset}`;
+  if (signal === "NO_TRADE") return `${colors.bold}${colors.yellow}${signal}${colors.reset}`;
   return `${colors.bold}${colors.brightRed}${signal}${colors.reset}`;
 }
 
@@ -65,6 +66,12 @@ export class RecommendationPrinter {
       `${label("SIGNAL")} ${colorSignal(rec.signal)}   ` +
       `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}% (${band})${colors.reset}`
     );
+    const actionColor = rec.action === "GREEN" ? colors.brightGreen : rec.action === "YELLOW" ? colors.brightYellow : colors.brightRed;
+    console.log(
+      `${label("REGIME")} ${rec.regime === "TRADEABLE" ? `${colors.brightGreen}${rec.regime}` : `${colors.brightRed}${rec.regime}`}${colors.reset}   ` +
+      `${label("ACTION")} ${actionColor}${colors.bold}${rec.action}${colors.reset}   ` +
+      `${label("R/R")} ${colors.white}${rec.riskRewardRatio.toFixed(2)}${colors.reset}`
+    );
     console.log(divider());
 
     console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
@@ -85,6 +92,15 @@ export class RecommendationPrinter {
       console.log(
         `${label("Position")} ${colors.white}${rec.leverage}x, ${rec.positionSizeUsd} USDC margin${colors.reset}`
       );
+      if (rec.tradesToDailyTarget !== undefined) {
+        console.log(
+          `${label("Daily Target")} ${colors.white}${rec.dailyTargetUsd} USDC${colors.reset} ` +
+          `${colors.brightBlack}(~${rec.tradesToDailyTarget} TP hits)${colors.reset}`
+        );
+      }
+    }
+    if (rec.signal === "NO_TRADE") {
+      console.log(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
     }
     console.log(divider());
 
