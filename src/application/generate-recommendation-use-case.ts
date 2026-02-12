@@ -16,6 +16,8 @@ export class GenerateRecommendationUseCase {
     pair: string;
     interval?: string;
     limit?: number;
+    leverage?: number;
+    positionSizeUsd?: number;
   }): Promise<Recommendation> {
     const interval = input.interval ?? "1h";
     const limit = input.limit ?? 120;
@@ -38,7 +40,9 @@ export class GenerateRecommendationUseCase {
       pair: input.pair,
       lastPrice,
       indicators,
-      perp
+      perp,
+      leverage: input.leverage,
+      positionSizeUsd: input.positionSizeUsd
     });
   }
 }

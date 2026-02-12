@@ -32,6 +32,11 @@ function fmt(value: number): string {
   return Number(value.toFixed(4)).toString();
 }
 
+function fmtUsd(value: number): string {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)} USDC`;
+}
+
 function label(name: string): string {
   return `${colors.brightBlack}${name.padEnd(18)}${colors.reset}`;
 }
@@ -51,6 +56,7 @@ function confidenceBar(confidence: number): string {
 export class RecommendationPrinter {
   print(rec: Recommendation): void {
     const confColor = confidenceColor(rec.confidence);
+    const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
 
     console.log(`${colors.bgDark}${colors.white}${colors.bold}  MIAU TRADER  ${colors.reset}`);
     console.log(
@@ -62,8 +68,23 @@ export class RecommendationPrinter {
 
     console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
     console.log(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
-    console.log(`${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}`);
-    console.log(`${label("Take Profit")} ${colors.brightGreen}${fmt(rec.takeProfit)}${colors.reset}`);
+    console.log(
+      `${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}` +
+      (rec.estimatedPnLAtStopLoss !== undefined
+        ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtStopLoss)}]${colors.reset}`
+        : "")
+    );
+    console.log(
+      `${label("Take Profit")} ${colors.brightGreen}${fmt(rec.takeProfit)}${colors.reset}` +
+      (rec.estimatedPnLAtTakeProfit !== undefined
+        ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtTakeProfit)}]${colors.reset}`
+        : "")
+    );
+    if (hasPosition) {
+      console.log(
+        `${label("Position")} ${colors.white}${rec.leverage}x, ${rec.positionSizeUsd} USDC margin${colors.reset}`
+      );
+    }
     console.log(divider());
 
     console.log(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);

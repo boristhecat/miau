@@ -5,11 +5,13 @@ interface BuildRecommendationInput {
   lastPrice: number;
   indicators: IndicatorSnapshot;
   perp: PerpMarketSnapshot;
+  leverage?: number;
+  positionSizeUsd?: number;
 }
 
 export class RecommendationEngine {
   build(input: BuildRecommendationInput): Recommendation {
-    const { pair, lastPrice, indicators, perp } = input;
+    const { pair, lastPrice, indicators, perp, leverage, positionSizeUsd } = input;
     const { signal, confidence, rationale } = this.evaluate(indicators, perp, lastPrice);
 
     const atr = indicators.atr14;
@@ -31,12 +33,25 @@ export class RecommendationEngine {
       }
     }
 
+    const pnl = this.computeEstimatedPnL({
+      signal,
+      entry,
+      stopLoss,
+      takeProfit,
+      leverage,
+      positionSizeUsd
+    });
+
     return {
       pair,
       signal,
       entry: this.round(entry),
       stopLoss: this.round(stopLoss),
       takeProfit: this.round(takeProfit),
+      leverage,
+      positionSizeUsd,
+      estimatedPnLAtStopLoss: pnl?.atStopLoss,
+      estimatedPnLAtTakeProfit: pnl?.atTakeProfit,
       confidence,
       rationale,
       indicators,
@@ -186,5 +201,37 @@ export class RecommendationEngine {
 
   private round(value: number): number {
     return Number(value.toFixed(4));
+  }
+
+  private computeEstimatedPnL(input: {
+    signal: Signal;
+    entry: number;
+    stopLoss: number;
+    takeProfit: number;
+    leverage?: number;
+    positionSizeUsd?: number;
+  }): { atStopLoss: number; atTakeProfit: number } | undefined {
+    const { leverage, positionSizeUsd } = input;
+    if (!leverage || !positionSizeUsd) {
+      return undefined;
+    }
+    if (leverage <= 0 || positionSizeUsd <= 0 || input.entry <= 0) {
+      return undefined;
+    }
+
+    const notional = leverage * positionSizeUsd;
+    const slReturn =
+      input.signal === "LONG"
+        ? (input.stopLoss - input.entry) / input.entry
+        : (input.entry - input.stopLoss) / input.entry;
+    const tpReturn =
+      input.signal === "LONG"
+        ? (input.takeProfit - input.entry) / input.entry
+        : (input.entry - input.takeProfit) / input.entry;
+
+    return {
+      atStopLoss: this.round(notional * slReturn),
+      atTakeProfit: this.round(notional * tpReturn)
+    };
   }
 }

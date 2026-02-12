@@ -16,7 +16,7 @@ export function getUsageText(): string {
   return [
     "Usage: miau-trader",
     "",
-    "You will be prompted for a base symbol (e.g. BTC, ETH).",
-    "Indicator logs are always enabled in early dev mode."
+    "Interactive input format: SYMBOL [LEVERAGE] [SIZE_USD]",
+    "Examples: BTC | ETH 3x 250 | SOL 5 1000"
   ].join("\n");
 }

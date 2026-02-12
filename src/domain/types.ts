@@ -42,6 +42,10 @@ export interface Recommendation {
   entry: number;
   stopLoss: number;
   takeProfit: number;
+  leverage?: number;
+  positionSizeUsd?: number;
+  estimatedPnLAtStopLoss?: number;
+  estimatedPnLAtTakeProfit?: number;
   confidence: number;
   rationale: string[];
   indicators: IndicatorSnapshot;

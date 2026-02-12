@@ -14,6 +14,7 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Enforce PERP-only Backpack market resolution and kline request shape
 - [x] Switch CLI to interactive symbol prompt (no pair CLI arg)
 - [x] Add Backpack PERP context (funding/open interest/mark premium) and extended indicators
+- [x] Add optional leverage/position-size input and estimated PnL at SL/TP
 
 ## Completion Criteria
 - `npm run dev -- BTC-USD` prints a structured recommendation

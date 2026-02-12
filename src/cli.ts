@@ -2,7 +2,7 @@
 
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
 import { getUsageText, parseCliInput } from "./application/parse-cli-input.js";
-import { parseTradingSymbol } from "./application/parse-trading-symbol.js";
+import { parseTradingInput } from "./application/parse-trading-input.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { RecommendationPrinter } from "./adapters/console/recommendation-printer.js";
@@ -42,16 +42,18 @@ async function main(): Promise<void> {
   const rl = readline.createInterface({ input, output });
   try {
     while (true) {
-      const raw = await rl.question("Enter base symbol (e.g. BTC, ETH) or 'exit': ");
+      const raw = await rl.question("Enter SYMBOL [LEVERAGE] [SIZE_USD] or 'exit' (e.g. BTC 5x 500): ");
       const normalized = raw.trim().toLowerCase();
       if (normalized === "exit" || normalized === "quit") {
         break;
       }
 
       try {
-        const symbol = parseTradingSymbol(raw);
+        const tradeInput = parseTradingInput(raw);
         const recommendation = await useCase.execute({
-          pair: `${symbol}-USD`
+          pair: `${tradeInput.symbol}-USD`,
+          leverage: tradeInput.leverage,
+          positionSizeUsd: tradeInput.positionSizeUsd
         });
         new RecommendationPrinter().print(recommendation);
       } catch (error) {
