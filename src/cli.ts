@@ -9,6 +9,8 @@ import { RecommendationPrinter } from "./adapters/console/recommendation-printer
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
 import { IndicatorService } from "./domain/indicator-service.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
+import { evaluatePaperTrade } from "./domain/simulation-evaluator.js";
+import type { Recommendation } from "./domain/types.js";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
@@ -19,8 +21,10 @@ const ui = {
   cyan: "\u001b[36m",
   yellow: "\u001b[33m",
   green: "\u001b[32m",
+  red: "\u001b[31m",
   magenta: "\u001b[35m",
-  gray: "\u001b[90m"
+  gray: "\u001b[90m",
+  blue: "\u001b[34m"
 };
 
 async function main(): Promise<void> {
@@ -80,6 +84,16 @@ async function main(): Promise<void> {
         new RecommendationPrinter().print(recommendation, {
           showDetails: tradeInput.showDetails
         });
+
+        if (tradeInput.runSimulation) {
+          scheduleSimulation({
+            logger,
+            marketData,
+            recommendation,
+            interval: tradeInput.timeframe ?? "1m",
+            horizonMinutes: 15
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unhandled error";
         logger.error(`Failed to generate recommendation: ${message}`);
@@ -124,10 +138,12 @@ async function promptInteractiveTradeInput(
         : undefined;
 
   const verboseAnswer = await promptWithDefault(rl, "Show details? [y|n]", base.showDetails ? "y" : "n");
+  const simAnswer = await promptWithDefault(rl, "Run 15m simulation? [y|n]", base.runSimulation ? "y" : "n");
 
   return {
     symbol: base.symbol,
     fullInteractive: true,
+    runSimulation: simAnswer.toLowerCase() === "y",
     timeframe: parseIntervalInput(tf, "timeframe"),
     biasTimeframe: parseIntervalInput(biasTf, "bias timeframe"),
     leverage: parseOptionalLeverageInput(leverage),
@@ -152,10 +168,12 @@ async function promptQuickTradeInput(
   const size = await promptWithDefault(rl, "Position size USDC", base.positionSizeUsd?.toString() ?? "250");
   const slValue = await promptWithDefault(rl, "Stop-loss percent", (base.slPct ?? 0.6).toString());
   const tpValue = await promptWithDefault(rl, "Take-profit percent", (base.tpPct ?? 1.2).toString());
+  const simAnswer = await promptWithDefault(rl, "Run 15m simulation? [y|n]", base.runSimulation ? "y" : "n");
 
   return {
     symbol: base.symbol,
     fullInteractive: false,
+    runSimulation: simAnswer.toLowerCase() === "y",
     timeframe: "1m",
     biasTimeframe: "15m",
     leverage: parseOptionalLeverageInput(leverage),
@@ -166,6 +184,77 @@ async function promptQuickTradeInput(
     tpUsd: undefined,
     showDetails: true
   };
+}
+
+function scheduleSimulation(input: {
+  logger: ConsoleLogger;
+  marketData: BackpackMarketDataClient;
+  recommendation: Recommendation;
+  interval: string;
+  horizonMinutes: number;
+}): void {
+  const signal = input.recommendation.signal;
+  if (signal === "NO_TRADE") {
+    input.logger.info("[sim] Skipped: recommendation is NO_TRADE.");
+    return;
+  }
+
+  const openedAtMs = Date.now();
+  const horizonMs = input.horizonMinutes * 60 * 1000;
+  const timeframeMs = intervalToMs(input.interval);
+  const minLimit = Math.max(120, Math.ceil(horizonMs / Math.max(timeframeMs, 60_000)) + 40);
+
+  input.logger.info(
+    `[sim] Started for ${input.recommendation.pair} ${signal}; evaluating in ${input.horizonMinutes}m.`
+  );
+
+  void (async () => {
+    await delay(horizonMs);
+    try {
+      const candles = await input.marketData.getCandles({
+        pair: input.recommendation.pair,
+        interval: input.interval,
+        limit: minLimit
+      });
+
+      const outcome = evaluatePaperTrade({
+        trade: {
+          signal,
+          entry: input.recommendation.entry,
+          stopLoss: input.recommendation.stopLoss,
+          takeProfit: input.recommendation.takeProfit,
+          openedAtMs
+        },
+        candles,
+        horizonEndMs: openedAtMs + horizonMs
+      });
+
+      const pnlUsd =
+        input.recommendation.leverage !== undefined && input.recommendation.positionSizeUsd !== undefined
+          ? ((outcome.pnlPct / 100) * input.recommendation.positionSizeUsd * input.recommendation.leverage)
+          : undefined;
+      const outcomeColor = outcome.status === "SUCCESS" ? ui.green : ui.red;
+      const pnlColor = outcome.pnlPct >= 0 ? ui.green : ui.red;
+
+      console.log("");
+      console.log(`${ui.bold}${ui.blue}SIM RESULT${ui.reset} ${ui.gray}${input.recommendation.pair}${ui.reset}`);
+      console.log(
+        `${ui.gray}status:${ui.reset} ${outcomeColor}${ui.bold}${outcome.status}${ui.reset}   ` +
+          `${ui.gray}pnl:${ui.reset} ${pnlColor}${outcome.pnlPct.toFixed(2)}%${ui.reset}` +
+          (pnlUsd !== undefined ? ` ${ui.gray}(${pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)} USDC)${ui.reset}` : "")
+      );
+      console.log(
+        `${ui.gray}entry:${ui.reset} ${input.recommendation.entry.toFixed(4)}   ` +
+          `${ui.gray}exit:${ui.reset} ${outcome.exitPrice.toFixed(4)}   ` +
+          `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`
+      );
+      console.log(`${ui.gray}reason:${ui.reset} ${outcome.reason}`);
+      console.log("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unhandled simulation error";
+      input.logger.error(`[sim] Failed to evaluate ${input.recommendation.pair}: ${message}`);
+    }
+  })();
 }
 
 async function promptWithDefault(rl: readline.Interface, label: string, defaultValue: string): Promise<string> {
@@ -228,6 +317,27 @@ function parseRequiredNumberInput(value: string | undefined, label: string): num
     throw new Error(`Invalid ${label}. Use a positive number.`);
   }
   return parsed;
+}
+
+function intervalToMs(interval: string): number {
+  const normalized = interval.trim().toLowerCase();
+  const match = normalized.match(/^(\d+)([mhd])$/);
+  if (!match) {
+    return 60_000;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (Number.isNaN(amount) || amount <= 0) {
+    return 60_000;
+  }
+  if (unit === "m") return amount * 60_000;
+  if (unit === "h") return amount * 60 * 60_000;
+  return amount * 24 * 60 * 60_000;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 void main();

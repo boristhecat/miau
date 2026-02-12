@@ -3,6 +3,7 @@ import { parseTradingSymbol } from "./parse-trading-symbol.js";
 export interface TradingInput {
   symbol: string;
   fullInteractive: boolean;
+  runSimulation: boolean;
   timeframe?: string;
   biasTimeframe?: string;
   leverage?: number;
@@ -32,6 +33,7 @@ export function parseTradingInput(raw: string): TradingInput {
   return {
     symbol,
     fullInteractive: modeToken !== undefined,
+    runSimulation: false,
     showDetails: false
   };
 }

@@ -6,6 +6,7 @@ describe("parseTradingInput", () => {
     expect(parseTradingInput("btc")).toEqual({
       symbol: "BTC",
       fullInteractive: false,
+      runSimulation: false,
       showDetails: false
     });
   });
@@ -14,11 +15,13 @@ describe("parseTradingInput", () => {
     expect(parseTradingInput("eth -i")).toEqual({
       symbol: "ETH",
       fullInteractive: true,
+      runSimulation: false,
       showDetails: false
     });
     expect(parseTradingInput("sol --interactive")).toEqual({
       symbol: "SOL",
       fullInteractive: true,
+      runSimulation: false,
       showDetails: false
     });
   });

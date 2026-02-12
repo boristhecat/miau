@@ -59,6 +59,7 @@ Prompts for core risk inputs:
 - Position size (USDC margin)
 - Stop-loss percent
 - Take-profit percent
+- Run 15-minute simulation check (`y/n`)
 
 Defaults to:
 
@@ -77,6 +78,7 @@ Prompts for all configuration fields with defaults:
 - Stop-loss mode: `none`, `pct`, or `usd`
 - Take-profit mode: `none`, `pct`, or `usd`
 - Show details: `y` / `n`
+- Run 15-minute simulation check (`y/n`)
 
 Tips:
 
@@ -91,6 +93,7 @@ Tips:
 - Indicator snapshot
 - Perpetual market context (funding, premium, open interest, mark/index)
 - Rationale bullets explaining the score
+- Optional 15-minute simulation result (`SUCCESS`/`FAILURE`) based on public candles only
 
 ## Indicators used
 

@@ -5,6 +5,13 @@
 - [x] Add README with installation, run modes, and examples
 - [x] Ensure documented commands align with `package.json` scripts
 
+## Task: 15-minute simulation mode (2026-02-12)
+- [x] Add a pure domain evaluator for paper-trade outcomes from future candles
+- [x] Integrate optional simulation prompt into quick/full interactive flows
+- [x] Run simulation asynchronously (non-blocking) and print pass/fail after 15 minutes
+- [x] Cover simulation outcome logic with unit tests
+- [x] Update README with simulation usage
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
