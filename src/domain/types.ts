@@ -17,6 +17,23 @@ export interface IndicatorSnapshot {
   macdSignal: number;
   macdHistogram: number;
   atr14: number;
+  adx14: number;
+  bbUpper: number;
+  bbMiddle: number;
+  bbLower: number;
+  stochRsiK: number;
+  stochRsiD: number;
+  vwap: number;
+}
+
+export interface PerpMarketSnapshot {
+  symbol: string;
+  fundingRate: number;
+  fundingRateAvg: number;
+  openInterest: number;
+  markPrice: number;
+  indexPrice: number;
+  premiumPct: number;
 }
 
 export interface Recommendation {
@@ -28,4 +45,5 @@ export interface Recommendation {
   confidence: number;
   rationale: string[];
   indicators: IndicatorSnapshot;
+  perp: PerpMarketSnapshot;
 }

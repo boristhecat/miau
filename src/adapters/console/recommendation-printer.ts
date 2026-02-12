@@ -39,6 +39,23 @@ export class RecommendationPrinter {
     console.log(`- MACD Signal: ${rec.indicators.macdSignal}`);
     console.log(`- MACD Histogram: ${rec.indicators.macdHistogram}`);
     console.log(`- ATR(14): ${rec.indicators.atr14}`);
+    console.log(`- ADX(14): ${rec.indicators.adx14}`);
+    console.log(`- Bollinger Upper: ${rec.indicators.bbUpper}`);
+    console.log(`- Bollinger Middle: ${rec.indicators.bbMiddle}`);
+    console.log(`- Bollinger Lower: ${rec.indicators.bbLower}`);
+    console.log(`- StochRSI K: ${rec.indicators.stochRsiK}`);
+    console.log(`- StochRSI D: ${rec.indicators.stochRsiD}`);
+    console.log(`- VWAP: ${rec.indicators.vwap}`);
+    console.log("");
+
+    console.log(`${colors.bold}Perp Context${colors.reset}`);
+    console.log(`- Symbol: ${rec.perp.symbol}`);
+    console.log(`- Funding Rate: ${rec.perp.fundingRate}`);
+    console.log(`- Funding Rate Avg: ${rec.perp.fundingRateAvg}`);
+    console.log(`- Open Interest: ${rec.perp.openInterest}`);
+    console.log(`- Mark Price: ${rec.perp.markPrice}`);
+    console.log(`- Index Price: ${rec.perp.indexPrice}`);
+    console.log(`- Mark/Index Premium %: ${rec.perp.premiumPct}`);
     console.log("");
 
     console.log(`${colors.bold}Rationale${colors.reset}`);

@@ -76,4 +76,41 @@ describe("BackpackMarketDataClient", () => {
       "Backpack rejected candle request"
     );
   });
+
+  it("retrieves perp snapshot from mark, open interest, and funding endpoints", async () => {
+    nock(baseUrl).get("/api/v1/markets").reply(200, [
+      { symbol: "BTC_USDC_PERP", baseSymbol: "BTC", quoteSymbol: "USDC", marketType: "PERP" }
+    ]);
+    nock(baseUrl)
+      .get("/api/v1/markPrices")
+      .query({ symbol: "BTC_USDC_PERP" })
+      .reply(200, [
+        {
+          fundingRate: "-0.00001029",
+          indexPrice: "68030.79",
+          markPrice: "67991.60",
+          symbol: "BTC_USDC_PERP"
+        }
+      ]);
+    nock(baseUrl)
+      .get("/api/v1/openInterest")
+      .query({ symbol: "BTC_USDC_PERP" })
+      .reply(200, [{ openInterest: "1234.52128", symbol: "BTC_USDC_PERP" }]);
+    nock(baseUrl)
+      .get("/api/v1/fundingRates")
+      .query({ symbol: "BTC_USDC_PERP" })
+      .reply(200, [
+        { fundingRate: "-0.00001029", symbol: "BTC_USDC_PERP" },
+        { fundingRate: "0.00000500", symbol: "BTC_USDC_PERP" }
+      ]);
+
+    const client = new BackpackMarketDataClient(new AxiosHttpClient(baseUrl));
+    const snapshot = await client.getPerpSnapshot({ pair: "BTC-USD" });
+
+    expect(snapshot.symbol).toBe("BTC_USDC_PERP");
+    expect(snapshot.openInterest).toBe(1234.52128);
+    expect(snapshot.markPrice).toBe(67991.6);
+    expect(snapshot.indexPrice).toBe(68030.79);
+    expect(snapshot.fundingRate).toBe(-0.00001029);
+  });
 });

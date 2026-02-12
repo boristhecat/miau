@@ -35,15 +35,18 @@ export class GenerateRecommendationUseCase {
 
     const indicators = this.deps.indicatorService.calculate(candles);
     const lastPrice = candles[candles.length - 1]!.close;
+    const perp = await this.deps.marketData.getPerpSnapshot({ pair: input.pair });
 
     if (input.logIndicators) {
       this.deps.logger.info(`Indicators: ${JSON.stringify(indicators)}`);
+      this.deps.logger.info(`Perp snapshot: ${JSON.stringify(perp)}`);
     }
 
     return this.deps.recommendationEngine.build({
       pair: input.pair,
       lastPrice,
-      indicators
+      indicators,
+      perp
     });
   }
 }

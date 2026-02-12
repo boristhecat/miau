@@ -1,4 +1,4 @@
-import type { Candle } from "../domain/types.js";
+import type { Candle, PerpMarketSnapshot } from "../domain/types.js";
 
 export interface MarketDataPort {
   getCandles(params: {
@@ -6,4 +6,6 @@ export interface MarketDataPort {
     interval: string;
     limit: number;
   }): Promise<Candle[]>;
+
+  getPerpSnapshot(params: { pair: string }): Promise<PerpMarketSnapshot>;
 }

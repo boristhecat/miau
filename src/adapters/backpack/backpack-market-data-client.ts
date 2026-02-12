@@ -1,4 +1,4 @@
-import type { Candle } from "../../domain/types.js";
+import type { Candle, PerpMarketSnapshot } from "../../domain/types.js";
 import type { MarketDataPort } from "../../ports/market-data-port.js";
 import type { HttpClient } from "../http/http-client.js";
 
@@ -9,6 +9,23 @@ interface Market {
   marketType?: string;
   orderBookState?: string;
   visible?: boolean;
+}
+
+interface MarkPriceRow {
+  symbol?: string;
+  fundingRate?: string | number;
+  indexPrice?: string | number;
+  markPrice?: string | number;
+}
+
+interface OpenInterestRow {
+  symbol?: string;
+  openInterest?: string | number;
+}
+
+interface FundingRateRow {
+  symbol?: string;
+  fundingRate?: string | number;
 }
 
 type RawKline =
@@ -24,6 +41,8 @@ type RawKline =
     };
 
 export class BackpackMarketDataClient implements MarketDataPort {
+  private readonly symbolCache = new Map<string, string[]>();
+
   constructor(private readonly httpClient: HttpClient) {}
 
   async getCandles(params: {
@@ -80,6 +99,50 @@ export class BackpackMarketDataClient implements MarketDataPort {
     );
   }
 
+  async getPerpSnapshot(params: { pair: string }): Promise<PerpMarketSnapshot> {
+    const symbols = await this.resolvePerpSymbols(params.pair);
+    const symbol = symbols[0];
+    if (!symbol) {
+      throw new Error(`No PERP symbol available for ${params.pair}.`);
+    }
+
+    const [markRows, oiRows, fundingRows] = await Promise.all([
+      this.httpClient.get<MarkPriceRow[]>("/api/v1/markPrices", { symbol }),
+      this.httpClient.get<OpenInterestRow[]>("/api/v1/openInterest", { symbol }),
+      this.httpClient.get<FundingRateRow[]>("/api/v1/fundingRates", { symbol })
+    ]);
+
+    const mark = Array.isArray(markRows) ? markRows[0] : undefined;
+    const oi = Array.isArray(oiRows) ? oiRows[0] : undefined;
+    const fundingSeries = Array.isArray(fundingRows) ? fundingRows : [];
+
+    const fundingRate = this.toNumber(mark?.fundingRate, "fundingRate");
+    const indexPrice = this.toNumber(mark?.indexPrice, "indexPrice");
+    const markPrice = this.toNumber(mark?.markPrice, "markPrice");
+    const openInterest = this.toNumber(oi?.openInterest, "openInterest");
+    const fundingValues = fundingSeries
+      .map((row) => Number(row.fundingRate))
+      .filter((value) => !Number.isNaN(value))
+      .slice(0, 8);
+
+    const fundingRateAvg =
+      fundingValues.length > 0
+        ? fundingValues.reduce((sum, value) => sum + value, 0) / fundingValues.length
+        : fundingRate;
+
+    const premiumPct = indexPrice === 0 ? 0 : ((markPrice - indexPrice) / indexPrice) * 100;
+
+    return {
+      symbol,
+      fundingRate: this.round(fundingRate),
+      fundingRateAvg: this.round(fundingRateAvg),
+      openInterest: this.round(openInterest),
+      markPrice: this.round(markPrice),
+      indexPrice: this.round(indexPrice),
+      premiumPct: this.round(premiumPct)
+    };
+  }
+
   private parseRow(row: RawKline): Candle | null {
     if (Array.isArray(row)) {
       const [timestamp, open, high, low, close, volume] = row;
@@ -126,6 +189,12 @@ export class BackpackMarketDataClient implements MarketDataPort {
   }
 
   private async resolvePerpSymbols(pair: string): Promise<string[]> {
+    const key = pair.toUpperCase();
+    const cached = this.symbolCache.get(key);
+    if (cached) {
+      return cached;
+    }
+
     const markets = await this.httpClient.get<Market[]>("/api/v1/markets");
     if (!Array.isArray(markets)) {
       throw new Error("Backpack markets response is invalid.");
@@ -157,14 +226,18 @@ export class BackpackMarketDataClient implements MarketDataPort {
     });
 
     if (exact?.symbol) {
-      return [exact.symbol.toUpperCase()];
+      const result = [exact.symbol.toUpperCase()];
+      this.symbolCache.set(key, result);
+      return result;
     }
 
     const bySymbol = perpMarkets.find((market) => {
       return market.symbol?.toUpperCase() === `${base}_${quote}_PERP`;
     });
     if (bySymbol?.symbol) {
-      return [bySymbol.symbol.toUpperCase()];
+      const result = [bySymbol.symbol.toUpperCase()];
+      this.symbolCache.set(key, result);
+      return result;
     }
 
     const baseFallbacks = perpMarkets
@@ -173,7 +246,9 @@ export class BackpackMarketDataClient implements MarketDataPort {
       .filter((symbol): symbol is string => typeof symbol === "string");
 
     if (baseFallbacks.length > 0) {
-      return this.unique(baseFallbacks);
+      const result = this.unique(baseFallbacks);
+      this.symbolCache.set(key, result);
+      return result;
     }
 
     const available = perpMarkets
@@ -253,5 +328,17 @@ export class BackpackMarketDataClient implements MarketDataPort {
       return `Last error: ${error.message}`;
     }
     return "Last error: unknown failure";
+  }
+
+  private toNumber(value: string | number | undefined, label: string): number {
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      throw new Error(`Backpack ${label} is missing or invalid.`);
+    }
+    return parsed;
+  }
+
+  private round(value: number): number {
+    return Number(value.toFixed(8));
   }
 }
