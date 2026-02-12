@@ -1,0 +1,30 @@
+{
+  "name": "miau-trader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI for crypto Entry/SL/TP recommendations using public market data",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "miau-trader": "dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "technicalindicators": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "nock": "^14.0.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}
