@@ -35,7 +35,6 @@ async function main(): Promise<void> {
   const marketData = new BackpackMarketDataClient(httpClient);
   const useCase = new GenerateRecommendationUseCase({
     marketData,
-    logger,
     indicatorService: new IndicatorService(),
     recommendationEngine: new RecommendationEngine()
   });
@@ -52,8 +51,7 @@ async function main(): Promise<void> {
       try {
         const symbol = parseTradingSymbol(raw);
         const recommendation = await useCase.execute({
-          pair: `${symbol}-USD`,
-          logIndicators: true
+          pair: `${symbol}-USD`
         });
         new RecommendationPrinter().print(recommendation);
       } catch (error) {
