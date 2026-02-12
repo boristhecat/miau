@@ -66,10 +66,9 @@ export class RecommendationPrinter {
       `${label("SIGNAL")} ${colorSignal(rec.signal)}   ` +
       `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}% (${band})${colors.reset}`
     );
-    const actionColor = rec.action === "GREEN" ? colors.brightGreen : rec.action === "YELLOW" ? colors.brightYellow : colors.brightRed;
     console.log(
       `${label("REGIME")} ${rec.regime === "TRADEABLE" ? `${colors.brightGreen}${rec.regime}` : `${colors.brightRed}${rec.regime}`}${colors.reset}   ` +
-      `${label("ACTION")} ${actionColor}${colors.bold}${rec.action}${colors.reset}   ` +
+      `${label("ACTION")} ${colors.bold}${colors.white}${rec.action}${colors.reset}   ` +
       `${label("R/R")} ${colors.white}${rec.riskRewardRatio.toFixed(2)}${colors.reset}`
     );
     console.log(divider());
