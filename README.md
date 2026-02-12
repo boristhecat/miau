@@ -58,6 +58,10 @@ After starting the app, enter input at the `Symbol` prompt:
 
 - `BTC` -> quick mode
 - `ETH -i` -> full interactive mode
+- `BTC --objective 10` -> objective-driven TP/SL targeting (`10` = notional PnL target in USDC)
+- `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
+- `BTC --manual-levels` -> direct manual SL/TP mode
+- `BTC --simulate` -> schedule a 15-minute simulation for the generated levels
 - `exit` or `quit` -> close the app
 
 ### Quick mode
@@ -66,9 +70,12 @@ Prompts for core risk inputs:
 
 - Leverage
 - Position size (USDC margin)
-- Stop-loss percent
-- Take-profit percent
-- Run 15-minute simulation check (`y/n`)
+- Target mode selection:
+  - objective/horizon mode (provide exactly one of `--objective` or `--horizon`, where horizon is minutes)
+  - manual levels mode (`--manual-levels`) for direct SL/TP percentages
+- Simulation is flag-driven (`--simulate`) and is not prompted interactively
+- Profit objective in USDC (`--objective`, interpreted as notional PnL target) or trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
+- In manual mode: Stop-loss percent and Take-profit percent
 
 Defaults to:
 
@@ -84,10 +91,13 @@ Prompts for all configuration fields with defaults:
 - Bias timeframe
 - Optional leverage
 - Optional position size
-- Stop-loss mode: `none`, `pct`, or `usd`
-- Take-profit mode: `none`, `pct`, or `usd`
+- Target mode selection (`--manual-levels` on/off)
+- In manual mode: stop-loss and take-profit mode (`none`, `pct`, `usd`)
+- In objective/horizon mode: provide exactly one of objective or horizon
 - Show details: `y` / `n`
-- Run 15-minute simulation check (`y/n`)
+- Simulation is flag-driven (`--simulate`) and is not prompted interactively
+- Profit objective in USDC (`--objective`, optional)
+- Trade horizon minutes (`--horizon`, optional)
 
 Tips:
 
@@ -103,6 +113,7 @@ Tips:
 - Perpetual market context (funding, premium, open interest, mark/index)
 - Rationale bullets explaining the score
 - Optional 15-minute simulation result (`SUCCESS`/`FAILURE`) based on public candles only
+- Objective/horizon metadata with time-stop rule when objective targeting is enabled
 - Optional `rec` ranking output with top 5 tokens (highest recommendation -> lowest)
 
 ## Indicators used

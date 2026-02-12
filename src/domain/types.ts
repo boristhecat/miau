@@ -52,6 +52,16 @@ export interface Recommendation {
   riskRewardRatio: number;
   dailyTargetUsd: number;
   tradesToDailyTarget?: number;
+  objectiveUsdc?: number;
+  objectiveHorizon?: string;
+  objectiveHorizonMinutes?: number;
+  objectiveHorizonCandles?: number;
+  timeStopRule?: string;
+  objectiveTargetTpPct?: number;
+  objectiveTargetSlPct?: number;
+  objectiveRiskReward?: number;
+  objectiveNotionalUsd?: number;
+  objectivePlausibilityWarning?: string;
   confidence: number;
   rationale: string[];
   indicators: IndicatorSnapshot;

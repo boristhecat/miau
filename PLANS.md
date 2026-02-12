@@ -19,6 +19,18 @@
 - [x] Cover simulation outcome logic with unit tests
 - [x] Update README with simulation usage
 
+## Task: Objective + Horizon target policy (2026-02-12)
+- [x] Add domain targeting policy for objective-driven TP/SL, horizon defaults, and ATR plausibility checks
+- [x] Wire objective/horizon inputs through query parser, prompt flows, use-case, and recommendation engine
+- [x] Extend trade-level output with objective/horizon/time-stop/plausibility details
+- [x] Add unit tests for objective math, LONG/SHORT level math, duration parsing, candle conversion, and plausibility warning
+
+## Task: Split manual SL/TP into explicit mode (2026-02-12)
+- [x] Add `--manual-levels` mode flag and prevent mixing with objective/horizon targeting
+- [x] Enforce objective/horizon mode to accept exactly one input (objective or horizon)
+- [x] Route quick/full prompts by selected mode without ambiguous combinations
+- [x] Add tests for new parsing and horizon-only objective derivation
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

@@ -1,4 +1,5 @@
 import type { IndicatorSnapshot, PerpMarketSnapshot, Recommendation, Signal, TradeAction } from "./types.js";
+import { applyObjectiveTargeting } from "./targeting-policy.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -14,12 +15,30 @@ interface BuildRecommendationInput {
   tpPct?: number;
   slUsd?: number;
   tpUsd?: number;
+  objectiveUsdc?: number;
+  objectiveHorizon?: string;
+  baseInterval?: string;
 }
 
 export class RecommendationEngine {
   build(input: BuildRecommendationInput): Recommendation {
-    const { pair, lastPrice, indicators, perp, leverage, positionSizeUsd, slPct, tpPct, slUsd, tpUsd, biasTrend, biasInterval } =
-      input;
+    const {
+      pair,
+      lastPrice,
+      indicators,
+      perp,
+      leverage,
+      positionSizeUsd,
+      slPct,
+      tpPct,
+      slUsd,
+      tpUsd,
+      biasTrend,
+      biasInterval,
+      objectiveUsdc,
+      objectiveHorizon,
+      baseInterval
+    } = input;
     const { signal, confidence, rationale, regime } = this.evaluate(indicators, perp, lastPrice, biasTrend, biasInterval);
     const dailyTargetUsd = input.dailyTargetUsd ?? 100;
 
@@ -45,20 +64,69 @@ export class RecommendationEngine {
       takeProfit = entry;
     }
 
-    stopLoss = this.applyStopLossOverride({
-      signal,
-      entry,
-      current: stopLoss,
-      slPct,
-      slUsd
-    });
-    takeProfit = this.applyTakeProfitOverride({
-      signal,
-      entry,
-      current: takeProfit,
-      tpPct,
-      tpUsd
-    });
+    let objectiveContext:
+      | {
+          objectiveUsdc: number;
+          horizon: string;
+          horizonMinutes: number;
+          horizonCandles: number;
+          timeStopRule: string;
+          targetTpPct: number;
+          targetSlPct: number;
+          rr: number;
+          notionalUsd: number;
+          plausibilityWarning?: string;
+          expectedPnlAtTakeProfit: number;
+          expectedPnlAtStopLoss: number;
+        }
+      | undefined;
+
+    if (objectiveUsdc !== undefined || objectiveHorizon !== undefined) {
+      if (!leverage || !positionSizeUsd) {
+        throw new Error("Objective targeting requires leverage and position size.");
+      }
+      const objectiveTargets = applyObjectiveTargeting({
+        signal,
+        entry,
+        atr,
+        baseInterval: baseInterval ?? "1m",
+        leverage,
+        positionSizeUsd,
+        objectiveUsdc,
+        horizon: objectiveHorizon
+      });
+      takeProfit = objectiveTargets.takeProfit;
+      stopLoss = objectiveTargets.stopLoss;
+      objectiveContext = {
+        objectiveUsdc: objectiveTargets.objectiveUsdc,
+        horizon: objectiveTargets.horizon,
+        horizonMinutes: objectiveTargets.horizonMinutes,
+        horizonCandles: objectiveTargets.horizonCandles,
+        timeStopRule: objectiveTargets.timeStopRule,
+        targetTpPct: objectiveTargets.targetTpPct,
+        targetSlPct: objectiveTargets.targetSlPct,
+        rr: objectiveTargets.rr,
+        notionalUsd: objectiveTargets.notionalUsd,
+        plausibilityWarning: objectiveTargets.plausibilityWarning,
+        expectedPnlAtTakeProfit: objectiveTargets.expectedPnlAtTakeProfit,
+        expectedPnlAtStopLoss: objectiveTargets.expectedPnlAtStopLoss
+      };
+    } else {
+      stopLoss = this.applyStopLossOverride({
+        signal,
+        entry,
+        current: stopLoss,
+        slPct,
+        slUsd
+      });
+      takeProfit = this.applyTakeProfitOverride({
+        signal,
+        entry,
+        current: takeProfit,
+        tpPct,
+        tpUsd
+      });
+    }
 
     this.validateLevels(signal, entry, stopLoss, takeProfit);
 
@@ -94,11 +162,23 @@ export class RecommendationEngine {
       takeProfit: this.round(takeProfit),
       leverage,
       positionSizeUsd,
-      estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : pnl?.atStopLoss,
-      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : pnl?.atTakeProfit,
+      estimatedPnLAtStopLoss:
+        finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtStopLoss ?? pnl?.atStopLoss,
+      estimatedPnLAtTakeProfit:
+        finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit,
       riskRewardRatio: this.round(riskRewardRatio),
       dailyTargetUsd,
       tradesToDailyTarget,
+      objectiveUsdc: objectiveContext?.objectiveUsdc,
+      objectiveHorizon: objectiveContext?.horizon,
+      objectiveHorizonMinutes: objectiveContext?.horizonMinutes,
+      objectiveHorizonCandles: objectiveContext?.horizonCandles,
+      timeStopRule: objectiveContext?.timeStopRule,
+      objectiveTargetTpPct: objectiveContext?.targetTpPct,
+      objectiveTargetSlPct: objectiveContext?.targetSlPct,
+      objectiveRiskReward: objectiveContext?.rr,
+      objectiveNotionalUsd: objectiveContext?.notionalUsd,
+      objectivePlausibilityWarning: objectiveContext?.plausibilityWarning,
       confidence,
       rationale,
       indicators,

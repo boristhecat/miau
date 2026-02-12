@@ -53,12 +53,35 @@ function divider(): string {
   return `${colors.brightBlack}${"-".repeat(78)}${colors.reset}`;
 }
 
+function objectiveAggressiveness(rec: Recommendation): "LOW" | "MEDIUM" | "HIGH" | "VERY HIGH" {
+  if (rec.objectivePlausibilityWarning) {
+    return "VERY HIGH";
+  }
+  const tpPct = rec.objectiveTargetTpPct ?? 0;
+  if (tpPct <= 0.4) return "LOW";
+  if (tpPct <= 1.0) return "MEDIUM";
+  if (tpPct <= 1.8) return "HIGH";
+  return "VERY HIGH";
+}
+
+function objectiveAggressivenessColor(level: "LOW" | "MEDIUM" | "HIGH" | "VERY HIGH"): string {
+  if (level === "LOW") return colors.brightGreen;
+  if (level === "MEDIUM") return colors.brightYellow;
+  return colors.brightRed;
+}
+
 export class RecommendationPrinter {
   print(rec: Recommendation, options?: { showDetails?: boolean }): void {
-    const confColor = confidenceColor(rec.confidence);
-    const band = confidenceBand(rec.confidence);
     const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
     const showDetails = options?.showDetails === true;
+
+    if (!showDetails) {
+      this.printTradeLevels(rec, hasPosition);
+      return;
+    }
+
+    const confColor = confidenceColor(rec.confidence);
+    const band = confidenceBand(rec.confidence);
 
     console.log(`${colors.bgDark}${colors.white}${colors.bold}  MIAU TRADER  ${colors.reset}`);
     console.log(
@@ -73,64 +96,34 @@ export class RecommendationPrinter {
     );
     console.log(divider());
 
-    console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
-    console.log(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
-    console.log(
-      `${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}` +
-      (rec.estimatedPnLAtStopLoss !== undefined
-        ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtStopLoss)}]${colors.reset}`
-        : "")
-    );
-    console.log(
-      `${label("Take Profit")} ${colors.brightGreen}${fmt(rec.takeProfit)}${colors.reset}` +
-      (rec.estimatedPnLAtTakeProfit !== undefined
-        ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtTakeProfit)}]${colors.reset}`
-        : "")
-    );
-    if (hasPosition) {
-      console.log(
-        `${label("Position")} ${colors.white}${rec.leverage}x, ${rec.positionSizeUsd} USDC margin${colors.reset}`
-      );
-      if (rec.tradesToDailyTarget !== undefined) {
-        console.log(
-          `${label("Daily Target")} ${colors.white}${rec.dailyTargetUsd} USDC${colors.reset} ` +
-          `${colors.brightBlack}(~${rec.tradesToDailyTarget} TP hits)${colors.reset}`
-        );
-      }
-    }
-    if (rec.signal === "NO_TRADE") {
-      console.log(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
-    }
-    console.log(divider());
+    this.printTradeLevels(rec, hasPosition);
 
-    if (showDetails) {
-      console.log(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
-      console.log(
-        `${label("RSI(14)")} ${fmt(rec.indicators.rsi14)}   ` +
-        `${label("ADX(14)")} ${fmt(rec.indicators.adx14)}   ` +
-        `${label("ATR(14)")} ${fmt(rec.indicators.atr14)}`
-      );
-      console.log(
-        `${label("EMA(20)")} ${fmt(rec.indicators.ema20)}   ` +
-        `${label("EMA(50)")} ${fmt(rec.indicators.ema50)}   ` +
-        `${label("VWAP")} ${fmt(rec.indicators.vwap)}`
-      );
-      console.log(
-        `${label("MACD")} ${fmt(rec.indicators.macd)}   ` +
-        `${label("MACD Sig")} ${fmt(rec.indicators.macdSignal)}   ` +
-        `${label("MACD Hist")} ${fmt(rec.indicators.macdHistogram)}`
-      );
-      console.log(
-        `${label("BB Upper")} ${fmt(rec.indicators.bbUpper)}   ` +
-        `${label("BB Middle")} ${fmt(rec.indicators.bbMiddle)}   ` +
-        `${label("BB Lower")} ${fmt(rec.indicators.bbLower)}`
-      );
-      console.log(
-        `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
-        `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
-      );
-      console.log(divider());
-    }
+    console.log(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
+    console.log(
+      `${label("RSI(14)")} ${fmt(rec.indicators.rsi14)}   ` +
+      `${label("ADX(14)")} ${fmt(rec.indicators.adx14)}   ` +
+      `${label("ATR(14)")} ${fmt(rec.indicators.atr14)}`
+    );
+    console.log(
+      `${label("EMA(20)")} ${fmt(rec.indicators.ema20)}   ` +
+      `${label("EMA(50)")} ${fmt(rec.indicators.ema50)}   ` +
+      `${label("VWAP")} ${fmt(rec.indicators.vwap)}`
+    );
+    console.log(
+      `${label("MACD")} ${fmt(rec.indicators.macd)}   ` +
+      `${label("MACD Sig")} ${fmt(rec.indicators.macdSignal)}   ` +
+      `${label("MACD Hist")} ${fmt(rec.indicators.macdHistogram)}`
+    );
+    console.log(
+      `${label("BB Upper")} ${fmt(rec.indicators.bbUpper)}   ` +
+      `${label("BB Middle")} ${fmt(rec.indicators.bbMiddle)}   ` +
+      `${label("BB Lower")} ${fmt(rec.indicators.bbLower)}`
+    );
+    console.log(
+      `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
+      `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
+    );
+    console.log(divider());
 
     console.log(`${colors.bold}${colors.cyan}PERP CONTEXT${colors.reset}`);
     console.log(
@@ -148,12 +141,75 @@ export class RecommendationPrinter {
     );
     console.log(divider());
 
-    if (showDetails) {
-      console.log(`${colors.bold}${colors.cyan}RATIONALE${colors.reset}`);
-      rec.rationale.forEach((item) => {
-        console.log(`${colors.dim}${colors.brightBlack}>${colors.reset} ${item}`);
-      });
-      console.log("");
+    console.log(`${colors.bold}${colors.cyan}RATIONALE${colors.reset}`);
+    rec.rationale.forEach((item) => {
+      console.log(`${colors.dim}${colors.brightBlack}>${colors.reset} ${item}`);
+    });
+    console.log("");
+  }
+
+  private printTradeLevels(rec: Recommendation, hasPosition: boolean): void {
+    console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
+    console.log(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
+    console.log(
+      `${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}` +
+        (rec.estimatedPnLAtStopLoss !== undefined
+          ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtStopLoss)}]${colors.reset}`
+          : "")
+    );
+    console.log(
+      `${label("Take Profit")} ${colors.brightGreen}${fmt(rec.takeProfit)}${colors.reset}` +
+        (rec.estimatedPnLAtTakeProfit !== undefined
+          ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtTakeProfit)}]${colors.reset}`
+          : "")
+    );
+    if (hasPosition) {
+      const notional = rec.leverage! * rec.positionSizeUsd!;
+      console.log(
+        `${label("Position")} ${colors.white}${rec.leverage}x, ${rec.positionSizeUsd} USDC margin${colors.reset} ` +
+          `${colors.brightBlack}(notional ${notional.toFixed(2)} USDC)${colors.reset}`
+      );
+      if (rec.tradesToDailyTarget !== undefined) {
+        console.log(
+          `${label("Daily Target")} ${colors.white}${rec.dailyTargetUsd} USDC${colors.reset} ` +
+            `${colors.brightBlack}(~${rec.tradesToDailyTarget} TP hits)${colors.reset}`
+        );
+      }
     }
+    if (rec.objectiveUsdc !== undefined) {
+      const aggressiveness = objectiveAggressiveness(rec);
+      const aggressivenessColor = objectiveAggressivenessColor(aggressiveness);
+      console.log(
+        `${label("Objective")} ${colors.white}${rec.objectiveUsdc} USDC (PnL target)${colors.reset} ` +
+          `${colors.brightBlack}(aggr ${aggressivenessColor}${aggressiveness}${colors.brightBlack})${colors.reset}`
+      );
+    }
+    if (rec.objectiveHorizon !== undefined) {
+      const candles = rec.objectiveHorizonCandles !== undefined ? `${rec.objectiveHorizonCandles} candles` : "n/a candles";
+      console.log(
+        `${label("Horizon")} ${colors.white}${rec.objectiveHorizon}${colors.reset} ` +
+          `${colors.brightBlack}(${candles})${colors.reset}`
+      );
+    }
+    if (rec.timeStopRule) {
+      console.log(`${label("Time Stop")} ${colors.white}${rec.timeStopRule}${colors.reset}`);
+    }
+    if (rec.objectiveTargetTpPct !== undefined && rec.objectiveTargetSlPct !== undefined) {
+      console.log(
+        `${label("Target Pcts")} ${colors.white}TP ${rec.objectiveTargetTpPct.toFixed(3)}% / SL ${rec.objectiveTargetSlPct.toFixed(
+          3
+        )}%${colors.reset}` +
+          (rec.objectiveRiskReward !== undefined
+            ? ` ${colors.brightBlack}(RR ${rec.objectiveRiskReward.toFixed(2)})${colors.reset}`
+            : "")
+      );
+    }
+    if (rec.objectivePlausibilityWarning) {
+      console.log(`${label("Warning")} ${colors.brightYellow}${rec.objectivePlausibilityWarning}${colors.reset}`);
+    }
+    if (rec.signal === "NO_TRADE") {
+      console.log(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
+    }
+    console.log(divider());
   }
 }

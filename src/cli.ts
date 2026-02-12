@@ -101,7 +101,9 @@ async function main(): Promise<void> {
           slPct: tradeInput.slPct,
           tpPct: tradeInput.tpPct,
           slUsd: tradeInput.slUsd,
-          tpUsd: tradeInput.tpUsd
+          tpUsd: tradeInput.tpUsd,
+          objectiveUsdc: tradeInput.objectiveUsdc,
+          objectiveHorizon: tradeInput.objectiveHorizon
         });
         new RecommendationPrinter().print(recommendation, {
           showDetails: tradeInput.showDetails
@@ -196,34 +198,67 @@ async function promptInteractiveTradeInput(
   const biasTf = await promptWithDefault(rl, "Bias timeframe (--bias-tf)", base.biasTimeframe ?? "15m");
   const leverage = await promptOptional(rl, "Leverage (-l)", base.leverage?.toString());
   const size = await promptOptional(rl, "Position size USDC (-s)", base.positionSizeUsd?.toString());
+  const manualLevels = base.manualLevels;
+  const parsedLeverage = parseOptionalLeverageInput(leverage);
+  const parsedPositionSize = parseOptionalNumberInput(size, "position size");
 
-  const slMode = await promptWithDefault(rl, "Stop-loss mode [none|pct|usd]", currentMode(base.slPct, base.slUsd, "pct"));
-  const slValue =
-    slMode === "pct"
-      ? await promptWithDefault(rl, "Stop-loss percent (--sl)", (base.slPct ?? 0.6).toString())
-      : slMode === "usd"
-        ? await promptWithDefault(rl, "Stop-loss USD (--sl-usd)", (base.slUsd ?? 30).toString())
-        : undefined;
+  let slMode: "none" | "pct" | "usd" = "none";
+  let slValue: string | undefined;
+  let tpMode: "none" | "pct" | "usd" = "none";
+  let tpValue: string | undefined;
+  let objectiveUsdc: number | undefined;
+  let objectiveHorizon: string | undefined;
 
-  const tpMode = await promptWithDefault(rl, "Take-profit mode [none|pct|usd]", currentMode(base.tpPct, base.tpUsd, "pct"));
-  const tpValue =
-    tpMode === "pct"
-      ? await promptWithDefault(rl, "Take-profit percent (--tp)", (base.tpPct ?? 1.2).toString())
-      : tpMode === "usd"
-        ? await promptWithDefault(rl, "Take-profit USD (--tp-usd)", (base.tpUsd ?? 60).toString())
-        : undefined;
+  if (manualLevels) {
+    slMode = parseRiskMode(
+      await promptWithDefault(rl, "Stop-loss mode [none|pct|usd]", currentMode(base.slPct, base.slUsd, "pct")),
+      "stop-loss"
+    );
+    slValue =
+      slMode === "pct"
+        ? await promptWithDefault(rl, "Stop-loss percent (--sl)", (base.slPct ?? 0.6).toString())
+        : slMode === "usd"
+          ? await promptWithDefault(rl, "Stop-loss USD (--sl-usd)", (base.slUsd ?? 30).toString())
+          : undefined;
+
+    tpMode = parseRiskMode(
+      await promptWithDefault(rl, "Take-profit mode [none|pct|usd]", currentMode(base.tpPct, base.tpUsd, "pct")),
+      "take-profit"
+    );
+    tpValue =
+      tpMode === "pct"
+        ? await promptWithDefault(rl, "Take-profit percent (--tp)", (base.tpPct ?? 1.2).toString())
+        : tpMode === "usd"
+          ? await promptWithDefault(rl, "Take-profit USD (--tp-usd)", (base.tpUsd ?? 60).toString())
+          : undefined;
+  } else {
+    const objectiveRaw = await promptOptional(
+      rl,
+      "Profit objective USDC (--objective, notional PnL)",
+      base.objectiveUsdc?.toString()
+    );
+    const horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon);
+    objectiveUsdc = parseOptionalNumberInput(objectiveRaw, "profit objective");
+    objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
+    validateObjectiveOrHorizon(objectiveUsdc, objectiveHorizon);
+    if (parsedLeverage === undefined || parsedPositionSize === undefined) {
+      throw new Error("Objective/horizon mode requires leverage and position size.");
+    }
+  }
 
   const verboseAnswer = await promptWithDefault(rl, "Show details? [y|n]", base.showDetails ? "y" : "n");
-  const simAnswer = await promptWithDefault(rl, "Run 15m simulation? [y|n]", base.runSimulation ? "y" : "n");
 
   return {
     symbol: base.symbol,
     fullInteractive: true,
-    runSimulation: simAnswer.toLowerCase() === "y",
+    manualLevels,
+    runSimulation: base.runSimulation,
     timeframe: parseIntervalInput(tf, "timeframe"),
     biasTimeframe: parseIntervalInput(biasTf, "bias timeframe"),
-    leverage: parseOptionalLeverageInput(leverage),
-    positionSizeUsd: parseOptionalNumberInput(size, "position size"),
+    objectiveUsdc,
+    objectiveHorizon,
+    leverage: parsedLeverage,
+    positionSizeUsd: parsedPositionSize,
     slPct: slMode === "pct" ? parseRequiredNumberInput(slValue, "stop-loss percentage") : undefined,
     tpPct: tpMode === "pct" ? parseRequiredNumberInput(tpValue, "take-profit percentage") : undefined,
     slUsd: slMode === "usd" ? parseRequiredNumberInput(slValue, "stop-loss USD") : undefined,
@@ -237,28 +272,50 @@ async function promptQuickTradeInput(
   base: TradingInput
 ): Promise<TradingInput> {
   console.log(
-    `${ui.bold}${ui.green}Quick Mode${ui.reset} ${ui.gray}(core inputs only: Leverage, Size, SL, TP)${ui.reset}`
+    `${ui.bold}${ui.green}Quick Mode${ui.reset} ${ui.gray}(core inputs: Leverage, Size + target)${ui.reset}`
   );
 
   const leverage = await promptWithDefault(rl, "Leverage", base.leverage?.toString() ?? "5");
   const size = await promptWithDefault(rl, "Position size USDC", base.positionSizeUsd?.toString() ?? "250");
-  const slValue = await promptWithDefault(rl, "Stop-loss percent", (base.slPct ?? 0.6).toString());
-  const tpValue = await promptWithDefault(rl, "Take-profit percent", (base.tpPct ?? 1.2).toString());
-  const simAnswer = await promptWithDefault(rl, "Run 15m simulation? [y|n]", base.runSimulation ? "y" : "n");
+  const manualLevels = base.manualLevels;
+
+  let slValue: string | undefined;
+  let tpValue: string | undefined;
+  let objectiveRaw: string | undefined;
+  let horizonRaw: string | undefined;
+  if (manualLevels) {
+    slValue = await promptWithDefault(rl, "Stop-loss percent", (base.slPct ?? 0.6).toString());
+    tpValue = await promptWithDefault(rl, "Take-profit percent", (base.tpPct ?? 1.2).toString());
+  } else {
+    objectiveRaw = await promptOptional(
+      rl,
+      "Profit objective USDC (--objective, notional PnL)",
+      base.objectiveUsdc?.toString()
+    );
+    horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon);
+  }
+  const objectiveUsdc = parseOptionalNumberInput(objectiveRaw, "profit objective");
+  const objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
+  if (!manualLevels) {
+    validateObjectiveOrHorizon(objectiveUsdc, objectiveHorizon);
+  }
 
   return {
     symbol: base.symbol,
     fullInteractive: false,
-    runSimulation: simAnswer.toLowerCase() === "y",
+    manualLevels,
+    runSimulation: base.runSimulation,
+    objectiveUsdc,
+    objectiveHorizon,
     timeframe: "1m",
     biasTimeframe: "15m",
     leverage: parseOptionalLeverageInput(leverage),
     positionSizeUsd: parseRequiredNumberInput(size, "position size"),
-    slPct: parseRequiredNumberInput(slValue, "stop-loss percentage"),
-    tpPct: parseRequiredNumberInput(tpValue, "take-profit percentage"),
+    slPct: manualLevels ? parseRequiredNumberInput(slValue, "stop-loss percentage") : undefined,
+    tpPct: manualLevels ? parseRequiredNumberInput(tpValue, "take-profit percentage") : undefined,
     slUsd: undefined,
     tpUsd: undefined,
-    showDetails: true
+    showDetails: false
   };
 }
 
@@ -382,6 +439,34 @@ function parseOptionalNumberInput(value: string | undefined, label: string): num
     return undefined;
   }
   return parseRequiredNumberInput(value, label);
+}
+
+function parseOptionalHorizonInput(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error("Invalid trade horizon. Use minutes as a positive integer (e.g. 15, 75, 90).");
+  }
+  return normalized;
+}
+
+function validateObjectiveOrHorizon(objectiveUsdc?: number, objectiveHorizon?: string): void {
+  if (objectiveUsdc !== undefined && objectiveHorizon !== undefined) {
+    throw new Error("Provide either objective or horizon, not both.");
+  }
+  if (objectiveUsdc === undefined && objectiveHorizon === undefined) {
+    throw new Error("Provide either --objective or --horizon <minutes> (or enable --manual-levels for direct SL/TP).");
+  }
+}
+
+function parseRiskMode(value: string, label: "stop-loss" | "take-profit"): "none" | "pct" | "usd" {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "none" || normalized === "pct" || normalized === "usd") {
+    return normalized;
+  }
+  throw new Error(`Invalid ${label} mode. Use one of: none, pct, usd.`);
 }
 
 function parseRequiredNumberInput(value: string | undefined, label: string): number {

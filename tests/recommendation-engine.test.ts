@@ -181,4 +181,75 @@ describe("RecommendationEngine", () => {
     expect(rec.signal).toBe("NO_TRADE");
     expect(rec.action).toBe("NO TRADE");
   });
+
+  it("applies objective-driven targeting and adds time-stop metadata", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 58,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 20,
+      macdSignal: 10,
+      macdHistogram: 5,
+      atr14: 120,
+      adx14: 28,
+      bbUpper: 51000,
+      bbMiddle: 50000,
+      bbLower: 49000,
+      stochRsiK: 60,
+      stochRsiD: 50,
+      vwap: 50200
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      leverage: 10,
+      positionSizeUsd: 250,
+      objectiveUsdc: 10,
+      baseInterval: "1m"
+    });
+
+    expect(rec.objectiveUsdc).toBe(10);
+    expect(rec.objectiveHorizon).toBe("15m");
+    expect(rec.objectiveTargetTpPct).toBeCloseTo(0.4, 6);
+    expect(rec.objectiveTargetSlPct).toBeCloseTo(0.2857, 3);
+    expect(rec.timeStopRule).toContain("close at market");
+    expect(rec.estimatedPnLAtTakeProfit).toBeCloseTo(10, 6);
+  });
+
+  it("supports horizon-only targeting and derives objective", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 58,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 20,
+      macdSignal: 10,
+      macdHistogram: 5,
+      atr14: 120,
+      adx14: 28,
+      bbUpper: 51000,
+      bbMiddle: 50000,
+      bbLower: 49000,
+      stochRsiK: 60,
+      stochRsiD: 50,
+      vwap: 50200
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      leverage: 10,
+      positionSizeUsd: 250,
+      objectiveHorizon: "60",
+      baseInterval: "1m"
+    });
+
+    expect(rec.objectiveHorizon).toBe("60m");
+    expect(rec.objectiveUsdc).toBeDefined();
+    expect(rec.timeStopRule).toContain("60m");
+  });
 });
