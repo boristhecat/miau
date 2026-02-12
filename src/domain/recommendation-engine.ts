@@ -1,4 +1,4 @@
-import type { IndicatorSnapshot, PerpMarketSnapshot, Recommendation, Signal } from "./types.js";
+import type { IndicatorSnapshot, PerpMarketSnapshot, Recommendation, Signal, TradeAction } from "./types.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -394,15 +394,12 @@ export class RecommendationEngine {
 
   private toAction(
     signal: Signal,
-    confidence: number,
-    regime: "TRADEABLE" | "CHOPPY"
-  ): "GREEN" | "YELLOW" | "RED" {
+    _confidence: number,
+    _regime: "TRADEABLE" | "CHOPPY"
+  ): TradeAction {
     if (signal === "NO_TRADE") {
-      return "RED";
+      return "NO TRADE";
     }
-    if (regime === "CHOPPY" || confidence < 60) {
-      return "YELLOW";
-    }
-    return "GREEN";
+    return signal;
   }
 }

@@ -153,7 +153,7 @@ describe("RecommendationEngine", () => {
     expect(rec.tradesToDailyTarget).toBeDefined();
   });
 
-  it("returns NO_TRADE with RED action in choppy low-quality regime", () => {
+  it("returns NO_TRADE with NO TRADE action in choppy low-quality regime", () => {
     const indicators: IndicatorSnapshot = {
       rsi14: 50,
       ema20: 50001,
@@ -179,6 +179,6 @@ describe("RecommendationEngine", () => {
     });
 
     expect(rec.signal).toBe("NO_TRADE");
-    expect(rec.action).toBe("RED");
+    expect(rec.action).toBe("NO TRADE");
   });
 });
