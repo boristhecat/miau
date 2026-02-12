@@ -28,6 +28,13 @@ function confidenceColor(confidence: number): string {
   return colors.brightRed;
 }
 
+function confidenceBand(confidence: number): "LOW" | "MEDIUM" | "HIGH" | "VERY HIGH" {
+  if (confidence >= 85) return "VERY HIGH";
+  if (confidence >= 70) return "HIGH";
+  if (confidence >= 50) return "MEDIUM";
+  return "LOW";
+}
+
 function fmt(value: number): string {
   return Number(value.toFixed(4)).toString();
 }
@@ -48,6 +55,7 @@ function divider(): string {
 export class RecommendationPrinter {
   print(rec: Recommendation, options?: { showDetails?: boolean }): void {
     const confColor = confidenceColor(rec.confidence);
+    const band = confidenceBand(rec.confidence);
     const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
     const showDetails = options?.showDetails === true;
 
@@ -55,7 +63,7 @@ export class RecommendationPrinter {
     console.log(
       `${label("PAIR")} ${colors.bold}${colors.white}${rec.pair}${colors.reset}   ` +
       `${label("SIGNAL")} ${colorSignal(rec.signal)}   ` +
-      `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}%${colors.reset}`
+      `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}% (${band})${colors.reset}`
     );
     console.log(divider());
 
