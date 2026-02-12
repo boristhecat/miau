@@ -16,8 +16,8 @@ export function getUsageText(): string {
   return [
     "Usage: miau-trader",
     "",
-    "Interactive input format: SYMBOL [--tf INTERVAL] [--bias-tf INTERVAL] [-l LEVERAGE] [-s SIZE_USD] [--sl PCT|--sl-usd USD] [--tp PCT|--tp-usd USD] [-v]",
-    "Examples: BTC | ETH --tf 1m --bias-tf 15m -l 3 -s 250 --sl 0.8 --tp 1.6 | SOL --sl-usd 40 --tp-usd 90 -v",
-    "Flags: --tf, --bias-tf, -l/--leverage, -s/--size, --sl, --tp, --sl-usd, --tp-usd, -v/--verbose|--details"
+    "Query format: SYMBOL or SYMBOL -i",
+    "Default (SYMBOL): quick prompts for leverage, size, SL%, TP% with detailed output.",
+    "Full mode (-i): asks every config step-by-step with defaults."
   ].join("\n");
 }
