@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import { getUsageText, parseCliInput } from "../src/application/parse-cli-input.js";
 
 describe("parseCliInput", () => {
-  it("accepts no flags in early dev mode", () => {
-    expect(() => parseCliInput(["node", "cli"])).not.toThrow();
+  it("defaults to interactive mode with no args", () => {
+    expect(parseCliInput(["node", "cli"])).toEqual({ mode: "interactive" });
   });
 
-  it("throws for any provided argument", () => {
-    expect(() => parseCliInput(["node", "cli", "--logIndicators"]))
-      .toThrowError("takes no flags");
+  it("accepts rec mode argument", () => {
+    expect(parseCliInput(["node", "cli", "rec"])).toEqual({ mode: "rec" });
   });
 
   it("throws usage sentinel on --help", () => {
@@ -18,6 +17,11 @@ describe("parseCliInput", () => {
 
   it("throws for unknown argument", () => {
     expect(() => parseCliInput(["node", "cli", "BTC"]))
+      .toThrowError("Unknown argument");
+  });
+
+  it("throws when too many arguments are provided", () => {
+    expect(() => parseCliInput(["node", "cli", "rec", "extra"]))
       .toThrowError("Unknown argument");
   });
 });

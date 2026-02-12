@@ -3,6 +3,7 @@
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
 import { getUsageText, parseCliInput } from "./application/parse-cli-input.js";
 import { parseTradingInput, type TradingInput } from "./application/parse-trading-input.js";
+import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { RecommendationPrinter } from "./adapters/console/recommendation-printer.js";
@@ -29,9 +30,10 @@ const ui = {
 
 async function main(): Promise<void> {
   const logger = new ConsoleLogger();
+  let cliInput: ReturnType<typeof parseCliInput> | undefined;
 
   try {
-    parseCliInput(process.argv);
+    cliInput = parseCliInput(process.argv);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown CLI parsing error.";
     if (message === "USAGE") {
@@ -53,6 +55,26 @@ async function main(): Promise<void> {
     indicatorService: new IndicatorService(),
     recommendationEngine: new RecommendationEngine()
   });
+
+  if (!cliInput) {
+    logger.error("CLI input parsing failed unexpectedly.");
+    process.exitCode = 1;
+    return;
+  }
+
+  if (cliInput.mode === "rec") {
+    try {
+      await runRecommendationRanking({
+        logger,
+        recommendationUseCase: useCase
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unhandled rec mode error";
+      logger.error(`Failed to run rec mode: ${message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   const rl = readline.createInterface({ input, output });
   try {
@@ -106,6 +128,60 @@ async function main(): Promise<void> {
   } finally {
     rl.close();
   }
+}
+
+async function runRecommendationRanking(input: {
+  logger: ConsoleLogger;
+  recommendationUseCase: GenerateRecommendationUseCase;
+}): Promise<void> {
+  const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase);
+  input.logger.info("[rec] Scanning market states for top recommendations...");
+
+  const result = await rankUseCase.execute({
+    top: 5,
+    interval: "1m",
+    biasInterval: "15m"
+  });
+
+  if (result.ranked.length === 0) {
+    throw new Error("No opportunities found in rec mode.");
+  }
+
+  console.log("");
+  console.log(`${ui.bold}${ui.blue}TOP RECOMMENDATIONS${ui.reset} ${ui.gray}(highest -> lowest)${ui.reset}`);
+  result.ranked.forEach((item, index) => {
+    const rec = item.recommendation;
+    const signalColor = rec.signal === "LONG" ? ui.green : rec.signal === "SHORT" ? ui.red : ui.yellow;
+    const probabilityColor =
+      item.probabilityPositivePnl >= 70 ? ui.green : item.probabilityPositivePnl >= 50 ? ui.yellow : ui.red;
+
+    console.log(
+      `${ui.bold}${index + 1}.${ui.reset} ${ui.cyan}${item.symbol}${ui.reset} (${item.pair})  ` +
+        `${signalColor}${rec.action}${ui.reset}  ` +
+        `${ui.gray}prob:${ui.reset} ${probabilityColor}${item.probabilityPositivePnl}%${ui.reset}  ` +
+        `${ui.gray}conf:${ui.reset} ${rec.confidence}%  ` +
+        `${ui.gray}R/R:${ui.reset} ${rec.riskRewardRatio.toFixed(2)}`
+    );
+    console.log(
+      `   ${ui.gray}Entry:${ui.reset} ${rec.entry.toFixed(4)}  ` +
+        `${ui.gray}SL:${ui.reset} ${rec.stopLoss.toFixed(4)}  ` +
+        `${ui.gray}TP:${ui.reset} ${rec.takeProfit.toFixed(4)}`
+    );
+    console.log(`   ${ui.gray}Rationale:${ui.reset} ${rec.rationale[0] ?? "No rationale provided."}`);
+  });
+
+  console.log("");
+  console.log(
+    `${ui.gray}Scanned ${result.scannedSymbols} symbols. Ranked ${result.ranked.length}. Skipped ${result.skipped.length}.${ui.reset}`
+  );
+  if (result.skipped.length > 0) {
+    const sample = result.skipped
+      .slice(0, 3)
+      .map((item) => `${item.symbol}: ${item.reason}`)
+      .join(" | ");
+    input.logger.info(`[rec] Sample skipped symbols: ${sample}`);
+  }
+  console.log("");
 }
 
 async function promptInteractiveTradeInput(

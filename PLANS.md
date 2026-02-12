@@ -1,5 +1,12 @@
 # Project Plan
 
+## Task: `rec` top-opportunities mode (2026-02-12)
+- [x] Add CLI parameter parsing for `rec` mode
+- [x] Implement ranked top-5 opportunity scan with positive-PnL probability scoring
+- [x] Print ordered recommendations (highest to lowest)
+- [x] Add/update tests for parser and ranking logic
+- [x] Update README usage with the new `rec` command
+
 ## Task: README usage documentation (2026-02-12)
 - [x] Audit current CLI behavior and available commands
 - [x] Add README with installation, run modes, and examples

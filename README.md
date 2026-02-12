@@ -43,6 +43,15 @@ node dist/cli.js
 npm run dev -- --help
 ```
 
+### Top recommendations mode (`rec`)
+
+Scans a built-in token watchlist and prints the top 5 trade suggestions ordered by
+highest estimated probability of positive PnL to lowest.
+
+```bash
+npm run dev -- rec
+```
+
 ## Interactive usage
 
 After starting the app, enter input at the `Symbol` prompt:
@@ -94,6 +103,7 @@ Tips:
 - Perpetual market context (funding, premium, open interest, mark/index)
 - Rationale bullets explaining the score
 - Optional 15-minute simulation result (`SUCCESS`/`FAILURE`) based on public candles only
+- Optional `rec` ranking output with top 5 tokens (highest recommendation -> lowest)
 
 ## Indicators used
 
