@@ -10,7 +10,8 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Implement Backpack adapter and console presenter
 - [x] Implement CLI argument parsing and entrypoint
 - [x] Add tests for input parsing and Backpack API retrieval with mocking
-- [ ] Verify build/test workflow (blocked in sandbox: npm install requires network/cache)
+- [x] Verify build/test workflow
+- [x] Enforce PERP-only Backpack market resolution and kline request shape
 
 ## Completion Criteria
 - `npm run dev -- BTC-USD` prints a structured recommendation
