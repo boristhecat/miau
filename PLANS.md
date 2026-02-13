@@ -1,5 +1,14 @@
 # Project Plan
 
+## Task: Optional auto-order placement via Backpack (proposed)
+- [ ] Confirm scope override for `AGENTS.md` non-goal (`no trade execution`)
+- [ ] Add authenticated Backpack trading port + adapter for limit order placement
+- [ ] Extend CLI flow with post-recommendation confirmation to place optional limit order
+- [ ] Validate order inputs (symbol, side, price, quantity, tif) and enforce dry-run safeguards
+- [ ] Add application use-case to map recommendation levels to order payload
+- [ ] Add unit tests with HTTP mocking for auth signing, payload generation, and error handling
+- [ ] Document setup (API key/secret env vars), risks, and usage in README
+
 ## Task: `rec` top-opportunities mode (2026-02-12)
 - [x] Add CLI parameter parsing for `rec` mode
 - [x] Implement ranked top-5 opportunity scan with positive-PnL probability scoring
