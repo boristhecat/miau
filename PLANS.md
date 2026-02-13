@@ -46,6 +46,11 @@
 - [x] Keep 15-minute fallback when no horizon is set
 - [x] Update interactive help and README to reflect simulation timespan behavior
 
+## Task: Always-on simulation behavior (2026-02-12)
+- [x] Remove NO_TRADE simulation skip behavior
+- [x] Infer simulation direction from recommendation levels when signal is NO_TRADE
+- [x] Update help text and README to reflect always-on simulation behavior
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

@@ -341,11 +341,7 @@ function scheduleSimulation(input: {
   interval: string;
   horizonMinutes: number;
 }): void {
-  const signal = input.recommendation.signal;
-  if (signal === "NO_TRADE") {
-    input.logger.info("[sim] Skipped: recommendation is NO_TRADE.");
-    return;
-  }
+  const signal = resolveSimulationSignal(input.recommendation);
 
   const openedAtMs = Date.now();
   const horizonMs = input.horizonMinutes * 60 * 1000;
@@ -518,6 +514,17 @@ function resolveSimulationHorizonMinutes(objectiveHorizon?: string): number {
   return parsed;
 }
 
+function resolveSimulationSignal(recommendation: Recommendation): "LONG" | "SHORT" {
+  if (recommendation.signal === "LONG" || recommendation.signal === "SHORT") {
+    return recommendation.signal;
+  }
+  // If recommendation is NO_TRADE, run simulation anyway and infer direction from target levels.
+  if (recommendation.takeProfit < recommendation.entry) {
+    return "SHORT";
+  }
+  return "LONG";
+}
+
 function getInteractiveHelpText(): string {
   return [
     "",
@@ -531,7 +538,7 @@ function getInteractiveHelpText(): string {
     "- --objective <USDC>            Notional PnL target (objective mode)",
     "- --horizon <minutes>           Horizon in minutes (objective mode)",
     "- --manual-levels               Enable manual SL/TP prompts",
-    "- --simulate                    Run simulation in background (uses --horizon minutes, else 15m)",
+    "- --simulate                    Always run simulation in background (uses --horizon minutes, else 15m)",
     "",
     "Rules:",
     "- Use either --objective OR --horizon in objective mode (or none to use default horizon 15).",
