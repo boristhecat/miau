@@ -55,5 +55,6 @@ Also output short rationale bullets explaining the score.
 
 ## Working style for Codex
 - Always start by creating/updating `PLANS.md` for tasks that touch multiple files.
+- Before making changes, read `PLAN.md` and `docs/CURRENT_STATE.md`. If either conflicts with the current code, report the conflict and propose an update.
 - Make small, reviewable commits/patches.
 - If anything is ambiguous, ask a question before implementing.
