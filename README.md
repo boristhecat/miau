@@ -117,6 +117,7 @@ Tips:
 ## What the output includes
 
 - Default output: compact `TRADE LEVELS` block only
+- Trade Direction (`LONG`/`SHORT`/`NO TRADE`)
 - Entry / Stop Loss / Take Profit
 - Estimated PnL at SL/TP (when leverage + position size are provided)
 - No-trade decision + compact guard reason when setup is rejected

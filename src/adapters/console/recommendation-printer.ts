@@ -70,6 +70,19 @@ function objectiveAggressivenessColor(level: "LOW" | "MEDIUM" | "HIGH" | "VERY H
   return colors.brightRed;
 }
 
+function tradeDirection(rec: Recommendation): "LONG" | "SHORT" | "NO TRADE" {
+  if (rec.signal === "LONG" || rec.signal === "SHORT") {
+    return rec.signal;
+  }
+  if (rec.takeProfit < rec.entry) {
+    return "SHORT";
+  }
+  if (rec.takeProfit > rec.entry) {
+    return "LONG";
+  }
+  return "NO TRADE";
+}
+
 export class RecommendationPrinter {
   print(rec: Recommendation, options?: { showDetails?: boolean }): void {
     const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
@@ -149,7 +162,12 @@ export class RecommendationPrinter {
   }
 
   private printTradeLevels(rec: Recommendation, hasPosition: boolean): void {
+    const direction = tradeDirection(rec);
+    const directionColor =
+      direction === "LONG" ? colors.brightGreen : direction === "SHORT" ? colors.brightRed : colors.yellow;
+
     console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
+    console.log(`${label("Trade Direction")} ${directionColor}${colors.bold}${direction}${colors.reset}`);
     console.log(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
     console.log(
       `${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}` +
