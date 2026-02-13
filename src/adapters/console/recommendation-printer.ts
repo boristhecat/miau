@@ -209,6 +209,10 @@ export class RecommendationPrinter {
     }
     if (rec.signal === "NO_TRADE") {
       console.log(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
+      const guardReason = rec.rationale.find((line) => line.startsWith("No-trade guard:"));
+      if (guardReason) {
+        console.log(`${label("Reason")} ${colors.yellow}${guardReason.replace("No-trade guard: ", "")}${colors.reset}`);
+      }
     }
     console.log(divider());
   }

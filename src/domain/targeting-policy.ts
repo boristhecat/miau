@@ -116,14 +116,9 @@ export function deriveObjectiveFromHorizon(input: {
 }
 
 export function defaultHorizonForObjective(objectiveUsdc: number): string {
-  if (objectiveUsdc <= 10) {
-    return "15";
-  }
-  if (objectiveUsdc >= 30) {
-    return "75";
-  }
-  // Assumption: intermediate objectives default to a mid intraday horizon.
-  return "45";
+  // Assumption: use a fixed 15-minute default horizon for fast intraday execution.
+  void objectiveUsdc;
+  return "15";
 }
 
 export function defaultRiskRewardForObjective(objectiveUsdc: number): number {

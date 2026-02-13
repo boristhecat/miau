@@ -79,9 +79,12 @@ Prompts for core risk inputs:
 
 Defaults to:
 
+- Leverage: `20`
+- Position size: `250`
+- Horizon: `15m` (internally `15` minutes)
 - Timeframe: `1m`
 - Higher-timeframe bias: `15m`
-- Detailed output: enabled
+- Detailed output: disabled
 
 ### Full interactive mode (`-i`)
 

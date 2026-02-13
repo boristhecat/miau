@@ -105,7 +105,7 @@ describe("targeting-policy", () => {
 
   it("defaults horizon by objective", () => {
     expect(defaultHorizonForObjective(10)).toBe("15");
-    expect(defaultHorizonForObjective(30)).toBe("75");
+    expect(defaultHorizonForObjective(30)).toBe("15");
   });
 
   it("derives a realistic objective when only horizon is provided", () => {

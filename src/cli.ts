@@ -196,8 +196,8 @@ async function promptInteractiveTradeInput(
 
   const tf = await promptWithDefault(rl, "Timeframe (--tf)", base.timeframe ?? "1m");
   const biasTf = await promptWithDefault(rl, "Bias timeframe (--bias-tf)", base.biasTimeframe ?? "15m");
-  const leverage = await promptOptional(rl, "Leverage (-l)", base.leverage?.toString());
-  const size = await promptOptional(rl, "Position size USDC (-s)", base.positionSizeUsd?.toString());
+  const leverage = await promptOptional(rl, "Leverage (-l)", base.leverage?.toString() ?? "20");
+  const size = await promptOptional(rl, "Position size USDC (-s)", base.positionSizeUsd?.toString() ?? "250");
   const manualLevels = base.manualLevels;
   const parsedLeverage = parseOptionalLeverageInput(leverage);
   const parsedPositionSize = parseOptionalNumberInput(size, "position size");
@@ -237,10 +237,15 @@ async function promptInteractiveTradeInput(
       "Profit objective USDC (--objective, notional PnL)",
       base.objectiveUsdc?.toString()
     );
-    const horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon);
+    const horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon ?? "15");
     objectiveUsdc = parseOptionalNumberInput(objectiveRaw, "profit objective");
     objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
-    validateObjectiveOrHorizon(objectiveUsdc, objectiveHorizon);
+    if (objectiveUsdc !== undefined && objectiveHorizon !== undefined) {
+      throw new Error("Provide either objective or horizon, not both.");
+    }
+    if (objectiveUsdc === undefined && objectiveHorizon === undefined) {
+      objectiveHorizon = "15";
+    }
     if (parsedLeverage === undefined || parsedPositionSize === undefined) {
       throw new Error("Objective/horizon mode requires leverage and position size.");
     }
@@ -275,7 +280,7 @@ async function promptQuickTradeInput(
     `${ui.bold}${ui.green}Quick Mode${ui.reset} ${ui.gray}(core inputs: Leverage, Size + target)${ui.reset}`
   );
 
-  const leverage = await promptWithDefault(rl, "Leverage", base.leverage?.toString() ?? "5");
+  const leverage = await promptWithDefault(rl, "Leverage", base.leverage?.toString() ?? "20");
   const size = await promptWithDefault(rl, "Position size USDC", base.positionSizeUsd?.toString() ?? "250");
   const manualLevels = base.manualLevels;
 
@@ -292,12 +297,17 @@ async function promptQuickTradeInput(
       "Profit objective USDC (--objective, notional PnL)",
       base.objectiveUsdc?.toString()
     );
-    horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon);
+    horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon ?? "15");
   }
   const objectiveUsdc = parseOptionalNumberInput(objectiveRaw, "profit objective");
-  const objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
+  let objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
   if (!manualLevels) {
-    validateObjectiveOrHorizon(objectiveUsdc, objectiveHorizon);
+    if (objectiveUsdc !== undefined && objectiveHorizon !== undefined) {
+      throw new Error("Provide either objective or horizon, not both.");
+    }
+    if (objectiveUsdc === undefined && objectiveHorizon === undefined) {
+      objectiveHorizon = "15";
+    }
   }
 
   return {
@@ -450,15 +460,6 @@ function parseOptionalHorizonInput(value: string | undefined): string | undefine
     throw new Error("Invalid trade horizon. Use minutes as a positive integer (e.g. 15, 75, 90).");
   }
   return normalized;
-}
-
-function validateObjectiveOrHorizon(objectiveUsdc?: number, objectiveHorizon?: string): void {
-  if (objectiveUsdc !== undefined && objectiveHorizon !== undefined) {
-    throw new Error("Provide either objective or horizon, not both.");
-  }
-  if (objectiveUsdc === undefined && objectiveHorizon === undefined) {
-    throw new Error("Provide either --objective or --horizon <minutes> (or enable --manual-levels for direct SL/TP).");
-  }
 }
 
 function parseRiskMode(value: string, label: "stop-loss" | "take-profit"): "none" | "pct" | "usd" {

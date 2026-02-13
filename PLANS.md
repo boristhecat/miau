@@ -31,6 +31,11 @@
 - [x] Route quick/full prompts by selected mode without ambiguous combinations
 - [x] Add tests for new parsing and horizon-only objective derivation
 
+## Task: Update runtime defaults (2026-02-12)
+- [x] Set leverage default to 20
+- [x] Keep size default at 250 explicitly in prompts/docs
+- [x] Set horizon default to 15 minutes in prompt flow and objective fallback policy
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
