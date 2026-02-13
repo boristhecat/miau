@@ -109,14 +109,13 @@ Tips:
 
 ## What the output includes
 
-- Pair, signal, confidence band
+- Default output: compact `TRADE LEVELS` block only
 - Entry / Stop Loss / Take Profit
 - Estimated PnL at SL/TP (when leverage + position size are provided)
-- Indicator snapshot
-- Perpetual market context (funding, premium, open interest, mark/index)
-- Rationale bullets explaining the score
+- No-trade decision + compact guard reason when setup is rejected
 - Optional 15-minute simulation result (`SUCCESS`/`FAILURE`) based on public candles only
 - Objective/horizon metadata with time-stop rule when objective targeting is enabled
+- Full indicator/rationale/perp context output when detail mode is enabled in full interactive flow
 - Optional `rec` ranking output with top 5 tokens (highest recommendation -> lowest)
 
 ## Indicators used
