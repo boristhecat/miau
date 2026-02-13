@@ -114,12 +114,13 @@ async function main(): Promise<void> {
         });
 
         if (tradeInput.runSimulation) {
+          const simulationHorizonMinutes = resolveSimulationHorizonMinutes(tradeInput.objectiveHorizon);
           scheduleSimulation({
             logger,
             marketData,
             recommendation,
             interval: tradeInput.timeframe ?? "1m",
-            horizonMinutes: 15
+            horizonMinutes: simulationHorizonMinutes
           });
         }
       } catch (error) {
@@ -506,6 +507,17 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function resolveSimulationHorizonMinutes(objectiveHorizon?: string): number {
+  if (!objectiveHorizon) {
+    return 15;
+  }
+  const parsed = Number(objectiveHorizon);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return 15;
+  }
+  return parsed;
+}
+
 function getInteractiveHelpText(): string {
   return [
     "",
@@ -519,7 +531,7 @@ function getInteractiveHelpText(): string {
     "- --objective <USDC>            Notional PnL target (objective mode)",
     "- --horizon <minutes>           Horizon in minutes (objective mode)",
     "- --manual-levels               Enable manual SL/TP prompts",
-    "- --simulate                    Run 15-minute simulation in background",
+    "- --simulate                    Run simulation in background (uses --horizon minutes, else 15m)",
     "",
     "Rules:",
     "- Use either --objective OR --horizon in objective mode (or none to use default horizon 15).",

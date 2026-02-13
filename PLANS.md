@@ -41,6 +41,11 @@
 - [x] Print concise command and flag reference from interactive mode
 - [x] Document `help`/`?` in README interactive usage
 
+## Task: Simulation horizon sync (2026-02-12)
+- [x] Use user-provided horizon minutes for simulation timespan when available
+- [x] Keep 15-minute fallback when no horizon is set
+- [x] Update interactive help and README to reflect simulation timespan behavior
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

@@ -62,7 +62,7 @@ After starting the app, enter input at the `Symbol` prompt:
 - `BTC --objective 10` -> objective-driven TP/SL targeting (`10` = notional PnL target in USDC)
 - `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
 - `BTC --manual-levels` -> direct manual SL/TP mode
-- `BTC --simulate` -> schedule a 15-minute simulation for the generated levels
+- `BTC --simulate` -> schedule simulation for `--horizon` minutes (fallback: 15m)
 - `exit` or `quit` -> close the app
 
 ### Quick mode
@@ -75,6 +75,7 @@ Prompts for core risk inputs:
   - objective/horizon mode (provide exactly one of `--objective` or `--horizon`, where horizon is minutes)
   - manual levels mode (`--manual-levels`) for direct SL/TP percentages
 - Simulation is flag-driven (`--simulate`) and is not prompted interactively
+- Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
 - Profit objective in USDC (`--objective`, interpreted as notional PnL target) or trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
 - In manual mode: Stop-loss percent and Take-profit percent
 
@@ -100,6 +101,7 @@ Prompts for all configuration fields with defaults:
 - In objective/horizon mode: provide exactly one of objective or horizon
 - Show details: `y` / `n`
 - Simulation is flag-driven (`--simulate`) and is not prompted interactively
+- Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
 - Profit objective in USDC (`--objective`, optional)
 - Trade horizon minutes (`--horizon`, optional)
 
