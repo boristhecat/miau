@@ -1,5 +1,15 @@
 # Project Plan
 
+## Task: Document architecture (2026-02-13)
+- [x] Capture current clean-architecture boundaries and dependency rules
+- [x] Document runtime flows (interactive mode, rec mode, simulation path)
+- [x] Add `docs/ARCHITECTURE.md` with component map and data flow
+
+## Task: Document current implementation state (2026-02-13)
+- [x] Audit current CLI flows, recommendation logic, and rec mode behavior
+- [x] Create `docs/CURRENT_STATE.md` with architecture, capabilities, and constraints snapshot
+- [x] Verify commands and references in the snapshot
+
 ## Task: Optional auto-order placement via Backpack (proposed)
 - [ ] Confirm scope override for `AGENTS.md` non-goal (`no trade execution`)
 - [ ] Add authenticated Backpack trading port + adapter for limit order placement
