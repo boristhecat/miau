@@ -96,9 +96,11 @@ Prompts for all configuration fields with defaults:
 - Bias timeframe
 - Optional leverage
 - Optional position size
-- Target mode selection (`--manual-levels` on/off)
+- Target mode is selected by query flag before prompts:
+  - manual mode via `--manual-levels`
+  - objective/horizon mode without `--manual-levels`
 - In manual mode: stop-loss and take-profit mode (`none`, `pct`, `usd`)
-- In objective/horizon mode: provide exactly one of objective or horizon
+- In objective/horizon mode: provide objective, horizon, or leave both empty to use default horizon `15`
 - Show details: `y` / `n`
 - Simulation is flag-driven (`--simulate`) and is not prompted interactively
 - Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
@@ -116,7 +118,7 @@ Tips:
 - Entry / Stop Loss / Take Profit
 - Estimated PnL at SL/TP (when leverage + position size are provided)
 - No-trade decision + compact guard reason when setup is rejected
-- Optional 15-minute simulation result (`SUCCESS`/`FAILURE`) based on public candles only
+- Optional simulation result (`SUCCESS`/`FAILURE`) based on public candles only
 - Objective/horizon metadata with time-stop rule when objective targeting is enabled
 - Full indicator/rationale/perp context output when detail mode is enabled in full interactive flow
 - Optional `rec` ranking output with top 5 tokens (highest recommendation -> lowest)
