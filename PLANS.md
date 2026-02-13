@@ -36,6 +36,11 @@
 - [x] Keep size default at 250 explicitly in prompts/docs
 - [x] Set horizon default to 15 minutes in prompt flow and objective fallback policy
 
+## Task: Interactive help command (2026-02-12)
+- [x] Add `help` command handling in prompt loop
+- [x] Print concise command and flag reference from interactive mode
+- [x] Document `help`/`?` in README interactive usage
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

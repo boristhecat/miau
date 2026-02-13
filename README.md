@@ -56,6 +56,7 @@ npm run dev -- rec
 
 After starting the app, enter input at the `Symbol` prompt:
 
+- `help` or `?` -> show interactive commands + flags
 - `BTC` -> quick mode
 - `ETH -i` -> full interactive mode
 - `BTC --objective 10` -> objective-driven TP/SL targeting (`10` = notional PnL target in USDC)

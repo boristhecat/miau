@@ -80,9 +80,13 @@ async function main(): Promise<void> {
   try {
     while (true) {
       const raw = await rl.question(
-        `${ui.bold}${ui.cyan}Symbol${ui.reset} ${ui.gray}(e.g. BTC, ETH | 'exit')${ui.reset}: `
+        `${ui.bold}${ui.cyan}Symbol${ui.reset} ${ui.gray}(e.g. BTC, ETH | 'help' | 'exit')${ui.reset}: `
       );
       const normalized = raw.trim().toLowerCase();
+      if (normalized === "help" || normalized === "?") {
+        console.log(getInteractiveHelpText());
+        continue;
+      }
       if (normalized === "exit" || normalized === "quit") {
         break;
       }
@@ -500,6 +504,28 @@ function intervalToMs(interval: string): number {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getInteractiveHelpText(): string {
+  return [
+    "",
+    "Interactive commands:",
+    "- <SYMBOL>                      Quick mode (example: BTC)",
+    "- <SYMBOL> -i                   Full interactive mode",
+    "- help                          Show this help",
+    "- exit | quit                   Close the app",
+    "",
+    "Query flags (after SYMBOL):",
+    "- --objective <USDC>            Notional PnL target (objective mode)",
+    "- --horizon <minutes>           Horizon in minutes (objective mode)",
+    "- --manual-levels               Enable manual SL/TP prompts",
+    "- --simulate                    Run 15-minute simulation in background",
+    "",
+    "Rules:",
+    "- Use either --objective OR --horizon in objective mode (or none to use default horizon 15).",
+    "- --manual-levels cannot be combined with --objective/--horizon.",
+    ""
+  ].join("\n");
 }
 
 void main();
