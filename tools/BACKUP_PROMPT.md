@@ -1,0 +1,1 @@
+Create/update docs/CURRENT_STATE.md and docs/TODO.md as a durable checkpoint. Include: goal, current status, key decisions, important constraints/business rules, file list touched, and the next 5–10 tasks with acceptance criteria. Keep it concise but complete. After writing, continue with TODO #1.
