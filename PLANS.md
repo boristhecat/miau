@@ -70,6 +70,11 @@
 - [x] Infer simulation direction from recommendation levels when signal is NO_TRADE
 - [x] Update help text and README to reflect always-on simulation behavior
 
+## Task: Short-timeframe robustness filters (2026-02-12)
+- [x] Add VWAP no-trade band filter for near-VWAP chop
+- [x] Add ATR-regime adaptive TP/SL multipliers in base recommendation path
+- [x] Add tests for VWAP guard and ATR-adaptive TP/SL behavior
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

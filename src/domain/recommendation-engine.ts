@@ -43,21 +43,23 @@ export class RecommendationEngine {
     const dailyTargetUsd = input.dailyTargetUsd ?? 100;
 
     const atr = indicators.atr14;
+    const atrPct = this.computeAtrPct(indicators);
+    const atrProfile = this.getAtrProfile(atrPct);
     let entry = lastPrice;
     let stopLoss = lastPrice;
     let takeProfit = lastPrice;
 
     if (signal === "LONG") {
-      stopLoss = Math.min(lastPrice - 1.2 * atr, indicators.bbMiddle);
-      takeProfit = Math.max(lastPrice + 2.0 * atr, indicators.bbUpper);
+      stopLoss = Math.min(lastPrice - atrProfile.slAtrMultiplier * atr, indicators.bbMiddle);
+      takeProfit = Math.max(lastPrice + atrProfile.tpAtrMultiplier * atr, indicators.bbUpper);
       if (takeProfit <= entry) {
-        takeProfit = lastPrice + 1.8 * atr;
+        takeProfit = lastPrice + atrProfile.tpFallbackAtrMultiplier * atr;
       }
     } else if (signal === "SHORT") {
-      stopLoss = Math.max(lastPrice + 1.2 * atr, indicators.bbMiddle);
-      takeProfit = Math.min(lastPrice - 2.0 * atr, indicators.bbLower);
+      stopLoss = Math.max(lastPrice + atrProfile.slAtrMultiplier * atr, indicators.bbMiddle);
+      takeProfit = Math.min(lastPrice - atrProfile.tpAtrMultiplier * atr, indicators.bbLower);
       if (takeProfit >= entry) {
-        takeProfit = lastPrice - 1.8 * atr;
+        takeProfit = lastPrice - atrProfile.tpFallbackAtrMultiplier * atr;
       }
     } else {
       stopLoss = entry;
@@ -346,7 +348,44 @@ export class RecommendationEngine {
       rationale.push("Regime filter reduced confidence due to intraday chop risk.");
     }
 
+    const vwapDistancePct = Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1) * 100;
+    if (vwapDistancePct < 0.03) {
+      regime = "CHOPPY";
+      confidence = Math.max(25, confidence - 12);
+      rationale.push("VWAP filter: price is too close to VWAP; intraday direction is not clean.");
+    }
+
     return { signal, confidence, rationale, regime };
+  }
+
+  private computeAtrPct(indicators: IndicatorSnapshot): number {
+    return (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
+  }
+
+  private getAtrProfile(atrPct: number): {
+    slAtrMultiplier: number;
+    tpAtrMultiplier: number;
+    tpFallbackAtrMultiplier: number;
+  } {
+    if (atrPct < 0.18) {
+      return {
+        slAtrMultiplier: 1.0,
+        tpAtrMultiplier: 1.5,
+        tpFallbackAtrMultiplier: 1.35
+      };
+    }
+    if (atrPct > 1.0) {
+      return {
+        slAtrMultiplier: 1.45,
+        tpAtrMultiplier: 2.4,
+        tpFallbackAtrMultiplier: 2.2
+      };
+    }
+    return {
+      slAtrMultiplier: 1.2,
+      tpAtrMultiplier: 2.0,
+      tpFallbackAtrMultiplier: 1.8
+    };
   }
 
   private round(value: number): number {

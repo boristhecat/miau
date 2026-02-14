@@ -252,4 +252,73 @@ describe("RecommendationEngine", () => {
     expect(rec.objectiveUsdc).toBeDefined();
     expect(rec.timeStopRule).toContain("60m");
   });
+
+  it("applies VWAP no-trade filter when price is too close to VWAP", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 57,
+      ema20: 50010,
+      ema50: 50000,
+      macd: 5,
+      macdSignal: 4,
+      macdHistogram: 1,
+      atr14: 110,
+      adx14: 27,
+      bbUpper: 50300,
+      bbMiddle: 50000,
+      bbLower: 49700,
+      stochRsiK: 56,
+      stochRsiD: 50,
+      vwap: 50000
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50001,
+      indicators,
+      perp: basePerp
+    });
+
+    expect(rec.signal).toBe("NO_TRADE");
+    expect(rec.rationale.some((line) => line.includes("VWAP filter"))).toBe(true);
+  });
+
+  it("adapts TP/SL width by ATR regime", () => {
+    const lowVolIndicators: IndicatorSnapshot = {
+      rsi14: 58,
+      ema20: 50000,
+      ema50: 49900,
+      macd: 12,
+      macdSignal: 8,
+      macdHistogram: 4,
+      atr14: 70,
+      adx14: 30,
+      bbUpper: 50300,
+      bbMiddle: 50000,
+      bbLower: 49700,
+      stochRsiK: 60,
+      stochRsiD: 54,
+      vwap: 49800
+    };
+    const highVolIndicators: IndicatorSnapshot = {
+      ...lowVolIndicators,
+      atr14: 650
+    };
+
+    const lowVolRec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators: lowVolIndicators,
+      perp: basePerp
+    });
+    const highVolRec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators: highVolIndicators,
+      perp: basePerp
+    });
+
+    const lowVolDistance = Math.abs(lowVolRec.takeProfit - lowVolRec.entry);
+    const highVolDistance = Math.abs(highVolRec.takeProfit - highVolRec.entry);
+    expect(highVolDistance).toBeGreaterThan(lowVolDistance);
+  });
 });
