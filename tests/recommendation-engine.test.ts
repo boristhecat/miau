@@ -43,7 +43,6 @@ describe("RecommendationEngine", () => {
     expect(rec.stopLoss).toBe(49500);
     expect(rec.takeProfit).toBe(51000);
     expect(rec.riskRewardRatio).toBeGreaterThan(0);
-    expect(rec.dailyTargetUsd).toBe(100);
   });
 
   it("applies usd SL/TP overrides", () => {
@@ -122,7 +121,7 @@ describe("RecommendationEngine", () => {
     expect(recShortBias.rationale.some((line) => line.includes("15m") && line.includes("bearish"))).toBe(true);
   });
 
-  it("computes trades needed to daily target when position sizing is provided", () => {
+  it("computes position-based recommendation when leverage and size are provided", () => {
     const indicators: IndicatorSnapshot = {
       rsi14: 60,
       ema20: 50500,
@@ -147,10 +146,9 @@ describe("RecommendationEngine", () => {
       perp: basePerp,
       leverage: 5,
       positionSizeUsd: 250,
-      dailyTargetUsd: 100
     });
 
-    expect(rec.tradesToDailyTarget).toBeDefined();
+    expect(rec.estimatedPnLAtTakeProfit).toBeDefined();
   });
 
   it("returns NO_TRADE with NO TRADE action in choppy low-quality regime", () => {
@@ -180,6 +178,7 @@ describe("RecommendationEngine", () => {
 
     expect(rec.signal).toBe("NO_TRADE");
     expect(rec.action).toBe("NO TRADE");
+    expect(rec.marketRegime).toBe("LOW_LIQ_CHOP");
   });
 
   it("applies objective-driven targeting and adds time-stop metadata", () => {
@@ -320,5 +319,38 @@ describe("RecommendationEngine", () => {
     const lowVolDistance = Math.abs(lowVolRec.takeProfit - lowVolRec.entry);
     const highVolDistance = Math.abs(highVolRec.takeProfit - highVolRec.entry);
     expect(highVolDistance).toBeGreaterThan(lowVolDistance);
+  });
+
+  it("computes net PnL and expected value using execution realism costs", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 60,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 12,
+      macdSignal: 8,
+      macdHistogram: 4,
+      atr14: 130,
+      adx14: 30,
+      bbUpper: 51000,
+      bbMiddle: 50000,
+      bbLower: 49000,
+      stochRsiK: 62,
+      stochRsiD: 55,
+      vwap: 50300
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      leverage: 20,
+      positionSizeUsd: 250
+    });
+
+    expect(rec.netEstimatedPnLAtTakeProfit).toBeDefined();
+    expect(rec.netEstimatedPnLAtStopLoss).toBeDefined();
+    expect(rec.netRiskRewardRatio).toBeGreaterThan(0);
+    expect(rec.expectedValueUsd).toBeDefined();
   });
 });

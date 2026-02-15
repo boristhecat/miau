@@ -104,6 +104,7 @@ export class RecommendationPrinter {
     );
     console.log(
       `${label("REGIME")} ${rec.regime === "TRADEABLE" ? `${colors.brightGreen}${rec.regime}` : `${colors.brightRed}${rec.regime}`}${colors.reset}   ` +
+      `${label("Market Regime")} ${colors.white}${rec.marketRegime}${colors.reset}   ` +
       `${label("ACTION")} ${colors.bold}${colors.white}${rec.action}${colors.reset}   ` +
       `${label("R/R")} ${colors.white}${rec.riskRewardRatio.toFixed(2)}${colors.reset}`
     );
@@ -187,11 +188,22 @@ export class RecommendationPrinter {
         `${label("Position")} ${colors.white}${rec.leverage}x, ${rec.positionSizeUsd} USDC margin${colors.reset} ` +
           `${colors.brightBlack}(notional ${notional.toFixed(2)} USDC)${colors.reset}`
       );
-      if (rec.tradesToDailyTarget !== undefined) {
+      if (rec.netEstimatedPnLAtTakeProfit !== undefined && rec.netEstimatedPnLAtStopLoss !== undefined) {
         console.log(
-          `${label("Daily Target")} ${colors.white}${rec.dailyTargetUsd} USDC${colors.reset} ` +
-            `${colors.brightBlack}(~${rec.tradesToDailyTarget} TP hits)${colors.reset}`
+          `${label("Net PnL TP/SL")} ${colors.brightGreen}${fmtUsd(rec.netEstimatedPnLAtTakeProfit)}${colors.reset} / ` +
+            `${colors.brightRed}${fmtUsd(rec.netEstimatedPnLAtStopLoss)}${colors.reset}`
         );
+      }
+      if (rec.netRiskRewardRatio !== undefined) {
+        console.log(`${label("Net R/R")} ${colors.white}${rec.netRiskRewardRatio.toFixed(2)}${colors.reset}`);
+      }
+      if (rec.expectedValueUsd !== undefined) {
+        const evColor = rec.expectedValueUsd >= 0 ? colors.brightGreen : colors.brightRed;
+        const evPct =
+          rec.expectedValuePerMarginPct !== undefined
+            ? ` ${colors.brightBlack}(${rec.expectedValuePerMarginPct.toFixed(2)}% of margin)${colors.reset}`
+            : "";
+        console.log(`${label("Expected Value")} ${evColor}${fmtUsd(rec.expectedValueUsd)}${colors.reset}${evPct}`);
       }
     }
     if (rec.objectiveUsdc !== undefined) {

@@ -11,6 +11,15 @@ interface Market {
   visible?: boolean;
 }
 
+interface TickerRow {
+  symbol?: string;
+  volume?: string | number;
+  quoteVolume?: string | number;
+  volume24h?: string | number;
+  quoteVolume24h?: string | number;
+  lastPrice?: string | number;
+}
+
 interface MarkPriceRow {
   symbol?: string;
   fundingRate?: string | number;
@@ -26,6 +35,12 @@ interface OpenInterestRow {
 interface FundingRateRow {
   symbol?: string;
   fundingRate?: string | number;
+}
+
+interface TopPerpVolumeRow {
+  symbol: string;
+  base: string;
+  quoteVolume24h: number;
 }
 
 type RawKline =
@@ -141,6 +156,102 @@ export class BackpackMarketDataClient implements MarketDataPort {
       indexPrice: this.round(indexPrice),
       premiumPct: this.round(premiumPct)
     };
+  }
+
+  async getTopPerpSymbolsByVolume(limit: number): Promise<string[]> {
+    const ranked = await this.getTopPerpVolumeRows(limit);
+    return ranked.map((row) => row.base);
+  }
+
+  async getTopPerpSymbolsByVolumeWithOpenInterest(limit: number): Promise<
+    Array<{ symbol: string; quoteVolume24h: number; openInterest: number }>
+  > {
+    const ranked = await this.getTopPerpVolumeRows(limit);
+    const withOi = await Promise.all(
+      ranked.map(async (row) => {
+        const oiRows = await this.httpClient.get<OpenInterestRow[]>("/api/v1/openInterest", {
+          symbol: row.symbol
+        });
+        const oi = Array.isArray(oiRows) ? oiRows[0] : undefined;
+        const openInterest = this.toNumber(oi?.openInterest, "openInterest");
+        return {
+          symbol: row.base,
+          quoteVolume24h: this.round(row.quoteVolume24h),
+          openInterest: this.round(openInterest)
+        };
+      })
+    );
+
+    return withOi;
+  }
+
+  private async getTopPerpVolumeRows(limit: number): Promise<TopPerpVolumeRow[]> {
+    if (!Number.isFinite(limit) || limit <= 0) {
+      throw new Error("Limit for top symbols must be a positive number.");
+    }
+
+    const markets = await this.httpClient.get<Market[]>("/api/v1/markets");
+    if (!Array.isArray(markets)) {
+      throw new Error("Backpack markets response is invalid.");
+    }
+    const tickers = await this.httpClient.get<TickerRow[]>("/api/v1/tickers");
+    if (!Array.isArray(tickers)) {
+      throw new Error("Backpack tickers response is invalid.");
+    }
+
+    const perpSymbols = new Set(
+      markets
+        .filter((market) => {
+          const symbol = market.symbol?.toUpperCase();
+          const marketType = market.marketType?.toUpperCase();
+          return symbol?.endsWith("_PERP") && (marketType === "PERP" || marketType === "FUTURE");
+        })
+        .map((market) => market.symbol?.toUpperCase())
+        .filter((symbol): symbol is string => typeof symbol === "string")
+    );
+
+    const ranked = tickers
+      .map((row) => {
+        const symbol = row.symbol?.toUpperCase();
+        if (!symbol || !perpSymbols.has(symbol) || !symbol.endsWith("_USDC_PERP")) {
+          return null;
+        }
+        const quoteVolume =
+          this.safeToNumber(row.quoteVolume24h) ??
+          this.safeToNumber(row.quoteVolume) ??
+          (() => {
+            const volume = this.safeToNumber(row.volume24h) ?? this.safeToNumber(row.volume);
+            const lastPrice = this.safeToNumber(row.lastPrice);
+            if (volume === undefined || lastPrice === undefined) {
+              return undefined;
+            }
+            return volume * lastPrice;
+          })();
+        if (quoteVolume === undefined || quoteVolume <= 0) {
+          return null;
+        }
+
+        const base = symbol.split("_")[0];
+        if (!base) {
+          return null;
+        }
+
+        return { symbol, base, quoteVolume24h: quoteVolume };
+      })
+      .filter((row): row is TopPerpVolumeRow => row !== null)
+      .sort((a, b) => b.quoteVolume24h - a.quoteVolume24h);
+
+    const uniqueByBase = new Map<string, TopPerpVolumeRow>();
+    for (const row of ranked) {
+      if (!uniqueByBase.has(row.base)) {
+        uniqueByBase.set(row.base, row);
+      }
+    }
+    const result = [...uniqueByBase.values()].slice(0, Math.floor(limit));
+    if (result.length === 0) {
+      throw new Error("No PERP symbols with volume were returned from Backpack tickers.");
+    }
+    return result;
   }
 
   private parseRow(row: RawKline): Candle | null {
@@ -334,6 +445,14 @@ export class BackpackMarketDataClient implements MarketDataPort {
     const parsed = Number(value);
     if (Number.isNaN(parsed)) {
       throw new Error(`Backpack ${label} is missing or invalid.`);
+    }
+    return parsed;
+  }
+
+  private safeToNumber(value: string | number | undefined): number | undefined {
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      return undefined;
     }
     return parsed;
   }

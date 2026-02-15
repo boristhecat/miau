@@ -128,8 +128,10 @@ Tips:
 
 - Default output: compact `TRADE LEVELS` block only
 - Trade Direction (`LONG`/`SHORT`/`NO TRADE`)
+- Market regime classification (`TREND` / `RANGE` / `VOLATILE_SPIKE` / `LOW_LIQ_CHOP`)
 - Entry / Stop Loss / Take Profit
 - Estimated PnL at SL/TP (when leverage + position size are provided)
+- Net PnL at SL/TP, Net R/R, and EV (Expected Value) when leverage + position size are provided
 - No-trade decision + compact guard reason when setup is rejected
 - Optional simulation result (`SUCCESS`/`FAILURE`) based on public candles only
 - Objective/horizon metadata with time-stop rule when objective targeting is enabled

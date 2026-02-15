@@ -19,6 +19,14 @@ export function estimatePositivePnlProbability(rec: Recommendation): number {
     probability += 3;
   }
 
+  if (rec.marketRegime === "TREND") {
+    probability += 4;
+  } else if (rec.marketRegime === "VOLATILE_SPIKE") {
+    probability -= 5;
+  } else if (rec.marketRegime === "LOW_LIQ_CHOP") {
+    probability -= 10;
+  }
+
   if (rec.riskRewardRatio >= 2) {
     probability += 9;
   } else if (rec.riskRewardRatio >= 1.5) {

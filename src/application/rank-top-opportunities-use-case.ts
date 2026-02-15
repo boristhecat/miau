@@ -13,6 +13,10 @@ export interface RecommendationGenerator {
   }): Promise<Recommendation>;
 }
 
+export interface SymbolUniverseProvider {
+  getTopPerpSymbolsByVolume(limit: number): Promise<string[]>;
+}
+
 export interface RankedOpportunity {
   symbol: string;
   pair: string;
@@ -31,23 +35,7 @@ export interface TopOpportunitiesResult {
   skipped: SkippedOpportunity[];
 }
 
-export const DEFAULT_REC_SYMBOLS = [
-  "BTC",
-  "ETH",
-  "SOL",
-  "XRP",
-  "DOGE",
-  "BNB",
-  "ADA",
-  "AVAX",
-  "LINK",
-  "LTC",
-  "DOT",
-  "SUI",
-  "APT",
-  "NEAR",
-  "ARB"
-];
+export const DEFAULT_REC_SYMBOL_LIMIT = 15;
 
 export const DEFAULT_REC_SETTINGS = {
   interval: "1m",
@@ -58,7 +46,10 @@ export const DEFAULT_REC_SETTINGS = {
 } as const;
 
 export class RankTopOpportunitiesUseCase {
-  constructor(private readonly recommendationGenerator: RecommendationGenerator) {}
+  constructor(
+    private readonly recommendationGenerator: RecommendationGenerator,
+    private readonly symbolUniverseProvider: SymbolUniverseProvider
+  ) {}
 
   async execute(input?: {
     symbols?: string[];
@@ -69,7 +60,8 @@ export class RankTopOpportunitiesUseCase {
     objectiveHorizon?: string;
     top?: number;
   }): Promise<TopOpportunitiesResult> {
-    const symbols = input?.symbols?.length ? input.symbols : DEFAULT_REC_SYMBOLS;
+    const symbols =
+      input?.symbols?.length ? input.symbols : await this.symbolUniverseProvider.getTopPerpSymbolsByVolume(DEFAULT_REC_SYMBOL_LIMIT);
     const interval = input?.interval ?? DEFAULT_REC_SETTINGS.interval;
     const biasInterval = input?.biasInterval ?? DEFAULT_REC_SETTINGS.biasInterval;
     const leverage = input?.leverage ?? DEFAULT_REC_SETTINGS.leverage;

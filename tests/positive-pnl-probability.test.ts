@@ -35,13 +35,13 @@ function makeRecommendation(input: Partial<Recommendation>): Recommendation {
     signal: "LONG",
     action: "LONG",
     regime: "TRADEABLE",
+    marketRegime: "TREND",
     entry: 100,
     stopLoss: 99,
     takeProfit: 102,
     confidence: 70,
     rationale: ["test"],
     riskRewardRatio: 2,
-    dailyTargetUsd: 100,
     indicators,
     perp,
     ...input
@@ -61,6 +61,7 @@ describe("estimatePositivePnlProbability", () => {
       signal: "NO_TRADE",
       action: "NO TRADE",
       regime: "CHOPPY",
+      marketRegime: "LOW_LIQ_CHOP",
       confidence: 75,
       riskRewardRatio: 0.9
     });

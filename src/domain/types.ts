@@ -1,5 +1,6 @@
 export type Signal = "LONG" | "SHORT" | "NO_TRADE";
 export type TradeAction = "LONG" | "SHORT" | "NO TRADE";
+export type MarketRegime = "TREND" | "RANGE" | "VOLATILE_SPIKE" | "LOW_LIQ_CHOP";
 
 export interface Candle {
   timestamp: number;
@@ -42,6 +43,7 @@ export interface Recommendation {
   signal: Signal;
   action: TradeAction;
   regime: "TRADEABLE" | "CHOPPY";
+  marketRegime: MarketRegime;
   entry: number;
   stopLoss: number;
   takeProfit: number;
@@ -50,8 +52,6 @@ export interface Recommendation {
   estimatedPnLAtStopLoss?: number;
   estimatedPnLAtTakeProfit?: number;
   riskRewardRatio: number;
-  dailyTargetUsd: number;
-  tradesToDailyTarget?: number;
   objectiveUsdc?: number;
   objectiveHorizon?: string;
   objectiveHorizonMinutes?: number;
@@ -62,6 +62,11 @@ export interface Recommendation {
   objectiveRiskReward?: number;
   objectiveNotionalUsd?: number;
   objectivePlausibilityWarning?: string;
+  netEstimatedPnLAtStopLoss?: number;
+  netEstimatedPnLAtTakeProfit?: number;
+  netRiskRewardRatio?: number;
+  expectedValueUsd?: number;
+  expectedValuePerMarginPct?: number;
   confidence: number;
   rationale: string[];
   indicators: IndicatorSnapshot;

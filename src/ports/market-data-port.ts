@@ -8,4 +8,6 @@ export interface MarketDataPort {
   }): Promise<Candle[]>;
 
   getPerpSnapshot(params: { pair: string }): Promise<PerpMarketSnapshot>;
+
+  getTopPerpSymbolsByVolume(limit: number): Promise<string[]>;
 }

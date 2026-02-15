@@ -84,6 +84,23 @@
 - [x] Pass quick-mode default settings (1m/15m, leverage 20, size 250, horizon 15) in rec scan
 - [x] Add test coverage to verify rec generator call defaults
 
+## Task: Dynamic `rec` symbol universe (2026-02-12)
+- [x] Replace fixed rec symbol list with top 15 PERP symbols by 24h volume from Backpack
+- [x] Wire symbol universe provider into rank use-case and CLI rec command
+- [x] Add tests for dynamic symbol fetch and ranking use-case fallback path
+
+## Task: Transparent `rec` universe preview (2026-02-12)
+- [x] Print pre-scan notice when fetching top symbols by volume
+- [x] Print selected symbols with 24h volume and open interest before ranking
+- [x] Add adapter test coverage for volume + open interest symbol snapshot
+
+## Task: High-impact single-symbol mode phase 1 (2026-02-15)
+- [x] Add regime classifier in domain with explicit classes: trend/range/volatile-spike/low-liquidity-chop
+- [x] Apply regime-specific TP/SL profile selection in recommendation engine base path
+- [x] Add execution realism metrics (net TP/SL PnL, net R/R, EV) from simple fee+slippage model
+- [x] Extend trade-level console output with regime + EV/net metrics
+- [x] Add/adjust tests for regime classification and EV/net output math
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

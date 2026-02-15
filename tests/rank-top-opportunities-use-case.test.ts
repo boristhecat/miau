@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   RankTopOpportunitiesUseCase,
-  type RecommendationGenerator
+  type RecommendationGenerator,
+  type SymbolUniverseProvider
 } from "../src/application/rank-top-opportunities-use-case.js";
 import type { IndicatorSnapshot, PerpMarketSnapshot, Recommendation } from "../src/domain/types.js";
 
@@ -38,13 +39,13 @@ function makeRecommendation(input: Partial<Recommendation>): Recommendation {
     signal: "LONG",
     action: "LONG",
     regime: "TRADEABLE",
+    marketRegime: "TREND",
     entry: 100,
     stopLoss: 99,
     takeProfit: 102,
     confidence: 70,
     rationale: ["test"],
     riskRewardRatio: 2,
-    dailyTargetUsd: 100,
     indicators,
     perp,
     ...input
@@ -76,6 +77,14 @@ class FakeRecommendationGenerator implements RecommendationGenerator {
   }
 }
 
+class FakeSymbolUniverseProvider implements SymbolUniverseProvider {
+  constructor(private readonly symbols: string[]) {}
+
+  async getTopPerpSymbolsByVolume(limit: number): Promise<string[]> {
+    return this.symbols.slice(0, limit);
+  }
+}
+
 describe("RankTopOpportunitiesUseCase", () => {
   it("returns recommendations ordered from highest to lowest probability and excludes NO_TRADE", async () => {
     const generator = new FakeRecommendationGenerator({
@@ -94,12 +103,14 @@ describe("RankTopOpportunitiesUseCase", () => {
         signal: "NO_TRADE",
         action: "NO TRADE",
         regime: "CHOPPY",
+        marketRegime: "LOW_LIQ_CHOP",
         confidence: 80,
         riskRewardRatio: 0.9
       })
     });
 
-    const result = await new RankTopOpportunitiesUseCase(generator).execute({
+    const result = await new RankTopOpportunitiesUseCase(generator, new FakeSymbolUniverseProvider(["BTC", "ETH", "SOL"])).execute({
+      // explicit symbols bypass dynamic symbol universe fetch in this test
       symbols: ["BTC", "ETH", "SOL"],
       top: 5
     });
@@ -114,7 +125,8 @@ describe("RankTopOpportunitiesUseCase", () => {
       "XRP-USD": new Error("mock fetch failure")
     });
 
-    const result = await new RankTopOpportunitiesUseCase(generator).execute({
+    const result = await new RankTopOpportunitiesUseCase(generator, new FakeSymbolUniverseProvider(["BTC", "XRP"])).execute({
+      // explicit symbols bypass dynamic symbol universe fetch in this test
       symbols: ["BTC", "XRP"],
       top: 5
     });
@@ -130,7 +142,7 @@ describe("RankTopOpportunitiesUseCase", () => {
       "BTC-USD": makeRecommendation({ pair: "BTC-USD", confidence: 70 })
     });
 
-    await new RankTopOpportunitiesUseCase(generator).execute({
+    await new RankTopOpportunitiesUseCase(generator, new FakeSymbolUniverseProvider(["BTC"])).execute({
       symbols: ["BTC"],
       top: 1
     });
@@ -144,5 +156,20 @@ describe("RankTopOpportunitiesUseCase", () => {
       positionSizeUsd: 250,
       objectiveHorizon: "15"
     });
+  });
+
+  it("fetches dynamic top-volume symbols when symbols are not explicitly provided", async () => {
+    const generator = new FakeRecommendationGenerator({
+      "BTC-USD": makeRecommendation({ pair: "BTC-USD" }),
+      "ETH-USD": makeRecommendation({ pair: "ETH-USD" })
+    });
+    const symbolUniverse = new FakeSymbolUniverseProvider(["BTC", "ETH"]);
+
+    const result = await new RankTopOpportunitiesUseCase(generator, symbolUniverse).execute({
+      top: 2
+    });
+
+    expect(result.scannedSymbols).toBe(2);
+    expect(result.ranked.map((item) => item.symbol)).toEqual(["BTC", "ETH"]);
   });
 });

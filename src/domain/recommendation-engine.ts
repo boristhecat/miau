@@ -1,4 +1,4 @@
-import type { IndicatorSnapshot, PerpMarketSnapshot, Recommendation, Signal, TradeAction } from "./types.js";
+import type { IndicatorSnapshot, MarketRegime, PerpMarketSnapshot, Recommendation, Signal, TradeAction } from "./types.js";
 import { applyObjectiveTargeting } from "./targeting-policy.js";
 
 interface BuildRecommendationInput {
@@ -8,7 +8,6 @@ interface BuildRecommendationInput {
   perp: PerpMarketSnapshot;
   biasTrend?: Signal;
   biasInterval?: string;
-  dailyTargetUsd?: number;
   leverage?: number;
   positionSizeUsd?: number;
   slPct?: number;
@@ -18,6 +17,12 @@ interface BuildRecommendationInput {
   objectiveUsdc?: number;
   objectiveHorizon?: string;
   baseInterval?: string;
+}
+
+interface RegimeContext {
+  marketRegime: MarketRegime;
+  regime: "TRADEABLE" | "CHOPPY";
+  rationale: string[];
 }
 
 export class RecommendationEngine {
@@ -39,12 +44,17 @@ export class RecommendationEngine {
       objectiveHorizon,
       baseInterval
     } = input;
-    const { signal, confidence, rationale, regime } = this.evaluate(indicators, perp, lastPrice, biasTrend, biasInterval);
-    const dailyTargetUsd = input.dailyTargetUsd ?? 100;
+    const { signal, confidence, rationale, regime, marketRegime } = this.evaluate(
+      indicators,
+      perp,
+      lastPrice,
+      biasTrend,
+      biasInterval
+    );
 
     const atr = indicators.atr14;
     const atrPct = this.computeAtrPct(indicators);
-    const atrProfile = this.getAtrProfile(atrPct);
+    const atrProfile = this.getAtrProfile(atrPct, marketRegime);
     let entry = lastPrice;
     let stopLoss = lastPrice;
     let takeProfit = lastPrice;
@@ -144,21 +154,27 @@ export class RecommendationEngine {
     const finalSignal = this.applyTradeGuards({
       signal,
       regime,
+      marketRegime,
       confidence,
       riskRewardRatio,
       rationale
     });
     const action = this.toAction(finalSignal, confidence, regime);
-    const tradesToDailyTarget =
-      finalSignal !== "NO_TRADE" && pnl?.atTakeProfit && pnl.atTakeProfit > 0
-        ? Math.ceil(dailyTargetUsd / pnl.atTakeProfit)
-        : undefined;
+    const executionStats = this.computeExecutionStats({
+      signal: finalSignal,
+      leverage,
+      positionSizeUsd,
+      confidence,
+      estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtStopLoss ?? pnl?.atStopLoss,
+      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit
+    });
 
     return {
       pair,
       signal: finalSignal,
       action,
       regime,
+      marketRegime,
       entry: this.round(entry),
       stopLoss: this.round(stopLoss),
       takeProfit: this.round(takeProfit),
@@ -169,8 +185,6 @@ export class RecommendationEngine {
       estimatedPnLAtTakeProfit:
         finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit,
       riskRewardRatio: this.round(riskRewardRatio),
-      dailyTargetUsd,
-      tradesToDailyTarget,
       objectiveUsdc: objectiveContext?.objectiveUsdc,
       objectiveHorizon: objectiveContext?.horizon,
       objectiveHorizonMinutes: objectiveContext?.horizonMinutes,
@@ -181,6 +195,11 @@ export class RecommendationEngine {
       objectiveRiskReward: objectiveContext?.rr,
       objectiveNotionalUsd: objectiveContext?.notionalUsd,
       objectivePlausibilityWarning: objectiveContext?.plausibilityWarning,
+      netEstimatedPnLAtStopLoss: executionStats?.netEstimatedPnLAtStopLoss,
+      netEstimatedPnLAtTakeProfit: executionStats?.netEstimatedPnLAtTakeProfit,
+      netRiskRewardRatio: executionStats?.netRiskRewardRatio,
+      expectedValueUsd: executionStats?.expectedValueUsd,
+      expectedValuePerMarginPct: executionStats?.expectedValuePerMarginPct,
       confidence,
       rationale,
       indicators,
@@ -198,12 +217,16 @@ export class RecommendationEngine {
     signal: Exclude<Signal, "NO_TRADE">;
     confidence: number;
     rationale: string[];
+    marketRegime: MarketRegime;
     regime: "TRADEABLE" | "CHOPPY";
   } {
     let longScore = 0;
     let shortScore = 0;
     const rationale: string[] = [];
-    let regime: "TRADEABLE" | "CHOPPY" = "TRADEABLE";
+    const regimeContext = this.classifyRegime(indicators, lastPrice);
+    rationale.push(...regimeContext.rationale);
+    let regime = regimeContext.regime;
+    const marketRegime = regimeContext.marketRegime;
 
     if (indicators.ema20 > indicators.ema50) {
       longScore += 28;
@@ -221,8 +244,7 @@ export class RecommendationEngine {
       }
       rationale.push("ADX confirms a strong trend regime.");
     } else if (indicators.adx14 < 18) {
-      regime = "CHOPPY";
-      rationale.push("ADX is very low; market is likely choppy.");
+      rationale.push("ADX is very low; trend conviction is weak.");
     } else {
       rationale.push("ADX indicates a moderate trend regime.");
     }
@@ -312,15 +334,37 @@ export class RecommendationEngine {
     }
 
     const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
-    if (atrPct < 0.12) {
-      regime = "CHOPPY";
-      rationale.push("ATR is very low for intraday; avoid chop-heavy entries.");
-    } else if (atrPct < 0.8) {
+    if (atrPct < 0.8) {
       longScore += 3;
       shortScore += 3;
       rationale.push("ATR indicates controlled intraday volatility.");
     } else {
       rationale.push("ATR indicates elevated volatility; execution risk rises.");
+    }
+
+    if (marketRegime === "TREND") {
+      if (indicators.ema20 >= indicators.ema50) {
+        longScore += 8;
+      } else {
+        shortScore += 8;
+      }
+      rationale.push("Regime model favors trend-follow continuation.");
+    } else if (marketRegime === "RANGE") {
+      if (lastPrice <= indicators.bbLower) {
+        longScore += 8;
+        rationale.push("Range regime: price is at lower band, favoring mean reversion long.");
+      } else if (lastPrice >= indicators.bbUpper) {
+        shortScore += 8;
+        rationale.push("Range regime: price is at upper band, favoring mean reversion short.");
+      } else {
+        longScore -= 2;
+        shortScore -= 2;
+        rationale.push("Range regime but entry is mid-band; edge is limited.");
+      }
+    } else if (marketRegime === "VOLATILE_SPIKE") {
+      longScore -= 4;
+      shortScore -= 4;
+      rationale.push("Volatility spike regime: reduce conviction until expansion settles.");
     }
 
     const diff = Math.abs(longScore - shortScore);
@@ -355,18 +399,82 @@ export class RecommendationEngine {
       rationale.push("VWAP filter: price is too close to VWAP; intraday direction is not clean.");
     }
 
-    return { signal, confidence, rationale, regime };
+    return { signal, confidence, rationale, regime, marketRegime };
   }
 
   private computeAtrPct(indicators: IndicatorSnapshot): number {
     return (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
   }
 
-  private getAtrProfile(atrPct: number): {
+  private classifyRegime(indicators: IndicatorSnapshot, lastPrice: number): RegimeContext {
+    const atrPct = this.computeAtrPct(indicators);
+    const spread = indicators.ema20 - indicators.ema50;
+    const spreadPct = Math.abs(spread) / Math.max(lastPrice, 1) * 100;
+    const bandWidthPct = Math.abs(indicators.bbUpper - indicators.bbLower) / Math.max(lastPrice, 1) * 100;
+    const nearVwap = Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1) * 100 < 0.03;
+
+    if (atrPct < 0.12 && bandWidthPct < 0.35) {
+      return {
+        marketRegime: "LOW_LIQ_CHOP",
+        regime: "CHOPPY",
+        rationale: ["Regime classifier: low-liquidity chop (compressed range + very low ATR)."]
+      };
+    }
+    if (atrPct > 1.2 || bandWidthPct > 2.2) {
+      return {
+        marketRegime: "VOLATILE_SPIKE",
+        regime: "TRADEABLE",
+        rationale: ["Regime classifier: volatility spike (expanded range and elevated ATR)."]
+      };
+    }
+    if (indicators.adx14 >= 22 && spreadPct >= 0.12 && !nearVwap) {
+      return {
+        marketRegime: "TREND",
+        regime: "TRADEABLE",
+        rationale: ["Regime classifier: trend (ADX + EMA spread + price displacement)."]
+      };
+    }
+    return {
+      marketRegime: "RANGE",
+      regime: "TRADEABLE",
+      rationale: ["Regime classifier: range (no persistent trend edge detected)."]
+    };
+  }
+
+  private getAtrProfile(atrPct: number, marketRegime: MarketRegime): {
     slAtrMultiplier: number;
     tpAtrMultiplier: number;
     tpFallbackAtrMultiplier: number;
   } {
+    if (marketRegime === "LOW_LIQ_CHOP") {
+      return {
+        slAtrMultiplier: 0.9,
+        tpAtrMultiplier: 1.2,
+        tpFallbackAtrMultiplier: 1.1
+      };
+    }
+    if (marketRegime === "TREND") {
+      return {
+        slAtrMultiplier: 1.1,
+        tpAtrMultiplier: 2.4,
+        tpFallbackAtrMultiplier: 2.1
+      };
+    }
+    if (marketRegime === "RANGE") {
+      return {
+        slAtrMultiplier: 1.0,
+        tpAtrMultiplier: 1.6,
+        tpFallbackAtrMultiplier: 1.4
+      };
+    }
+    if (marketRegime === "VOLATILE_SPIKE") {
+      return {
+        slAtrMultiplier: 1.6,
+        tpAtrMultiplier: 2.2,
+        tpFallbackAtrMultiplier: 2.0
+      };
+    }
+
     if (atrPct < 0.18) {
       return {
         slAtrMultiplier: 1.0,
@@ -480,6 +588,58 @@ export class RecommendationEngine {
     };
   }
 
+  private computeExecutionStats(input: {
+    signal: Signal;
+    leverage?: number;
+    positionSizeUsd?: number;
+    confidence: number;
+    estimatedPnLAtStopLoss?: number;
+    estimatedPnLAtTakeProfit?: number;
+  }):
+    | {
+        netEstimatedPnLAtStopLoss: number;
+        netEstimatedPnLAtTakeProfit: number;
+        netRiskRewardRatio: number;
+        expectedValueUsd: number;
+        expectedValuePerMarginPct?: number;
+      }
+    | undefined {
+    if (
+      input.signal === "NO_TRADE" ||
+      input.leverage === undefined ||
+      input.positionSizeUsd === undefined ||
+      input.estimatedPnLAtStopLoss === undefined ||
+      input.estimatedPnLAtTakeProfit === undefined
+    ) {
+      return undefined;
+    }
+
+    const notional = input.positionSizeUsd * input.leverage;
+    if (notional <= 0) {
+      return undefined;
+    }
+
+    // Assumption: intraday perp execution realism with round-trip taker + slippage costs.
+    const roundTripCostRate = 0.0014; // 0.14%
+    const totalCosts = notional * roundTripCostRate;
+    const netTp = input.estimatedPnLAtTakeProfit - totalCosts;
+    const netSl = input.estimatedPnLAtStopLoss - totalCosts;
+    const winProbability = Math.min(0.95, Math.max(0.05, input.confidence / 100));
+    const expectedValueUsd = winProbability * netTp + (1 - winProbability) * netSl;
+    const netRiskRewardRatio = Math.abs(netSl) > 0 ? Math.abs(netTp / netSl) : 0;
+    const expectedValuePerMarginPct =
+      input.positionSizeUsd > 0 ? (expectedValueUsd / input.positionSizeUsd) * 100 : undefined;
+
+    return {
+      netEstimatedPnLAtStopLoss: this.round(netSl),
+      netEstimatedPnLAtTakeProfit: this.round(netTp),
+      netRiskRewardRatio: this.round(netRiskRewardRatio),
+      expectedValueUsd: this.round(expectedValueUsd),
+      expectedValuePerMarginPct:
+        expectedValuePerMarginPct === undefined ? undefined : this.round(expectedValuePerMarginPct)
+    };
+  }
+
   private computeRiskReward(entry: number, stopLoss: number, takeProfit: number): number {
     const risk = Math.abs(entry - stopLoss);
     const reward = Math.abs(takeProfit - entry);
@@ -492,10 +652,15 @@ export class RecommendationEngine {
   private applyTradeGuards(input: {
     signal: Exclude<Signal, "NO_TRADE">;
     regime: "TRADEABLE" | "CHOPPY";
+    marketRegime: MarketRegime;
     confidence: number;
     riskRewardRatio: number;
     rationale: string[];
   }): Signal {
+    if (input.marketRegime === "LOW_LIQ_CHOP") {
+      input.rationale.push("No-trade guard: low-liquidity chop regime.");
+      return "NO_TRADE";
+    }
     if (input.regime === "CHOPPY") {
       input.rationale.push("No-trade guard: choppy regime.");
       return "NO_TRADE";
