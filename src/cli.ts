@@ -66,7 +66,8 @@ async function main(): Promise<void> {
     try {
       await runRecommendationRanking({
         logger,
-        recommendationUseCase: useCase
+        recommendationUseCase: useCase,
+        symbolUniverseProvider: marketData
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unhandled rec mode error";
@@ -91,7 +92,8 @@ async function main(): Promise<void> {
         try {
           await runRecommendationRanking({
             logger,
-            recommendationUseCase: useCase
+            recommendationUseCase: useCase,
+            symbolUniverseProvider: marketData
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unhandled rec mode error";
@@ -152,14 +154,27 @@ async function main(): Promise<void> {
 async function runRecommendationRanking(input: {
   logger: ConsoleLogger;
   recommendationUseCase: GenerateRecommendationUseCase;
+  symbolUniverseProvider: BackpackMarketDataClient;
 }): Promise<void> {
-  const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase);
-  input.logger.info("[rec] Scanning market states for top recommendations...");
+  const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase, input.symbolUniverseProvider);
+  input.logger.info("[rec] Fetching top PERP symbols by 24h volume...");
+
+  const selected = await input.symbolUniverseProvider.getTopPerpSymbolsByVolumeWithOpenInterest(15);
+  console.log("");
+  console.log(`${ui.bold}${ui.blue}REC UNIVERSE${ui.reset} ${ui.gray}(top 15 by 24h volume)${ui.reset}`);
+  selected.forEach((item, index) => {
+    console.log(
+      `${ui.bold}${index + 1}.${ui.reset} ${ui.cyan}${item.symbol}${ui.reset}  ` +
+        `${ui.gray}vol24h:${ui.reset} ${item.quoteVolume24h.toFixed(2)}  ` +
+        `${ui.gray}oi:${ui.reset} ${item.openInterest.toFixed(2)}`
+    );
+  });
+  console.log("");
+  input.logger.info("[rec] Scanning selected symbols for top recommendations...");
 
   const result = await rankUseCase.execute({
-    top: 5,
-    interval: "1m",
-    biasInterval: "15m"
+    symbols: selected.map((item) => item.symbol),
+    top: 5
   });
 
   if (result.ranked.length === 0) {
@@ -186,13 +201,8 @@ async function runRecommendationRanking(input: {
         `${ui.gray}SL:${ui.reset} ${rec.stopLoss.toFixed(4)}  ` +
         `${ui.gray}TP:${ui.reset} ${rec.takeProfit.toFixed(4)}`
     );
-    console.log(`   ${ui.gray}Rationale:${ui.reset} ${rec.rationale[0] ?? "No rationale provided."}`);
   });
 
-  console.log("");
-  console.log(
-    `${ui.gray}Scanned ${result.scannedSymbols} symbols. Ranked ${result.ranked.length}. Skipped ${result.skipped.length}.${ui.reset}`
-  );
   if (result.skipped.length > 0) {
     const sample = result.skipped
       .slice(0, 3)

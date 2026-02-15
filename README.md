@@ -45,8 +45,10 @@ npm run dev -- --help
 
 ### Top recommendations mode (`rec`)
 
-Scans a built-in token watchlist and prints the top 5 trade suggestions ordered by
-highest estimated probability of positive PnL to lowest.
+Fetches the top 15 PERP symbols by 24h volume from Backpack and prints the top 5
+trade suggestions ordered by highest estimated probability of positive PnL to lowest.
+Before scanning, it prints the selected universe with each symbol's 24h volume and open interest.
+The ranked list prints symbol, side/action, probability, confidence, R/R, and entry/SL/TP.
 
 `rec` uses the same defaults as quick single-symbol mode:
 - Timeframe: `1m`
