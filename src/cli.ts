@@ -80,11 +80,23 @@ async function main(): Promise<void> {
   try {
     while (true) {
       const raw = await rl.question(
-        `${ui.bold}${ui.cyan}Symbol${ui.reset} ${ui.gray}(e.g. BTC, ETH | 'help' | 'exit')${ui.reset}: `
+        `${ui.bold}${ui.cyan}Symbol${ui.reset} ${ui.gray}(e.g. BTC, ETH | 'help' | 'rec' | 'exit')${ui.reset}: `
       );
       const normalized = raw.trim().toLowerCase();
       if (normalized === "help" || normalized === "?") {
         console.log(getInteractiveHelpText());
+        continue;
+      }
+      if (normalized === "rec") {
+        try {
+          await runRecommendationRanking({
+            logger,
+            recommendationUseCase: useCase
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unhandled rec mode error";
+          logger.error(`Failed to run rec mode: ${message}`);
+        }
         continue;
       }
       if (normalized === "exit" || normalized === "quit") {
@@ -531,6 +543,7 @@ function getInteractiveHelpText(): string {
     "Interactive commands:",
     "- <SYMBOL>                      Quick mode (example: BTC)",
     "- <SYMBOL> -i                   Full interactive mode",
+    "- rec                           Run top recommendations scan",
     "- help                          Show this help",
     "- exit | quit                   Close the app",
     "",

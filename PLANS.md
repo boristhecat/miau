@@ -75,6 +75,11 @@
 - [x] Add ATR-regime adaptive TP/SL multipliers in base recommendation path
 - [x] Add tests for VWAP guard and ATR-adaptive TP/SL behavior
 
+## Task: In-app `rec` command (2026-02-12)
+- [x] Add `rec` interactive command in the main prompt loop
+- [x] Reuse existing top-opportunities use-case in interactive mode
+- [x] Update interactive help text and README command list
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
