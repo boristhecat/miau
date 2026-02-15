@@ -80,6 +80,10 @@
 - [x] Reuse existing top-opportunities use-case in interactive mode
 - [x] Update interactive help text and README command list
 
+## Task: Align `rec` with single-symbol defaults (2026-02-12)
+- [x] Pass quick-mode default settings (1m/15m, leverage 20, size 250, horizon 15) in rec scan
+- [x] Add test coverage to verify rec generator call defaults
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

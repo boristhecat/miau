@@ -52,9 +52,19 @@ function makeRecommendation(input: Partial<Recommendation>): Recommendation {
 }
 
 class FakeRecommendationGenerator implements RecommendationGenerator {
+  public readonly calls: Array<{ pair: string; interval?: string; biasInterval?: string; leverage?: number; positionSizeUsd?: number; objectiveHorizon?: string }> = [];
+
   constructor(private readonly responses: Record<string, Recommendation | Error>) {}
 
-  async execute(input: { pair: string }): Promise<Recommendation> {
+  async execute(input: {
+    pair: string;
+    interval?: string;
+    biasInterval?: string;
+    leverage?: number;
+    positionSizeUsd?: number;
+    objectiveHorizon?: string;
+  }): Promise<Recommendation> {
+    this.calls.push(input);
     const response = this.responses[input.pair];
     if (!response) {
       throw new Error(`Missing fake response for ${input.pair}`);
@@ -113,5 +123,26 @@ describe("RankTopOpportunitiesUseCase", () => {
     expect(result.ranked).toHaveLength(1);
     expect(result.skipped).toHaveLength(1);
     expect(result.skipped[0]!.symbol).toBe("XRP");
+  });
+
+  it("uses the same defaults as quick single-symbol mode when scanning", async () => {
+    const generator = new FakeRecommendationGenerator({
+      "BTC-USD": makeRecommendation({ pair: "BTC-USD", confidence: 70 })
+    });
+
+    await new RankTopOpportunitiesUseCase(generator).execute({
+      symbols: ["BTC"],
+      top: 1
+    });
+
+    expect(generator.calls).toHaveLength(1);
+    expect(generator.calls[0]).toMatchObject({
+      pair: "BTC-USD",
+      interval: "1m",
+      biasInterval: "15m",
+      leverage: 20,
+      positionSizeUsd: 250,
+      objectiveHorizon: "15"
+    });
   });
 });

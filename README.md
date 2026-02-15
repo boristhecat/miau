@@ -48,6 +48,13 @@ npm run dev -- --help
 Scans a built-in token watchlist and prints the top 5 trade suggestions ordered by
 highest estimated probability of positive PnL to lowest.
 
+`rec` uses the same defaults as quick single-symbol mode:
+- Timeframe: `1m`
+- Bias timeframe: `15m`
+- Leverage: `20`
+- Position size: `250`
+- Horizon: `15` minutes
+
 ```bash
 npm run dev -- rec
 ```

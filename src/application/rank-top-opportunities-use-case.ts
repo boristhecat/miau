@@ -7,6 +7,9 @@ export interface RecommendationGenerator {
     interval?: string;
     biasInterval?: string;
     limit?: number;
+    leverage?: number;
+    positionSizeUsd?: number;
+    objectiveHorizon?: string;
   }): Promise<Recommendation>;
 }
 
@@ -46,6 +49,14 @@ export const DEFAULT_REC_SYMBOLS = [
   "ARB"
 ];
 
+export const DEFAULT_REC_SETTINGS = {
+  interval: "1m",
+  biasInterval: "15m",
+  leverage: 20,
+  positionSizeUsd: 250,
+  objectiveHorizon: "15"
+} as const;
+
 export class RankTopOpportunitiesUseCase {
   constructor(private readonly recommendationGenerator: RecommendationGenerator) {}
 
@@ -53,11 +64,17 @@ export class RankTopOpportunitiesUseCase {
     symbols?: string[];
     interval?: string;
     biasInterval?: string;
+    leverage?: number;
+    positionSizeUsd?: number;
+    objectiveHorizon?: string;
     top?: number;
   }): Promise<TopOpportunitiesResult> {
     const symbols = input?.symbols?.length ? input.symbols : DEFAULT_REC_SYMBOLS;
-    const interval = input?.interval ?? "1m";
-    const biasInterval = input?.biasInterval ?? "15m";
+    const interval = input?.interval ?? DEFAULT_REC_SETTINGS.interval;
+    const biasInterval = input?.biasInterval ?? DEFAULT_REC_SETTINGS.biasInterval;
+    const leverage = input?.leverage ?? DEFAULT_REC_SETTINGS.leverage;
+    const positionSizeUsd = input?.positionSizeUsd ?? DEFAULT_REC_SETTINGS.positionSizeUsd;
+    const objectiveHorizon = input?.objectiveHorizon ?? DEFAULT_REC_SETTINGS.objectiveHorizon;
     const top = input?.top ?? 5;
 
     const ranked: RankedOpportunity[] = [];
@@ -69,7 +86,10 @@ export class RankTopOpportunitiesUseCase {
         const recommendation = await this.recommendationGenerator.execute({
           pair,
           interval,
-          biasInterval
+          biasInterval,
+          leverage,
+          positionSizeUsd,
+          objectiveHorizon
         });
         const probabilityPositivePnl = estimatePositivePnlProbability(recommendation);
 
