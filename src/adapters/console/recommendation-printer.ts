@@ -54,6 +54,122 @@ function qualityVerdictColor(verdict?: Recommendation["qualityVerdict"]): string
   return colors.white;
 }
 
+function stripReasonPrefix(line: string): string {
+  return line
+    .replace(/^No-trade guard:\s*/i, "")
+    .replace(/^Guard advisory:\s*/i, "")
+    .replace(/^Direction override:\s*/i, "")
+    .replace(/^Calibration:\s*/i, "")
+    .trim();
+}
+
+function toPlainTraderReason(line: string): string {
+  const normalized = stripReasonPrefix(line);
+  if (normalized.startsWith("avoid fading a strong recent bullish impulse")) {
+    return "Price is pushing up strongly right now; shorting into that momentum is risky.";
+  }
+  if (normalized.startsWith("avoid fading a strong recent bearish impulse")) {
+    return "Price is dropping strongly right now; longing into that momentum is risky.";
+  }
+  if (normalized.startsWith("trend entry is extended")) {
+    return "Entry is far from the trend mean; waiting for a pullback is safer.";
+  }
+  if (normalized.startsWith("breakout failed follow-through validation")) {
+    return "Breakout did not continue after the break; reversal risk is higher.";
+  }
+  if (normalized.startsWith("low-liquidity chop regime")) {
+    return "Market is choppy and thin; direction is unreliable.";
+  }
+  if (normalized.startsWith("choppy regime")) {
+    return "Market is chopping sideways; signals are less reliable.";
+  }
+  if (normalized.startsWith("risk/reward below 1.2")) {
+    return "Potential upside is too small versus downside risk.";
+  }
+  if (normalized.startsWith("setup grade D")) {
+    return "Overall setup quality is too weak.";
+  }
+  if (normalized.startsWith("setup grade C is too weak for <=10m trading")) {
+    return "For fast trades, this setup quality is not strong enough.";
+  }
+  if (normalized.startsWith("confidence too low")) {
+    return "Signal confidence is too low.";
+  }
+  if (normalized.startsWith("confidence below short-timeframe threshold")) {
+    return "For short timeframes, confidence is below the required level.";
+  }
+  if (normalized.startsWith("setup quality below threshold")) {
+    return "Setup quality is below minimum threshold.";
+  }
+  if (normalized.startsWith("setup quality below short-timeframe threshold")) {
+    return "For short timeframes, setup quality is below the required level.";
+  }
+  if (normalized.startsWith("user requested LONG; model bias was SHORT")) {
+    return "You forced LONG while the model bias is SHORT.";
+  }
+  if (normalized.startsWith("user requested SHORT; model bias was LONG")) {
+    return "You forced SHORT while the model bias is LONG.";
+  }
+  if (normalized.startsWith("user requested")) {
+    return "User-selected direction is applied.";
+  }
+  if (normalized.startsWith("Setup grade ")) {
+    return "Grade combines location, trigger quality, market context, risk/reward, and trading costs.";
+  }
+  if (normalized.startsWith("Regime classifier: trend")) {
+    return "Market looks directional/trending.";
+  }
+  if (normalized.startsWith("Regime classifier: range")) {
+    return "Market looks range-bound right now.";
+  }
+  if (normalized.startsWith("Regime classifier: volatility spike")) {
+    return "Volatility is elevated; moves can be unstable.";
+  }
+  if (normalized.startsWith("Regime classifier: low-liquidity chop")) {
+    return "Low-liquidity chop detected; signals are noisy.";
+  }
+  return normalized;
+}
+
+function collectSetupReasons(rec: Recommendation): string[] {
+  const reasons: string[] = [];
+  const pushUnique = (line: string): void => {
+    const normalized = toPlainTraderReason(line);
+    if (!normalized) return;
+    if (reasons.includes(normalized)) return;
+    reasons.push(normalized);
+  };
+
+  const guardOrAdvisory = rec.rationale.find((line) => line.startsWith("No-trade guard:") || line.startsWith("Guard advisory:"));
+  if (guardOrAdvisory) {
+    pushUnique(guardOrAdvisory);
+  }
+
+  const directionReason = rec.rationale.find((line) => line.startsWith("Direction override:"));
+  if (directionReason) {
+    pushUnique(directionReason);
+  }
+
+  if (reasons.length < 3) {
+    for (const line of rec.rationale) {
+      if (
+        line.startsWith("No-trade guard:") ||
+        line.startsWith("Guard advisory:") ||
+        line.startsWith("Direction override:") ||
+        line.startsWith("Setup grade ") ||
+        line.startsWith("Calibration:") ||
+        line.startsWith("Cooldown advisory:")
+      ) {
+        continue;
+      }
+      pushUnique(line);
+      if (reasons.length >= 3) break;
+    }
+  }
+
+  return reasons.slice(0, 3);
+}
+
 function fmt(value: number): string {
   return Number(value.toFixed(4)).toString();
 }
@@ -69,6 +185,10 @@ function label(name: string): string {
 
 function divider(): string {
   return `${colors.brightBlack}${"-".repeat(78)}${colors.reset}`;
+}
+
+function reasonIndent(): string {
+  return `${colors.brightBlack}${" ".repeat(18)}${colors.reset}`;
 }
 
 function objectiveAggressiveness(rec: Recommendation): "LOW" | "MEDIUM" | "HIGH" | "VERY HIGH" {
@@ -211,27 +331,10 @@ export class RecommendationPrinter {
     const directionColor =
       direction === "LONG" ? colors.brightGreen : direction === "SHORT" ? colors.brightRed : colors.yellow;
     const hasCurrentPrice = Number.isFinite(rec.perp.markPrice) && rec.perp.markPrice > 0;
+    const keyReasons = collectSetupReasons(rec);
 
-    write(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
+    write(`${colors.bold}${colors.cyan}1) TRADE${colors.reset}`);
     write(`${label("Trade Direction")} ${directionColor}${colors.bold}${direction}${colors.reset}`);
-    write(
-      `${label("Setup Quality")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
-    );
-    write(`${label("Setup Grade")} ${setupGradeColor(rec.setupGrade)}${colors.bold}${rec.setupGrade}${colors.reset}`);
-    if (rec.qualityVerdict) {
-      write(
-        `${label("Quality Verdict")} ${qualityVerdictColor(rec.qualityVerdict)}${colors.bold}${rec.qualityVerdict}${colors.reset}`
-      );
-    }
-    if (rec.requestedDirection) {
-      const conflict = rec.modelSignal && rec.modelSignal !== rec.requestedDirection;
-      write(
-        `${label("Direction Input")} ${colors.white}${rec.requestedDirection}${colors.reset}` +
-          (rec.modelSignal
-            ? ` ${colors.brightBlack}(model ${rec.modelSignal}${conflict ? ", conflict" : ", aligned"})${colors.reset}`
-            : "")
-      );
-    }
     write(
       `${label("Current Price")} ${
         hasCurrentPrice ? `${colors.white}${fmt(rec.perp.markPrice)}${colors.reset}` : `${colors.brightBlack}n/a${colors.reset}`
@@ -249,6 +352,35 @@ export class RecommendationPrinter {
         (rec.estimatedPnLAtTakeProfit !== undefined
           ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtTakeProfit)}]${colors.reset}`
           : "")
+    );
+    if (rec.signal === "NO_TRADE") {
+      write(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
+    }
+    write(divider());
+
+    write(`${colors.bold}${colors.cyan}2) SETUP QUALITY${colors.reset}`);
+    write(
+      `${label("Setup Quality")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
+    );
+    write(`${label("Setup Grade")} ${setupGradeColor(rec.setupGrade)}${colors.bold}${rec.setupGrade}${colors.reset}`);
+    if (rec.qualityVerdict) {
+      write(
+        `${label("Quality Verdict")} ${qualityVerdictColor(rec.qualityVerdict)}${colors.bold}${rec.qualityVerdict}${colors.reset}`
+      );
+    }
+    write(`${label("Confidence")} ${confidenceColor(rec.confidence)}${rec.confidence}%${colors.reset}`);
+    if (keyReasons.length > 0) {
+      write(`${label("Why")} ${colors.yellow}- ${keyReasons[0]}${colors.reset}`);
+      keyReasons.slice(1).forEach((reason) => {
+        write(`${reasonIndent()} ${colors.yellow}- ${reason}${colors.reset}`);
+      });
+    }
+    write(divider());
+
+    write(`${colors.bold}${colors.cyan}3) CONFIG${colors.reset}`);
+    write(
+      `${label("Timeframes")} ${colors.white}${rec.analysisInterval ?? "n/a"} / ${rec.analysisBiasInterval ?? "n/a"}${colors.reset}` +
+        `${colors.brightBlack} (base/bias)${colors.reset}`
     );
     if (hasPosition) {
       const notional = rec.leverage! * rec.positionSizeUsd!;
@@ -273,6 +405,8 @@ export class RecommendationPrinter {
             : "";
         write(`${label("Expected Value")} ${evColor}${fmtUsd(rec.expectedValueUsd)}${colors.reset}${evPct}`);
       }
+    } else {
+      write(`${label("Position")} ${colors.brightBlack}n/a${colors.reset}`);
     }
     if (rec.objectiveUsdc !== undefined) {
       const aggressiveness = objectiveAggressiveness(rec);
@@ -305,12 +439,14 @@ export class RecommendationPrinter {
     if (rec.objectivePlausibilityWarning) {
       write(`${label("Warning")} ${colors.brightYellow}${rec.objectivePlausibilityWarning}${colors.reset}`);
     }
-    if (rec.signal === "NO_TRADE") {
-      write(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
-      const guardReason = rec.rationale.find((line) => line.startsWith("No-trade guard:"));
-      if (guardReason) {
-        write(`${label("Reason")} ${colors.yellow}${guardReason.replace("No-trade guard: ", "")}${colors.reset}`);
-      }
+    if (rec.requestedDirection) {
+      const conflict = rec.modelSignal && rec.modelSignal !== rec.requestedDirection;
+      write(
+        `${label("Direction Input")} ${colors.white}${rec.requestedDirection}${colors.reset}` +
+          (rec.modelSignal
+            ? ` ${colors.brightBlack}(model ${rec.modelSignal}${conflict ? ", conflict" : ", aligned"})${colors.reset}`
+            : "")
+      );
     }
     write(divider());
   }

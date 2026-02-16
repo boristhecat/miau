@@ -54,7 +54,7 @@ export class GenerateRecommendationUseCase {
     const lastPrice = candles[candles.length - 1]!.close;
     const perp = await this.deps.marketData.getPerpSnapshot({ pair: input.pair });
 
-    return this.deps.recommendationEngine.build({
+    const recommendation = this.deps.recommendationEngine.build({
       pair: input.pair,
       lastPrice,
       indicators,
@@ -71,5 +71,8 @@ export class GenerateRecommendationUseCase {
       biasTrend,
       biasInterval
     });
+    recommendation.analysisInterval = interval;
+    recommendation.analysisBiasInterval = biasInterval;
+    return recommendation;
   }
 }

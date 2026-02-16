@@ -632,11 +632,6 @@ async function main(): Promise<void> {
         dashboard.latestQueryLines = printer.render(recommendation, {
           showDetails: tradeInput.showDetails
         });
-        if (adaptiveTimeframes.source === "horizon-adaptive") {
-          dashboard.latestQueryLines.unshift(
-            `${ui.gray}[tf] Adaptive: base ${interval}, bias ${biasInterval} (horizon ${tradeInput.objectiveHorizon ?? "n/a"}m).${ui.reset}`
-          );
-        }
         if (cooldownAdvisory) {
           dashboard.latestQueryLines.push(`${ui.yellow}${cooldownAdvisory}${ui.reset}`);
         }

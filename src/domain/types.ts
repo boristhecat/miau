@@ -58,6 +58,8 @@ export interface PerpMarketSnapshot {
 
 export interface Recommendation {
   pair: string;
+  analysisInterval?: string;
+  analysisBiasInterval?: string;
   signal: Signal;
   modelSignal?: "LONG" | "SHORT";
   requestedDirection?: "LONG" | "SHORT";
