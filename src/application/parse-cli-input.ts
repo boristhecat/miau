@@ -27,11 +27,11 @@ export function getUsageText(): string {
   return [
     "Usage: miau-trader [rec]",
     "",
-    "No args: interactive mode (type SYMBOL or SYMBOL -i at prompt).",
+    "No args: interactive mode (type SYMBOL, defaults, help, rec, etc. at prompt).",
     "rec: scan a watchlist and print top 5 opportunities by positive-PnL probability.",
     "",
-    "Interactive query format: SYMBOL [--horizon <minutes> | --manual-levels | --simulate] [-i]",
-    "Default (SYMBOL): quick prompts for leverage, size, and targeting inputs.",
+    "Interactive query format: SYMBOL [--custom] [--horizon <minutes> | --manual-levels | --simulate] [-i]",
+    "Default (SYMBOL): run directly with saved defaults.",
     "Full mode (-i): asks every config step-by-step with defaults."
   ].join("\n");
 }

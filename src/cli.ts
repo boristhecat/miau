@@ -14,6 +14,7 @@ import { IndicatorService } from "./domain/indicator-service.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { evaluatePaperTrade } from "./domain/simulation-evaluator.js";
 import type { Recommendation } from "./domain/types.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -120,6 +121,53 @@ interface LearningRunnerState {
 
 const LEARN_HORIZONS_MINUTES = [5, 10, 15, 30, 60, 90] as const;
 const LEARN_CYCLE_INTERVAL_MINUTES = 10;
+
+interface TradeDefaults {
+  leverage: number;
+  positionSizeUsd: number;
+  objectiveHorizon: string;
+  timeframe: string;
+  biasTimeframe: string;
+}
+
+const DEFAULTS_FILE_PATH = path.join(process.cwd(), "data", "trade-defaults.json");
+const FALLBACK_TRADE_DEFAULTS: TradeDefaults = {
+  leverage: 20,
+  positionSizeUsd: 250,
+  objectiveHorizon: "15",
+  timeframe: "1m",
+  biasTimeframe: "15m"
+};
+
+async function loadTradeDefaults(): Promise<TradeDefaults> {
+  try {
+    const raw = await readFile(DEFAULTS_FILE_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Partial<TradeDefaults>;
+    return {
+      leverage: Number.isFinite(parsed.leverage) ? Number(parsed.leverage) : FALLBACK_TRADE_DEFAULTS.leverage,
+      positionSizeUsd: Number.isFinite(parsed.positionSizeUsd) ? Number(parsed.positionSizeUsd) : FALLBACK_TRADE_DEFAULTS.positionSizeUsd,
+      objectiveHorizon:
+        typeof parsed.objectiveHorizon === "string" && /^\d+$/.test(parsed.objectiveHorizon)
+          ? parsed.objectiveHorizon
+          : FALLBACK_TRADE_DEFAULTS.objectiveHorizon,
+      timeframe:
+        typeof parsed.timeframe === "string" && /^\d+[mhd]$/.test(parsed.timeframe)
+          ? parsed.timeframe
+          : FALLBACK_TRADE_DEFAULTS.timeframe,
+      biasTimeframe:
+        typeof parsed.biasTimeframe === "string" && /^\d+[mhd]$/.test(parsed.biasTimeframe)
+          ? parsed.biasTimeframe
+          : FALLBACK_TRADE_DEFAULTS.biasTimeframe
+    };
+  } catch {
+    return { ...FALLBACK_TRADE_DEFAULTS };
+  }
+}
+
+async function saveTradeDefaults(defaults: TradeDefaults): Promise<void> {
+  await mkdir(path.dirname(DEFAULTS_FILE_PATH), { recursive: true });
+  await writeFile(DEFAULTS_FILE_PATH, JSON.stringify(defaults, null, 2), "utf8");
+}
 
 function getLearningGates(horizonMinutes: number): { minSetupQuality: number; minConfidence: number } {
   if (horizonMinutes <= 5) {
@@ -241,6 +289,7 @@ async function main(): Promise<void> {
   const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
   const learning = new AdaptiveLearningService(learningStore);
   const printer = new RecommendationPrinter();
+  let tradeDefaults = await loadTradeDefaults();
 
   if (!cliInput) {
     logger.error("CLI input parsing failed unexpectedly.");
@@ -328,6 +377,28 @@ async function main(): Promise<void> {
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unhandled rec mode error";
           dashboard.latestQueryLines = [`${ui.red}[error] Failed to run rec mode: ${message}${ui.reset}`];
+        }
+        requestRender();
+        continue;
+      }
+      if (normalized === "defaults") {
+        try {
+          isPrompting = true;
+          const updatedDefaults = await promptTradeDefaults(rl, tradeDefaults);
+          isPrompting = false;
+          tradeDefaults = updatedDefaults;
+          await saveTradeDefaults(tradeDefaults);
+          dashboard.latestQueryLines = [
+            `${ui.green}[defaults] saved.${ui.reset}`,
+            `${ui.gray}leverage:${ui.reset} ${tradeDefaults.leverage}`,
+            `${ui.gray}size:${ui.reset} ${tradeDefaults.positionSizeUsd}`,
+            `${ui.gray}horizon:${ui.reset} ${tradeDefaults.objectiveHorizon}m`,
+            `${ui.gray}tf:${ui.reset} ${tradeDefaults.timeframe} / ${tradeDefaults.biasTimeframe}`
+          ];
+        } catch (error) {
+          isPrompting = false;
+          const message = error instanceof Error ? error.message : "Failed to save defaults";
+          dashboard.latestQueryLines = [`${ui.red}[defaults] ${message}${ui.reset}`];
         }
         requestRender();
         continue;
@@ -466,9 +537,42 @@ async function main(): Promise<void> {
 
       try {
         const baseInput = parseTradingInput(raw);
+        if (baseInput.manualLevels && !baseInput.customValues && !baseInput.fullInteractive) {
+          throw new Error("Manual levels require --custom to provide SL/TP values.");
+        }
         const tradeInput = baseInput.fullInteractive
-          ? await promptInteractiveTradeInput(rl, baseInput)
-          : await promptQuickTradeInput(rl, baseInput);
+          ? await promptInteractiveTradeInput(rl, {
+              ...baseInput,
+              leverage: baseInput.leverage ?? tradeDefaults.leverage,
+              positionSizeUsd: baseInput.positionSizeUsd ?? tradeDefaults.positionSizeUsd,
+              objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
+              timeframe: baseInput.timeframe ?? tradeDefaults.timeframe,
+              biasTimeframe: baseInput.biasTimeframe ?? tradeDefaults.biasTimeframe
+            })
+          : baseInput.customValues
+            ? await promptQuickTradeInput(rl, {
+                ...baseInput,
+                leverage: baseInput.leverage ?? tradeDefaults.leverage,
+                positionSizeUsd: baseInput.positionSizeUsd ?? tradeDefaults.positionSizeUsd,
+                objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon
+              })
+            : {
+                symbol: baseInput.symbol,
+                fullInteractive: false,
+                customValues: false,
+                manualLevels: false,
+                runSimulation: baseInput.runSimulation,
+                objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
+                timeframe: tradeDefaults.timeframe,
+                biasTimeframe: tradeDefaults.biasTimeframe,
+                leverage: tradeDefaults.leverage,
+                positionSizeUsd: tradeDefaults.positionSizeUsd,
+                slPct: undefined,
+                tpPct: undefined,
+                slUsd: undefined,
+                tpUsd: undefined,
+                showDetails: false
+              };
         const pair = `${tradeInput.symbol}-USD`;
         const cooldownRemainingMs = tracker.getCooldownRemainingMs(pair);
         const cooldownAdvisory =
@@ -761,6 +865,7 @@ function parseWatchCommand(raw: string): WatchConfig {
     input: {
       symbol: base.symbol,
       fullInteractive: false,
+      customValues: false,
       manualLevels: false,
       runSimulation: false,
       objectiveHorizon: base.objectiveHorizon ?? "15",
@@ -870,6 +975,22 @@ function stopWatchSymbol(
   return `${ui.green}[watch]${ui.reset} Stopped ${symbol}.`;
 }
 
+async function promptTradeDefaults(rl: readline.Interface, current: TradeDefaults): Promise<TradeDefaults> {
+  const leverageRaw = await promptWithDefault(rl, "Default leverage", current.leverage.toString());
+  const sizeRaw = await promptWithDefault(rl, "Default position size USDC", current.positionSizeUsd.toString());
+  const horizonRaw = await promptWithDefault(rl, "Default trade horizon minutes", current.objectiveHorizon);
+  const timeframeRaw = await promptWithDefault(rl, "Default timeframe", current.timeframe);
+  const biasRaw = await promptWithDefault(rl, "Default bias timeframe", current.biasTimeframe);
+
+  return {
+    leverage: parseRequiredNumberInput(leverageRaw, "default leverage"),
+    positionSizeUsd: parseRequiredNumberInput(sizeRaw, "default position size"),
+    objectiveHorizon: parseOptionalHorizonInput(horizonRaw) ?? current.objectiveHorizon,
+    timeframe: parseIntervalInput(timeframeRaw, "default timeframe"),
+    biasTimeframe: parseIntervalInput(biasRaw, "default bias timeframe")
+  };
+}
+
 async function promptInteractiveTradeInput(
   rl: readline.Interface,
   base: TradingInput
@@ -926,6 +1047,7 @@ async function promptInteractiveTradeInput(
   return {
     symbol: base.symbol,
     fullInteractive: true,
+    customValues: true,
     manualLevels,
     runSimulation: base.runSimulation,
     timeframe: parseIntervalInput(tf, "timeframe"),
@@ -968,6 +1090,7 @@ async function promptQuickTradeInput(
   return {
     symbol: base.symbol,
     fullInteractive: false,
+    customValues: true,
     manualLevels,
     runSimulation: base.runSimulation,
     objectiveHorizon,
@@ -1186,7 +1309,9 @@ function getInteractiveHelpText(): string {
   return [
     "",
     "Interactive commands:",
-    "- <SYMBOL>                      Quick mode (example: BTC)",
+    "- <SYMBOL>                      Run immediately with saved defaults",
+    "- defaults                      Set default leverage/size/horizon/tf values",
+    "- <SYMBOL> --custom             Prompt quick custom values (same fields as old simple mode)",
     "- <SYMBOL> -i                   Full interactive mode",
     "- watch <SYMBOL> [--every N]    Re-check symbol every N minutes (status changes only)",
     "- unwatch <SYMBOL>              Stop one active watch",
@@ -1199,6 +1324,7 @@ function getInteractiveHelpText(): string {
     "- exit | quit                   Close the app",
     "",
     "Query flags (after SYMBOL):",
+    "- --custom                      Prompt quick trade values for this run",
     "- --horizon <minutes>           Horizon in minutes (targeting mode)",
     "- --manual-levels               Enable manual SL/TP prompts",
     "- --simulate                    Always run simulation in background (uses --horizon minutes, else 15m)",

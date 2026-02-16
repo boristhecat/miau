@@ -3,6 +3,7 @@ import { parseTradingSymbol } from "./parse-trading-symbol.js";
 export interface TradingInput {
   symbol: string;
   fullInteractive: boolean;
+  customValues: boolean;
   manualLevels: boolean;
   runSimulation: boolean;
   objectiveHorizon?: string;
@@ -24,6 +25,7 @@ export function parseTradingInput(raw: string): TradingInput {
   }
   const symbol = parseTradingSymbol(parts[0] ?? "");
   let fullInteractive = false;
+  let customValues = false;
   let manualLevels = false;
   let runSimulation = false;
   let objectiveHorizon: string | undefined;
@@ -32,6 +34,10 @@ export function parseTradingInput(raw: string): TradingInput {
     const token = parts[i];
     if (token === "-i" || token === "--interactive") {
       fullInteractive = true;
+      continue;
+    }
+    if (token === "--custom") {
+      customValues = true;
       continue;
     }
 
@@ -58,7 +64,7 @@ export function parseTradingInput(raw: string): TradingInput {
     }
 
     throw new Error(
-      "Only -i/--interactive, --manual-levels, --simulate, and --horizon <minutes> are supported after symbol."
+      "Only -i/--interactive, --custom, --manual-levels, --simulate, and --horizon <minutes> are supported after symbol."
     );
   }
 
@@ -69,6 +75,7 @@ export function parseTradingInput(raw: string): TradingInput {
   return {
     symbol,
     fullInteractive,
+    customValues,
     manualLevels,
     runSimulation,
     objectiveHorizon,

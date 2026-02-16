@@ -68,7 +68,9 @@ After starting the app, enter input at the `Command` prompt:
 
 - `help` or `?` -> show interactive commands + flags
 - `rec` -> run top recommendations scan in-app
-- `BTC` -> quick mode
+- `defaults` -> set saved defaults for symbol-only runs
+- `BTC` -> run immediately with saved defaults
+- `BTC --custom` -> prompt quick values for this run
 - `ETH -i` -> full interactive mode
 - `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
 - `BTC --manual-levels` -> direct manual SL/TP mode
@@ -92,7 +94,14 @@ Background learning mode:
 
 ### Quick mode
 
-Prompts for core risk inputs:
+Symbol-only mode runs with saved defaults (`defaults` command):
+
+- Leverage
+- Position size (USDC margin)
+- Horizon minutes
+- Timeframe + bias timeframe
+
+Custom prompt mode (`--custom`) prompts for core risk inputs:
 
 - Leverage
 - Position size (USDC margin)
