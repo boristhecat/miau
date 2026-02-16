@@ -86,6 +86,60 @@ interface WatchConfig {
   input: TradingInput;
 }
 
+interface WatchRow {
+  symbol: string;
+  signal: Recommendation["signal"] | "COOLDOWN";
+  regime?: string;
+  confidence?: number;
+  setupQuality?: number;
+  reason?: string;
+  updatedAt: string;
+}
+
+interface DashboardState {
+  watchRows: Map<string, WatchRow>;
+  latestQueryLines: string[];
+}
+
+function nowLabel(): string {
+  return new Date().toLocaleTimeString([], { hour12: false });
+}
+
+function renderDashboard(state: DashboardState): void {
+  process.stdout.write("\u001b[2J\u001b[H");
+  console.log(`${ui.bold}${ui.blue}WATCHED SYMBOLS${ui.reset}`);
+  if (state.watchRows.size === 0) {
+    console.log(`${ui.gray}No active watches. Use: watch BTC --every 1${ui.reset}`);
+  } else {
+    console.log(`${ui.gray}Symbol   Signal      Regime            Conf  Setup  Updated   Reason${ui.reset}`);
+    for (const row of state.watchRows.values()) {
+      const signalColor =
+        row.signal === "LONG" ? ui.green : row.signal === "SHORT" ? ui.red : row.signal === "COOLDOWN" ? ui.yellow : ui.gray;
+      const conf = row.confidence !== undefined ? `${row.confidence}%` : "-";
+      const quality = row.setupQuality !== undefined ? `${row.setupQuality}%` : "-";
+      const reason = row.reason ? row.reason.slice(0, 36) : "";
+      console.log(
+        `${ui.cyan}${row.symbol.padEnd(8)}${ui.reset}` +
+          `${signalColor}${row.signal.padEnd(12)}${ui.reset}` +
+          `${(row.regime ?? "-").padEnd(18)}` +
+          `${conf.padEnd(6)} ` +
+          `${quality.padEnd(6)} ` +
+          `${row.updatedAt.padEnd(8)} ` +
+          `${reason}`
+      );
+    }
+  }
+
+  console.log(`${ui.gray}${"-".repeat(92)}${ui.reset}`);
+  console.log(`${ui.bold}${ui.magenta}SINGLE SYMBOL OUTPUT (LATEST ONLY)${ui.reset}`);
+  if (state.latestQueryLines.length === 0) {
+    console.log(`${ui.gray}No query yet. Enter a symbol below (e.g. BTC).${ui.reset}`);
+  } else {
+    state.latestQueryLines.forEach((line) => console.log(line));
+  }
+  console.log(`${ui.gray}${"-".repeat(92)}${ui.reset}`);
+}
+
 async function main(): Promise<void> {
   const logger = new ConsoleLogger();
   let cliInput: ReturnType<typeof parseCliInput> | undefined;
@@ -113,6 +167,7 @@ async function main(): Promise<void> {
     indicatorService: new IndicatorService(),
     recommendationEngine: new RecommendationEngine()
   });
+  const printer = new RecommendationPrinter();
 
   if (!cliInput) {
     logger.error("CLI input parsing failed unexpectedly.");
@@ -122,11 +177,12 @@ async function main(): Promise<void> {
 
   if (cliInput.mode === "rec") {
     try {
-      await runRecommendationRanking({
+      const lines = await runRecommendationRanking({
         logger,
         recommendationUseCase: useCase,
         symbolUniverseProvider: marketData
       });
+      lines.forEach((line) => console.log(line));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unhandled rec mode error";
       logger.error(`Failed to run rec mode: ${message}`);
@@ -140,72 +196,104 @@ async function main(): Promise<void> {
   const watchIntervals = new Map<string, NodeJS.Timeout>();
   const watchSignatures = new Map<string, string>();
   const watchRunning = new Set<string>();
+  const dashboard: DashboardState = {
+    watchRows: new Map<string, WatchRow>(),
+    latestQueryLines: []
+  };
+  let isPrompting = false;
+  let pendingRender = false;
+  const requestRender = (): void => {
+    if (isPrompting) {
+      pendingRender = true;
+      return;
+    }
+    renderDashboard(dashboard);
+  };
   try {
+    renderDashboard(dashboard);
     while (true) {
+      isPrompting = true;
       const raw = await rl.question(
-        `${ui.bold}${ui.cyan}Symbol${ui.reset} ${ui.gray}(e.g. BTC, ETH | 'watch BTC' | 'help' | 'rec' | 'exit')${ui.reset}: `
+        `${ui.bold}${ui.cyan}Command${ui.reset} ${ui.gray}(e.g. BTC | watch BTC | help | rec | exit)${ui.reset}: `
       );
+      isPrompting = false;
+      if (pendingRender) {
+        pendingRender = false;
+        renderDashboard(dashboard);
+      }
       const normalized = raw.trim().toLowerCase();
       if (normalized === "help" || normalized === "?") {
-        console.log(getInteractiveHelpText());
+        dashboard.latestQueryLines = getInteractiveHelpText().split("\n");
+        requestRender();
         continue;
       }
       if (normalized === "rec") {
         try {
-          await runRecommendationRanking({
+          dashboard.latestQueryLines = await runRecommendationRanking({
             logger,
             recommendationUseCase: useCase,
             symbolUniverseProvider: marketData
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unhandled rec mode error";
-          logger.error(`Failed to run rec mode: ${message}`);
+          dashboard.latestQueryLines = [`${ui.red}[error] Failed to run rec mode: ${message}${ui.reset}`];
         }
+        requestRender();
         continue;
       }
       if (normalized === "exit" || normalized === "quit") {
         break;
       }
       if (normalized === "watches") {
-        printActiveWatches(watchIntervals);
+        dashboard.latestQueryLines = [
+          `${ui.bold}${ui.blue}ACTIVE WATCHES${ui.reset}`,
+          ...(watchIntervals.size === 0 ? [`${ui.gray}No active watches.${ui.reset}`] : [...watchIntervals.keys()].map((s) => `- ${s}`))
+        ];
+        requestRender();
         continue;
       }
       if (normalized.startsWith("unwatch ")) {
         const symbol = normalized.replace(/^unwatch\s+/, "").trim().toUpperCase();
-        stopWatchSymbol(symbol, watchIntervals, watchSignatures);
+        dashboard.latestQueryLines = [stopWatchSymbol(symbol, watchIntervals, watchSignatures, dashboard)];
+        requestRender();
         continue;
       }
       if (normalized.startsWith("watch ")) {
         try {
           const watchConfig = parseWatchCommand(raw);
           const key = watchConfig.symbol.toUpperCase();
-          stopWatchSymbol(key, watchIntervals, watchSignatures);
+          stopWatchSymbol(key, watchIntervals, watchSignatures, dashboard);
           const timer = setInterval(() => {
             void runWatchIteration({
               key,
-              logger,
               useCase,
               tracker,
               watchConfig,
               watchSignatures,
-              watchRunning
+              watchRunning,
+              watchRows: dashboard.watchRows,
+              requestRender
             });
           }, watchConfig.everyMinutes * 60_000);
           watchIntervals.set(key, timer);
           await runWatchIteration({
             key,
-            logger,
             useCase,
             tracker,
             watchConfig,
             watchSignatures,
-            watchRunning
+            watchRunning,
+            watchRows: dashboard.watchRows,
+            requestRender
           });
-          logger.info(`[watch] Started ${key} every ${watchConfig.everyMinutes}m. Use 'unwatch ${key}' to stop.`);
+          dashboard.latestQueryLines = [
+            `${ui.green}[watch] Started ${key} every ${watchConfig.everyMinutes}m. Use 'unwatch ${key}' to stop.${ui.reset}`
+          ];
         } catch (error) {
           const message = error instanceof Error ? error.message : "Invalid watch command";
-          logger.error(message);
+          dashboard.latestQueryLines = [`${ui.red}[error] ${message}${ui.reset}`];
         }
+        requestRender();
         continue;
       }
 
@@ -217,9 +305,10 @@ async function main(): Promise<void> {
         const pair = `${tradeInput.symbol}-USD`;
         const cooldownRemainingMs = tracker.getCooldownRemainingMs(pair);
         if (cooldownRemainingMs > 0) {
-          logger.info(
-            `[guard] Cooldown active for ${pair}: wait ${Math.ceil(cooldownRemainingMs / 60_000)}m before next entry.`
-          );
+          dashboard.latestQueryLines = [
+            `${ui.yellow}[guard] Cooldown active for ${pair}: wait ${Math.ceil(cooldownRemainingMs / 60_000)}m before next entry.${ui.reset}`
+          ];
+          requestRender();
           continue;
         }
         const recommendation = await useCase.execute({
@@ -239,31 +328,37 @@ async function main(): Promise<void> {
         if (calibration.note) {
           recommendation.rationale.unshift(`Calibration: ${calibration.note}.`);
         }
-        new RecommendationPrinter().print(recommendation, {
+        dashboard.latestQueryLines = printer.render(recommendation, {
           showDetails: tradeInput.showDetails
         });
+        requestRender();
 
         if (tradeInput.runSimulation) {
           const simulationHorizonMinutes = resolveSimulationHorizonMinutes(tradeInput.objectiveHorizon);
           scheduleSimulation({
-            logger,
             marketData,
             recommendation,
             interval: tradeInput.timeframe ?? "1m",
             horizonMinutes: simulationHorizonMinutes,
             onResult: (status) => {
               tracker.recordSimulation(pair, status, tradeInput.timeframe ?? "1m");
+            },
+            onRendered: (lines) => {
+              dashboard.latestQueryLines = lines;
+              requestRender();
             }
           });
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unhandled error";
-        logger.error(`Failed to generate recommendation: ${message}`);
+        dashboard.latestQueryLines = [`${ui.red}[error] Failed to generate recommendation: ${message}${ui.reset}`];
+        requestRender();
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unhandled error";
-    logger.error(`Interactive session failed: ${message}`);
+    dashboard.latestQueryLines = [`${ui.red}[error] Interactive session failed: ${message}${ui.reset}`];
+    renderDashboard(dashboard);
     process.exitCode = 1;
   } finally {
     for (const timer of watchIntervals.values()) {
@@ -277,22 +372,24 @@ async function runRecommendationRanking(input: {
   logger: ConsoleLogger;
   recommendationUseCase: GenerateRecommendationUseCase;
   symbolUniverseProvider: BackpackMarketDataClient;
-}): Promise<void> {
+}): Promise<string[]> {
+  const lines: string[] = [];
+  const write = (line = "") => lines.push(line);
   const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase, input.symbolUniverseProvider);
-  input.logger.info("[rec] Fetching top PERP symbols by 24h volume...");
+  write(`${ui.gray}[rec] Fetching top PERP symbols by 24h volume...${ui.reset}`);
 
   const selected = await input.symbolUniverseProvider.getTopPerpSymbolsByVolumeWithOpenInterest(15);
-  console.log("");
-  console.log(`${ui.bold}${ui.blue}REC UNIVERSE${ui.reset} ${ui.gray}(top 15 by 24h volume)${ui.reset}`);
+  write("");
+  write(`${ui.bold}${ui.blue}REC UNIVERSE${ui.reset} ${ui.gray}(top 15 by 24h volume)${ui.reset}`);
   selected.forEach((item, index) => {
-    console.log(
+    write(
       `${ui.bold}${index + 1}.${ui.reset} ${ui.cyan}${item.symbol}${ui.reset}  ` +
         `${ui.gray}vol24h:${ui.reset} ${item.quoteVolume24h.toFixed(2)}  ` +
         `${ui.gray}oi:${ui.reset} ${item.openInterest.toFixed(2)}`
     );
   });
-  console.log("");
-  input.logger.info("[rec] Scanning selected symbols for top recommendations...");
+  write("");
+  write(`${ui.gray}[rec] Scanning selected symbols for top recommendations...${ui.reset}`);
 
   const result = await rankUseCase.execute({
     symbols: selected.map((item) => item.symbol),
@@ -303,22 +400,22 @@ async function runRecommendationRanking(input: {
     throw new Error("No opportunities found in rec mode.");
   }
 
-  console.log("");
-  console.log(`${ui.bold}${ui.blue}TOP RECOMMENDATIONS${ui.reset} ${ui.gray}(highest -> lowest)${ui.reset}`);
+  write("");
+  write(`${ui.bold}${ui.blue}TOP RECOMMENDATIONS${ui.reset} ${ui.gray}(highest -> lowest)${ui.reset}`);
   result.ranked.forEach((item, index) => {
     const rec = item.recommendation;
     const signalColor = rec.signal === "LONG" ? ui.green : rec.signal === "SHORT" ? ui.red : ui.yellow;
     const probabilityColor =
       item.probabilityPositivePnl >= 70 ? ui.green : item.probabilityPositivePnl >= 50 ? ui.yellow : ui.red;
 
-    console.log(
+    write(
       `${ui.bold}${index + 1}.${ui.reset} ${ui.cyan}${item.symbol}${ui.reset} (${item.pair})  ` +
         `${signalColor}${rec.action}${ui.reset}  ` +
         `${ui.gray}prob:${ui.reset} ${probabilityColor}${item.probabilityPositivePnl}%${ui.reset}  ` +
         `${ui.gray}conf:${ui.reset} ${rec.confidence}%  ` +
         `${ui.gray}R/R:${ui.reset} ${rec.riskRewardRatio.toFixed(2)}`
     );
-    console.log(
+    write(
       `   ${ui.gray}Entry:${ui.reset} ${rec.entry.toFixed(4)}  ` +
         `${ui.gray}SL:${ui.reset} ${rec.stopLoss.toFixed(4)}  ` +
         `${ui.gray}TP:${ui.reset} ${rec.takeProfit.toFixed(4)}`
@@ -330,9 +427,10 @@ async function runRecommendationRanking(input: {
       .slice(0, 3)
       .map((item) => `${item.symbol}: ${item.reason}`)
       .join(" | ");
-    input.logger.info(`[rec] Sample skipped symbols: ${sample}`);
+    write(`${ui.gray}[rec] Sample skipped symbols: ${sample}${ui.reset}`);
   }
-  console.log("");
+  write("");
+  return lines;
 }
 
 function parseWatchCommand(raw: string): WatchConfig {
@@ -388,12 +486,13 @@ function parseWatchCommand(raw: string): WatchConfig {
 
 async function runWatchIteration(input: {
   key: string;
-  logger: ConsoleLogger;
   useCase: GenerateRecommendationUseCase;
   tracker: SessionPerformanceTracker;
   watchConfig: WatchConfig;
   watchSignatures: Map<string, string>;
   watchRunning: Set<string>;
+  watchRows: Map<string, WatchRow>;
+  requestRender: () => void;
 }): Promise<void> {
   if (input.watchRunning.has(input.key)) {
     return;
@@ -406,9 +505,16 @@ async function runWatchIteration(input: {
       const signature = `COOLDOWN:${Math.ceil(cooldownRemainingMs / 60_000)}`;
       if (input.watchSignatures.get(input.key) !== signature) {
         input.watchSignatures.set(input.key, signature);
-        input.logger.info(
-          `[watch] ${pair} cooldown active for ${Math.ceil(cooldownRemainingMs / 60_000)}m; waiting for next check.`
-        );
+        input.watchRows.set(input.key, {
+          symbol: input.key,
+          signal: "COOLDOWN",
+          regime: "-",
+          confidence: undefined,
+          setupQuality: undefined,
+          reason: `Cooldown ${Math.ceil(cooldownRemainingMs / 60_000)}m`,
+          updatedAt: nowLabel()
+        });
+        input.requestRender();
       }
       return;
     }
@@ -423,57 +529,66 @@ async function runWatchIteration(input: {
     });
     const calibration = input.tracker.applyConfidenceCalibration(pair, recommendation.confidence);
     recommendation.confidence = calibration.confidence;
-    const guardReason = recommendation.rationale.find((line) => line.startsWith("No-trade guard:")) ?? "";
+    const guardSignatureReason = recommendation.rationale.find((line) => line.startsWith("No-trade guard:")) ?? "";
     const signature =
       `${recommendation.signal}|${recommendation.marketRegime}|${Math.round(recommendation.confidence / 5) * 5}|` +
-      `${guardReason}`;
+      `${guardSignatureReason}`;
 
     if (input.watchSignatures.get(input.key) === signature) {
       return;
     }
     input.watchSignatures.set(input.key, signature);
-    console.log("");
-    input.logger.info(`[watch] Status change for ${pair}`);
-    new RecommendationPrinter().print(recommendation, { showDetails: false });
+    const guardReason =
+      recommendation.signal === "NO_TRADE"
+        ? recommendation.rationale.find((line) => line.startsWith("No-trade guard:"))?.replace("No-trade guard: ", "")
+        : "OK";
+    input.watchRows.set(input.key, {
+      symbol: input.key,
+      signal: recommendation.signal,
+      regime: recommendation.marketRegime,
+      confidence: recommendation.confidence,
+      setupQuality: recommendation.confidenceBreakdown.setupQuality,
+      reason: guardReason,
+      updatedAt: nowLabel()
+    });
+    input.requestRender();
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Watch iteration failed";
-    input.logger.error(`[watch] ${input.key} failed: ${message}`);
+    input.watchRows.set(input.key, {
+      symbol: input.key,
+      signal: "NO_TRADE",
+      regime: "ERROR",
+      confidence: undefined,
+      setupQuality: undefined,
+      reason: error instanceof Error ? error.message : "Watch iteration failed",
+      updatedAt: nowLabel()
+    });
+    input.requestRender();
   } finally {
     input.watchRunning.delete(input.key);
   }
 }
 
-function stopWatchSymbol(symbol: string, watchIntervals: Map<string, NodeJS.Timeout>, watchSignatures: Map<string, string>): void {
+function stopWatchSymbol(
+  symbol: string,
+  watchIntervals: Map<string, NodeJS.Timeout>,
+  watchSignatures: Map<string, string>,
+  dashboard: DashboardState
+): string {
   const timer = watchIntervals.get(symbol);
   if (!timer) {
-    console.log(`${ui.yellow}[watch]${ui.reset} ${symbol} was not active.`);
-    return;
+    return `${ui.yellow}[watch]${ui.reset} ${symbol} was not active.`;
   }
   clearInterval(timer);
   watchIntervals.delete(symbol);
   watchSignatures.delete(symbol);
-  console.log(`${ui.green}[watch]${ui.reset} Stopped ${symbol}.`);
-}
-
-function printActiveWatches(watchIntervals: Map<string, NodeJS.Timeout>): void {
-  if (watchIntervals.size === 0) {
-    console.log(`${ui.gray}[watch] No active watches.${ui.reset}`);
-    return;
-  }
-  console.log(`${ui.bold}${ui.blue}ACTIVE WATCHES${ui.reset}`);
-  for (const symbol of watchIntervals.keys()) {
-    console.log(`- ${symbol}`);
-  }
+  dashboard.watchRows.delete(symbol);
+  return `${ui.green}[watch]${ui.reset} Stopped ${symbol}.`;
 }
 
 async function promptInteractiveTradeInput(
   rl: readline.Interface,
   base: TradingInput
 ): Promise<TradingInput> {
-  console.log(
-    `${ui.bold}${ui.magenta}Full Interactive Mode${ui.reset} ${ui.gray}(Enter=default, '-'=clear optional)${ui.reset}`
-  );
-
   const tf = await promptWithDefault(rl, "Timeframe (--tf)", base.timeframe ?? "1m");
   const biasTf = await promptWithDefault(rl, "Bias timeframe (--bias-tf)", base.biasTimeframe ?? "15m");
   const leverage = await promptOptional(rl, "Leverage (-l)", base.leverage?.toString() ?? "20");
@@ -545,10 +660,6 @@ async function promptQuickTradeInput(
   rl: readline.Interface,
   base: TradingInput
 ): Promise<TradingInput> {
-  console.log(
-    `${ui.bold}${ui.green}Quick Mode${ui.reset} ${ui.gray}(core inputs: Leverage, Size + target)${ui.reset}`
-  );
-
   const leverage = await promptWithDefault(rl, "Leverage", base.leverage?.toString() ?? "20");
   const size = await promptWithDefault(rl, "Position size USDC", base.positionSizeUsd?.toString() ?? "250");
   const manualLevels = base.manualLevels;
@@ -588,12 +699,12 @@ async function promptQuickTradeInput(
 }
 
 function scheduleSimulation(input: {
-  logger: ConsoleLogger;
   marketData: BackpackMarketDataClient;
   recommendation: Recommendation;
   interval: string;
   horizonMinutes: number;
   onResult?: (status: "SUCCESS" | "FAILURE") => void;
+  onRendered?: (lines: string[]) => void;
 }): void {
   const signal = resolveSimulationSignal(input.recommendation);
 
@@ -601,10 +712,6 @@ function scheduleSimulation(input: {
   const horizonMs = input.horizonMinutes * 60 * 1000;
   const timeframeMs = intervalToMs(input.interval);
   const minLimit = Math.max(120, Math.ceil(horizonMs / Math.max(timeframeMs, 60_000)) + 40);
-
-  input.logger.info(
-    `[sim] Started for ${input.recommendation.pair} ${signal}; evaluating in ${input.horizonMinutes}m.`
-  );
 
   void (async () => {
     await delay(horizonMs);
@@ -633,25 +740,30 @@ function scheduleSimulation(input: {
           : undefined;
       const outcomeColor = outcome.status === "SUCCESS" ? ui.green : ui.red;
       const pnlColor = outcome.pnlPct >= 0 ? ui.green : ui.red;
-
-      console.log("");
-      console.log(`${ui.bold}${ui.blue}SIM RESULT${ui.reset} ${ui.gray}${input.recommendation.pair}${ui.reset}`);
-      console.log(
+      const rendered = [
+        `${ui.bold}${ui.blue}SIM RESULT${ui.reset} ${ui.gray}${input.recommendation.pair}${ui.reset}`,
         `${ui.gray}status:${ui.reset} ${outcomeColor}${ui.bold}${outcome.status}${ui.reset}   ` +
           `${ui.gray}pnl:${ui.reset} ${pnlColor}${outcome.pnlPct.toFixed(2)}%${ui.reset}` +
-          (pnlUsd !== undefined ? ` ${ui.gray}(${pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)} USDC)${ui.reset}` : "")
-      );
-      console.log(
+          (pnlUsd !== undefined ? ` ${ui.gray}(${pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)} USDC)${ui.reset}` : ""),
         `${ui.gray}entry:${ui.reset} ${input.recommendation.entry.toFixed(4)}   ` +
           `${ui.gray}exit:${ui.reset} ${outcome.exitPrice.toFixed(4)}   ` +
-          `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`
-      );
-      console.log(`${ui.gray}reason:${ui.reset} ${outcome.reason}`);
-      console.log("");
+          `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`,
+        `${ui.gray}reason:${ui.reset} ${outcome.reason}`
+      ];
+      if (input.onRendered) {
+        input.onRendered(rendered);
+      } else {
+        rendered.forEach((line) => console.log(line));
+      }
       input.onResult?.(outcome.status);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unhandled simulation error";
-      input.logger.error(`[sim] Failed to evaluate ${input.recommendation.pair}: ${message}`);
+      const rendered = [`${ui.red}[sim] Failed to evaluate ${input.recommendation.pair}: ${message}${ui.reset}`];
+      if (input.onRendered) {
+        input.onRendered(rendered);
+      } else {
+        rendered.forEach((line) => console.log(line));
+      }
     }
   })();
 }

@@ -91,117 +91,127 @@ function tradeDirection(rec: Recommendation): "LONG" | "SHORT" | "NO TRADE" {
 
 export class RecommendationPrinter {
   print(rec: Recommendation, options?: { showDetails?: boolean }): void {
+    const lines = this.render(rec, options);
+    for (const line of lines) {
+      console.log(line);
+    }
+  }
+
+  render(rec: Recommendation, options?: { showDetails?: boolean }): string[] {
+    const lines: string[] = [];
+    const write = (line = "") => lines.push(line);
     const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
     const showDetails = options?.showDetails === true;
 
     if (!showDetails) {
-      this.printTradeLevels(rec, hasPosition);
-      return;
+      this.printTradeLevels(rec, hasPosition, write);
+      return lines;
     }
 
     const confColor = confidenceColor(rec.confidence);
     const band = confidenceBand(rec.confidence);
 
-    console.log(`${colors.bgDark}${colors.white}${colors.bold}  MIAU TRADER  ${colors.reset}`);
-    console.log(
+    write(`${colors.bgDark}${colors.white}${colors.bold}  MIAU TRADER  ${colors.reset}`);
+    write(
       `${label("PAIR")} ${colors.bold}${colors.white}${rec.pair}${colors.reset}   ` +
       `${label("SIGNAL")} ${colorSignal(rec.signal)}   ` +
       `${label("CONFIDENCE")} ${confColor}${colors.bold}${rec.confidence}% (${band})${colors.reset}`
     );
-    console.log(
+    write(
       `${label("REGIME")} ${rec.regime === "TRADEABLE" ? `${colors.brightGreen}${rec.regime}` : `${colors.brightRed}${rec.regime}`}${colors.reset}   ` +
       `${label("Market Regime")} ${colors.white}${rec.marketRegime}${colors.reset}   ` +
       `${label("ACTION")} ${colors.bold}${colors.white}${rec.action}${colors.reset}   ` +
       `${label("R/R")} ${colors.white}${rec.riskRewardRatio.toFixed(2)}${colors.reset}`
     );
-    console.log(
+    write(
       `${label("SETUP QUALITY")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${colors.bold}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
     );
-    console.log(divider());
+    write(divider());
 
-    this.printTradeLevels(rec, hasPosition);
+    this.printTradeLevels(rec, hasPosition, write);
 
-    console.log(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
-    console.log(
+    write(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
+    write(
       `${label("RSI(14)")} ${fmt(rec.indicators.rsi14)}   ` +
       `${label("ADX(14)")} ${fmt(rec.indicators.adx14)}   ` +
       `${label("ATR(14)")} ${fmt(rec.indicators.atr14)}`
     );
-    console.log(
+    write(
       `${label("EMA(20)")} ${fmt(rec.indicators.ema20)}   ` +
       `${label("EMA(50)")} ${fmt(rec.indicators.ema50)}   ` +
       `${label("VWAP")} ${fmt(rec.indicators.vwap)}`
     );
-    console.log(
+    write(
       `${label("MACD")} ${fmt(rec.indicators.macd)}   ` +
       `${label("MACD Sig")} ${fmt(rec.indicators.macdSignal)}   ` +
       `${label("MACD Hist")} ${fmt(rec.indicators.macdHistogram)}`
     );
-    console.log(
+    write(
       `${label("BB Upper")} ${fmt(rec.indicators.bbUpper)}   ` +
       `${label("BB Middle")} ${fmt(rec.indicators.bbMiddle)}   ` +
       `${label("BB Lower")} ${fmt(rec.indicators.bbLower)}`
     );
-    console.log(
+    write(
       `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
       `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
     );
-    console.log(divider());
+    write(divider());
 
-    console.log(`${colors.bold}${colors.cyan}CONFIDENCE BREAKDOWN${colors.reset}`);
-    console.log(
+    write(`${colors.bold}${colors.cyan}CONFIDENCE BREAKDOWN${colors.reset}`);
+    write(
       `${label("Trend")} ${fmt(rec.confidenceBreakdown.trend)}   ` +
       `${label("Momentum")} ${fmt(rec.confidenceBreakdown.momentum)}   ` +
       `${label("Volatility")} ${fmt(rec.confidenceBreakdown.volatility)}`
     );
-    console.log(
+    write(
       `${label("Structure")} ${fmt(rec.confidenceBreakdown.structure)}   ` +
       `${label("Context")} ${fmt(rec.confidenceBreakdown.context)}   ` +
       `${label("Setup Quality")} ${fmt(rec.confidenceBreakdown.setupQuality)}`
     );
-    console.log(divider());
+    write(divider());
 
-    console.log(`${colors.bold}${colors.cyan}PERP CONTEXT${colors.reset}`);
-    console.log(
+    write(`${colors.bold}${colors.cyan}PERP CONTEXT${colors.reset}`);
+    write(
       `${label("Perp Symbol")} ${rec.perp.symbol}   ` +
       `${label("Open Interest")} ${rec.perp.openInterest}`
     );
-    console.log(
+    write(
       `${label("Funding")} ${rec.perp.fundingRate}   ` +
       `${label("Funding Avg")} ${rec.perp.fundingRateAvg}   ` +
       `${label("Premium %")} ${rec.perp.premiumPct}`
     );
-    console.log(
+    write(
       `${label("Mark Price")} ${rec.perp.markPrice}   ` +
       `${label("Index Price")} ${rec.perp.indexPrice}`
     );
-    console.log(divider());
+    write(divider());
 
-    console.log(`${colors.bold}${colors.cyan}RATIONALE${colors.reset}`);
+    write(`${colors.bold}${colors.cyan}RATIONALE${colors.reset}`);
     rec.rationale.forEach((item) => {
-      console.log(`${colors.dim}${colors.brightBlack}>${colors.reset} ${item}`);
+      write(`${colors.dim}${colors.brightBlack}>${colors.reset} ${item}`);
     });
-    console.log("");
+    write("");
+    return lines;
   }
 
-  private printTradeLevels(rec: Recommendation, hasPosition: boolean): void {
+  private printTradeLevels(rec: Recommendation, hasPosition: boolean, write: (line?: string) => void): void {
     const direction = tradeDirection(rec);
     const directionColor =
       direction === "LONG" ? colors.brightGreen : direction === "SHORT" ? colors.brightRed : colors.yellow;
 
-    console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
-    console.log(`${label("Trade Direction")} ${directionColor}${colors.bold}${direction}${colors.reset}`);
-    console.log(
+    write(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
+    write(`${label("Trade Direction")} ${directionColor}${colors.bold}${direction}${colors.reset}`);
+    write(
       `${label("Setup Quality")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
     );
-    console.log(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
-    console.log(
+    write(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
+    write(
       `${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}` +
         (rec.estimatedPnLAtStopLoss !== undefined
           ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtStopLoss)}]${colors.reset}`
           : "")
     );
-    console.log(
+    write(
       `${label("Take Profit")} ${colors.brightGreen}${fmt(rec.takeProfit)}${colors.reset}` +
         (rec.estimatedPnLAtTakeProfit !== undefined
           ? ` ${colors.brightBlack}[${fmtUsd(rec.estimatedPnLAtTakeProfit)}]${colors.reset}`
@@ -209,18 +219,18 @@ export class RecommendationPrinter {
     );
     if (hasPosition) {
       const notional = rec.leverage! * rec.positionSizeUsd!;
-      console.log(
+      write(
         `${label("Position")} ${colors.white}${rec.leverage}x, ${rec.positionSizeUsd} USDC margin${colors.reset} ` +
           `${colors.brightBlack}(notional ${notional.toFixed(2)} USDC)${colors.reset}`
       );
       if (rec.netEstimatedPnLAtTakeProfit !== undefined && rec.netEstimatedPnLAtStopLoss !== undefined) {
-        console.log(
+        write(
           `${label("Net PnL TP/SL")} ${colors.brightGreen}${fmtUsd(rec.netEstimatedPnLAtTakeProfit)}${colors.reset} / ` +
             `${colors.brightRed}${fmtUsd(rec.netEstimatedPnLAtStopLoss)}${colors.reset}`
         );
       }
       if (rec.netRiskRewardRatio !== undefined) {
-        console.log(`${label("Net R/R")} ${colors.white}${rec.netRiskRewardRatio.toFixed(2)}${colors.reset}`);
+        write(`${label("Net R/R")} ${colors.white}${rec.netRiskRewardRatio.toFixed(2)}${colors.reset}`);
       }
       if (rec.expectedValueUsd !== undefined) {
         const evColor = rec.expectedValueUsd >= 0 ? colors.brightGreen : colors.brightRed;
@@ -228,29 +238,29 @@ export class RecommendationPrinter {
           rec.expectedValuePerMarginPct !== undefined
             ? ` ${colors.brightBlack}(${rec.expectedValuePerMarginPct.toFixed(2)}% of margin)${colors.reset}`
             : "";
-        console.log(`${label("Expected Value")} ${evColor}${fmtUsd(rec.expectedValueUsd)}${colors.reset}${evPct}`);
+        write(`${label("Expected Value")} ${evColor}${fmtUsd(rec.expectedValueUsd)}${colors.reset}${evPct}`);
       }
     }
     if (rec.objectiveUsdc !== undefined) {
       const aggressiveness = objectiveAggressiveness(rec);
       const aggressivenessColor = objectiveAggressivenessColor(aggressiveness);
-      console.log(
+      write(
         `${label("Objective")} ${colors.white}${rec.objectiveUsdc} USDC (PnL target)${colors.reset} ` +
           `${colors.brightBlack}(aggr ${aggressivenessColor}${aggressiveness}${colors.brightBlack})${colors.reset}`
       );
     }
     if (rec.objectiveHorizon !== undefined) {
       const candles = rec.objectiveHorizonCandles !== undefined ? `${rec.objectiveHorizonCandles} candles` : "n/a candles";
-      console.log(
+      write(
         `${label("Horizon")} ${colors.white}${rec.objectiveHorizon}${colors.reset} ` +
           `${colors.brightBlack}(${candles})${colors.reset}`
       );
     }
     if (rec.timeStopRule) {
-      console.log(`${label("Time Stop")} ${colors.white}${rec.timeStopRule}${colors.reset}`);
+      write(`${label("Time Stop")} ${colors.white}${rec.timeStopRule}${colors.reset}`);
     }
     if (rec.objectiveTargetTpPct !== undefined && rec.objectiveTargetSlPct !== undefined) {
-      console.log(
+      write(
         `${label("Target Pcts")} ${colors.white}TP ${rec.objectiveTargetTpPct.toFixed(3)}% / SL ${rec.objectiveTargetSlPct.toFixed(
           3
         )}%${colors.reset}` +
@@ -260,15 +270,15 @@ export class RecommendationPrinter {
       );
     }
     if (rec.objectivePlausibilityWarning) {
-      console.log(`${label("Warning")} ${colors.brightYellow}${rec.objectivePlausibilityWarning}${colors.reset}`);
+      write(`${label("Warning")} ${colors.brightYellow}${rec.objectivePlausibilityWarning}${colors.reset}`);
     }
     if (rec.signal === "NO_TRADE") {
-      console.log(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
+      write(`${label("Decision")} ${colors.brightRed}Skip trade until setup quality improves.${colors.reset}`);
       const guardReason = rec.rationale.find((line) => line.startsWith("No-trade guard:"));
       if (guardReason) {
-        console.log(`${label("Reason")} ${colors.yellow}${guardReason.replace("No-trade guard: ", "")}${colors.reset}`);
+        write(`${label("Reason")} ${colors.yellow}${guardReason.replace("No-trade guard: ", "")}${colors.reset}`);
       }
     }
-    console.log(divider());
+    write(divider());
   }
 }

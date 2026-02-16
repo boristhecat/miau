@@ -74,6 +74,10 @@ After starting the app, enter input at the `Symbol` prompt:
 - `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
 - `exit` or `quit` -> close the app
 
+Interactive screen layout:
+- Upper section: watched symbols (`watch ...`) with in-place updates
+- Lower section: single-symbol output showing the latest query result only
+
 ### Quick mode
 
 Prompts for core risk inputs:

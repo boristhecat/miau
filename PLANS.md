@@ -121,6 +121,11 @@
 - [x] Update watch command parsing to accept horizon only
 - [x] Update README and parser tests
 
+## Task: Two-section interactive console layout (2026-02-16)
+- [x] Add top watch section that refreshes in place with latest watch status
+- [x] Add bottom single-symbol section that stores and shows latest output only
+- [x] Route recommendation/rec/simulation output through dashboard renderer instead of streaming logs
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
