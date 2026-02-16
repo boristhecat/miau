@@ -5,7 +5,6 @@ export interface TradingInput {
   fullInteractive: boolean;
   manualLevels: boolean;
   runSimulation: boolean;
-  objectiveUsdc?: number;
   objectiveHorizon?: string;
   timeframe?: string;
   biasTimeframe?: string;
@@ -27,7 +26,6 @@ export function parseTradingInput(raw: string): TradingInput {
   let fullInteractive = false;
   let manualLevels = false;
   let runSimulation = false;
-  let objectiveUsdc: number | undefined;
   let objectiveHorizon: string | undefined;
 
   for (let i = 1; i < parts.length; i += 1) {
@@ -46,20 +44,6 @@ export function parseTradingInput(raw: string): TradingInput {
       continue;
     }
 
-    if (token === "--objective") {
-      const rawValue = parts[i + 1];
-      if (!rawValue) {
-        throw new Error("Missing value for --objective.");
-      }
-      const parsed = Number(rawValue);
-      if (Number.isNaN(parsed) || parsed <= 0) {
-        throw new Error("Invalid --objective value. Use a positive number.");
-      }
-      objectiveUsdc = parsed;
-      i += 1;
-      continue;
-    }
-
     if (token === "--horizon") {
       const rawValue = parts[i + 1];
       if (!rawValue) {
@@ -74,15 +58,12 @@ export function parseTradingInput(raw: string): TradingInput {
     }
 
     throw new Error(
-      "Only -i/--interactive, --manual-levels, --simulate, --objective <USDC>, and --horizon <minutes> are supported after symbol."
+      "Only -i/--interactive, --manual-levels, --simulate, and --horizon <minutes> are supported after symbol."
     );
   }
 
-  if (manualLevels && (objectiveUsdc !== undefined || objectiveHorizon !== undefined)) {
-    throw new Error("Manual levels mode cannot be combined with --objective/--horizon.");
-  }
-  if (objectiveUsdc !== undefined && objectiveHorizon !== undefined) {
-    throw new Error("Provide either --objective or --horizon, not both.");
+  if (manualLevels && objectiveHorizon !== undefined) {
+    throw new Error("Manual levels mode cannot be combined with --horizon.");
   }
 
   return {
@@ -90,7 +71,6 @@ export function parseTradingInput(raw: string): TradingInput {
     fullInteractive,
     manualLevels,
     runSimulation,
-    objectiveUsdc,
     objectiveHorizon,
     showDetails: false
   };

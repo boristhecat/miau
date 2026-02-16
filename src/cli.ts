@@ -232,7 +232,6 @@ async function main(): Promise<void> {
           tpPct: tradeInput.tpPct,
           slUsd: tradeInput.slUsd,
           tpUsd: tradeInput.tpUsd,
-          objectiveUsdc: tradeInput.objectiveUsdc,
           objectiveHorizon: tradeInput.objectiveHorizon
         });
         const calibration = tracker.applyConfidenceCalibration(pair, recommendation.confidence);
@@ -339,7 +338,7 @@ async function runRecommendationRanking(input: {
 function parseWatchCommand(raw: string): WatchConfig {
   const parts = raw.trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2 || parts[0]?.toLowerCase() !== "watch") {
-    throw new Error("Invalid watch command. Use: watch <SYMBOL> [--every <minutes>] [--objective <USDC> | --horizon <minutes>]");
+    throw new Error("Invalid watch command. Use: watch <SYMBOL> [--every <minutes>] [--horizon <minutes>]");
   }
   let everyMinutes = 1;
   const queryTokens: string[] = [];
@@ -362,7 +361,7 @@ function parseWatchCommand(raw: string): WatchConfig {
 
   const base = parseTradingInput(queryTokens.join(" "));
   if (base.manualLevels) {
-    throw new Error("Watch mode supports objective/horizon mode only; manual SL/TP is disabled.");
+    throw new Error("Watch mode supports horizon mode only; manual SL/TP is disabled.");
   }
 
   return {
@@ -373,7 +372,6 @@ function parseWatchCommand(raw: string): WatchConfig {
       fullInteractive: false,
       manualLevels: false,
       runSimulation: false,
-      objectiveUsdc: base.objectiveUsdc,
       objectiveHorizon: base.objectiveHorizon ?? "15",
       timeframe: "1m",
       biasTimeframe: "15m",
@@ -421,7 +419,6 @@ async function runWatchIteration(input: {
       biasInterval: input.watchConfig.input.biasTimeframe,
       leverage: input.watchConfig.input.leverage,
       positionSizeUsd: input.watchConfig.input.positionSizeUsd,
-      objectiveUsdc: input.watchConfig.input.objectiveUsdc,
       objectiveHorizon: input.watchConfig.input.objectiveHorizon
     });
     const calibration = input.tracker.applyConfidenceCalibration(pair, recommendation.confidence);
@@ -489,7 +486,6 @@ async function promptInteractiveTradeInput(
   let slValue: string | undefined;
   let tpMode: "none" | "pct" | "usd" = "none";
   let tpValue: string | undefined;
-  let objectiveUsdc: number | undefined;
   let objectiveHorizon: string | undefined;
 
   if (manualLevels) {
@@ -515,22 +511,13 @@ async function promptInteractiveTradeInput(
           ? await promptWithDefault(rl, "Take-profit USD (--tp-usd)", (base.tpUsd ?? 60).toString())
           : undefined;
   } else {
-    const objectiveRaw = await promptOptional(
-      rl,
-      "Profit objective USDC (--objective, notional PnL)",
-      base.objectiveUsdc?.toString()
-    );
     const horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon ?? "15");
-    objectiveUsdc = parseOptionalNumberInput(objectiveRaw, "profit objective");
     objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
-    if (objectiveUsdc !== undefined && objectiveHorizon !== undefined) {
-      throw new Error("Provide either objective or horizon, not both.");
-    }
-    if (objectiveUsdc === undefined && objectiveHorizon === undefined) {
+    if (objectiveHorizon === undefined) {
       objectiveHorizon = "15";
     }
     if (parsedLeverage === undefined || parsedPositionSize === undefined) {
-      throw new Error("Objective/horizon mode requires leverage and position size.");
+      throw new Error("Horizon mode requires leverage and position size.");
     }
   }
 
@@ -543,7 +530,6 @@ async function promptInteractiveTradeInput(
     runSimulation: base.runSimulation,
     timeframe: parseIntervalInput(tf, "timeframe"),
     biasTimeframe: parseIntervalInput(biasTf, "bias timeframe"),
-    objectiveUsdc,
     objectiveHorizon,
     leverage: parsedLeverage,
     positionSizeUsd: parsedPositionSize,
@@ -569,26 +555,16 @@ async function promptQuickTradeInput(
 
   let slValue: string | undefined;
   let tpValue: string | undefined;
-  let objectiveRaw: string | undefined;
   let horizonRaw: string | undefined;
   if (manualLevels) {
     slValue = await promptWithDefault(rl, "Stop-loss percent", (base.slPct ?? 0.6).toString());
     tpValue = await promptWithDefault(rl, "Take-profit percent", (base.tpPct ?? 1.2).toString());
   } else {
-    objectiveRaw = await promptOptional(
-      rl,
-      "Profit objective USDC (--objective, notional PnL)",
-      base.objectiveUsdc?.toString()
-    );
     horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon ?? "15");
   }
-  const objectiveUsdc = parseOptionalNumberInput(objectiveRaw, "profit objective");
   let objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
   if (!manualLevels) {
-    if (objectiveUsdc !== undefined && objectiveHorizon !== undefined) {
-      throw new Error("Provide either objective or horizon, not both.");
-    }
-    if (objectiveUsdc === undefined && objectiveHorizon === undefined) {
+    if (objectiveHorizon === undefined) {
       objectiveHorizon = "15";
     }
   }
@@ -598,7 +574,6 @@ async function promptQuickTradeInput(
     fullInteractive: false,
     manualLevels,
     runSimulation: base.runSimulation,
-    objectiveUsdc,
     objectiveHorizon,
     timeframe: "1m",
     biasTimeframe: "15m",
@@ -819,14 +794,13 @@ function getInteractiveHelpText(): string {
     "- exit | quit                   Close the app",
     "",
     "Query flags (after SYMBOL):",
-    "- --objective <USDC>            Notional PnL target (objective mode)",
-    "- --horizon <minutes>           Horizon in minutes (objective mode)",
+    "- --horizon <minutes>           Horizon in minutes (targeting mode)",
     "- --manual-levels               Enable manual SL/TP prompts",
     "- --simulate                    Always run simulation in background (uses --horizon minutes, else 15m)",
     "",
     "Rules:",
-    "- Use either --objective OR --horizon in objective mode (or none to use default horizon 15).",
-    "- --manual-levels cannot be combined with --objective/--horizon.",
+    "- --horizon defaults to 15 when omitted in targeting mode.",
+    "- --manual-levels cannot be combined with --horizon.",
     ""
   ].join("\n");
 }

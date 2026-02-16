@@ -115,6 +115,12 @@
 - [x] Add optional read-only watch mode that rechecks symbols and prints only status changes
 - [x] Add tests for new guards/scoring behavior
 
+## Task: Remove user objective input (2026-02-16)
+- [x] Remove `--objective` from query parsing and interactive help/usage
+- [x] Keep horizon-based targeting flow as the default non-manual mode
+- [x] Update watch command parsing to accept horizon only
+- [x] Update README and parser tests
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

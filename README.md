@@ -69,7 +69,6 @@ After starting the app, enter input at the `Symbol` prompt:
 - `rec` -> run top recommendations scan in-app
 - `BTC` -> quick mode
 - `ETH -i` -> full interactive mode
-- `BTC --objective 10` -> objective-driven TP/SL targeting (`10` = notional PnL target in USDC)
 - `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
 - `BTC --manual-levels` -> direct manual SL/TP mode
 - `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
@@ -82,12 +81,12 @@ Prompts for core risk inputs:
 - Leverage
 - Position size (USDC margin)
 - Target mode selection:
-  - objective/horizon mode (provide exactly one of `--objective` or `--horizon`, where horizon is minutes)
+  - horizon mode (`--horizon`, where horizon is minutes)
   - manual levels mode (`--manual-levels`) for direct SL/TP percentages
 - Simulation is flag-driven (`--simulate`) and is not prompted interactively
 - Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
 - Simulation always runs, even when recommendation says `NO_TRADE`
-- Profit objective in USDC (`--objective`, interpreted as notional PnL target) or trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
+- Trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
 - In manual mode: Stop-loss percent and Take-profit percent
 
 Defaults to:
@@ -109,14 +108,13 @@ Prompts for all configuration fields with defaults:
 - Optional position size
 - Target mode is selected by query flag before prompts:
   - manual mode via `--manual-levels`
-  - objective/horizon mode without `--manual-levels`
+  - horizon mode without `--manual-levels`
 - In manual mode: stop-loss and take-profit mode (`none`, `pct`, `usd`)
-- In objective/horizon mode: provide objective, horizon, or leave both empty to use default horizon `15`
+- In horizon mode: provide horizon or leave empty to use default horizon `15`
 - Show details: `y` / `n`
 - Simulation is flag-driven (`--simulate`) and is not prompted interactively
 - Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
 - Simulation always runs, even when recommendation says `NO_TRADE`
-- Profit objective in USDC (`--objective`, optional)
 - Trade horizon minutes (`--horizon`, optional)
 
 Tips:

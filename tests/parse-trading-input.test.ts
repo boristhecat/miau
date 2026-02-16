@@ -8,7 +8,6 @@ describe("parseTradingInput", () => {
       fullInteractive: false,
       manualLevels: false,
       runSimulation: false,
-      objectiveUsdc: undefined,
       objectiveHorizon: undefined,
       showDetails: false
     });
@@ -20,7 +19,6 @@ describe("parseTradingInput", () => {
       fullInteractive: true,
       manualLevels: false,
       runSimulation: false,
-      objectiveUsdc: undefined,
       objectiveHorizon: undefined,
       showDetails: false
     });
@@ -29,28 +27,17 @@ describe("parseTradingInput", () => {
       fullInteractive: true,
       manualLevels: false,
       runSimulation: false,
-      objectiveUsdc: undefined,
       objectiveHorizon: undefined,
       showDetails: false
     });
   });
 
-  it("parses objective-only or horizon-only flags", () => {
-    expect(parseTradingInput("btc --objective 10")).toEqual({
-      symbol: "BTC",
-      fullInteractive: false,
-      manualLevels: false,
-      runSimulation: false,
-      objectiveUsdc: 10,
-      objectiveHorizon: undefined,
-      showDetails: false
-    });
+  it("parses horizon-only flag", () => {
     expect(parseTradingInput("eth --horizon 75")).toEqual({
       symbol: "ETH",
       fullInteractive: false,
       manualLevels: false,
       runSimulation: false,
-      objectiveUsdc: undefined,
       objectiveHorizon: "75",
       showDetails: false
     });
@@ -62,7 +49,6 @@ describe("parseTradingInput", () => {
       fullInteractive: false,
       manualLevels: true,
       runSimulation: false,
-      objectiveUsdc: undefined,
       objectiveHorizon: undefined,
       showDetails: false
     });
@@ -74,7 +60,6 @@ describe("parseTradingInput", () => {
       fullInteractive: false,
       manualLevels: false,
       runSimulation: true,
-      objectiveUsdc: undefined,
       objectiveHorizon: undefined,
       showDetails: false
     });
@@ -87,16 +72,11 @@ describe("parseTradingInput", () => {
   it("rejects unsupported flags", () => {
     expect(() => parseTradingInput("BTC -l 5")).toThrowError("Only -i/--interactive, --manual-levels, --simulate");
     expect(() => parseTradingInput("ETH --tf 1m")).toThrowError("Only -i/--interactive, --manual-levels, --simulate");
+    expect(() => parseTradingInput("BTC --objective 10")).toThrowError("Only -i/--interactive, --manual-levels, --simulate");
   });
 
   it("rejects invalid or conflicting targeting flags", () => {
-    expect(() => parseTradingInput("BTC --objective -1")).toThrowError("Invalid --objective value");
     expect(() => parseTradingInput("BTC --horizon 90m")).toThrowError("Invalid --horizon value");
-    expect(() => parseTradingInput("BTC --objective 10 --horizon 15")).toThrowError(
-      "Provide either --objective or --horizon, not both."
-    );
-    expect(() => parseTradingInput("BTC --manual-levels --objective 10")).toThrowError(
-      "Manual levels mode cannot be combined"
-    );
+    expect(() => parseTradingInput("BTC --manual-levels --horizon 15")).toThrowError("Manual levels mode cannot be combined");
   });
 });

@@ -23,7 +23,6 @@ export class GenerateRecommendationUseCase {
     tpPct?: number;
     slUsd?: number;
     tpUsd?: number;
-    objectiveUsdc?: number;
     objectiveHorizon?: string;
   }): Promise<Recommendation> {
     const interval = input.interval ?? "1m";
@@ -65,7 +64,6 @@ export class GenerateRecommendationUseCase {
       tpPct: input.tpPct,
       slUsd: input.slUsd,
       tpUsd: input.tpUsd,
-      objectiveUsdc: input.objectiveUsdc,
       objectiveHorizon: input.objectiveHorizon,
       baseInterval: interval,
       biasTrend,
