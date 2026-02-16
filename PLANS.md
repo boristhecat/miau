@@ -138,6 +138,12 @@
 - [x] Make startup require SQLite adapter initialization
 - [x] Update dependency/docs to require `better-sqlite3`
 
+## Task: Background learn command (2026-02-16)
+- [x] Add interactive `learn --start` and `learn --stop` commands
+- [x] Reuse rec-style symbol selection for learning universe
+- [x] Schedule background simulations for horizons 5/10/15/30/60/90 per selected symbol
+- [x] Ensure learn runner can stop cleanly and cancel pending timers
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

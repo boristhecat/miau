@@ -76,11 +76,18 @@ After starting the app, enter input at the `Command` prompt:
 - `watch BTC --every 1` -> add symbol to live watch section (top panel)
 - `unwatch BTC` -> remove symbol from live watch section
 - `watches` -> list active watched symbols
+- `learn --start` -> start background learning runner
+- `learn --stop` -> stop background learning runner
 - `exit` or `quit` -> close the app
 
 Interactive screen layout:
 - Upper section: watched symbols (`watch ...`) with in-place updates
 - Lower section: single-symbol output showing the latest query result only
+
+Background learning mode:
+- On `learn --start`, the app derives symbols from rec-style ranking and starts background simulations.
+- For each selected symbol it runs horizons: `5, 10, 15, 30, 60, 90` minutes.
+- Use `learn --stop` to stop the runner and cancel pending scheduled simulations.
 
 ### Quick mode
 

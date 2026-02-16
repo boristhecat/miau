@@ -96,40 +96,98 @@ interface WatchRow {
   confidence?: number;
   setupQuality?: number;
   reason?: string;
-  updatedAt: string;
+  updatedAtMs: number;
 }
 
 interface DashboardState {
   watchRows: Map<string, WatchRow>;
   latestQueryLines: string[];
+  learning: {
+    active: boolean;
+    cycleRunning: boolean;
+    symbolsCount: number;
+    pendingSimulations: number;
+  };
 }
 
-function nowLabel(): string {
-  return new Date().toLocaleTimeString([], { hour12: false });
+interface LearningRunnerState {
+  active: boolean;
+  cycleRunning: boolean;
+  intervalId?: NodeJS.Timeout;
+  pendingTimers: Set<NodeJS.Timeout>;
+  symbols: string[];
+}
+
+const LEARN_HORIZONS_MINUTES = [5, 10, 15, 30, 60, 90] as const;
+const LEARN_CYCLE_INTERVAL_MINUTES = 10;
+
+function ageLabel(updatedAtMs: number): string {
+  const sec = Math.max(0, Math.floor((Date.now() - updatedAtMs) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h`;
+}
+
+function signalColor(signal: WatchRow["signal"]): string {
+  if (signal === "LONG") return ui.green;
+  if (signal === "SHORT") return ui.red;
+  if (signal === "COOLDOWN") return ui.yellow;
+  return ui.gray;
+}
+
+function scoreColor(value?: number): string {
+  if (value === undefined) return ui.gray;
+  if (value >= 70) return ui.green;
+  if (value >= 55) return ui.yellow;
+  return ui.red;
+}
+
+function formatPct(value?: number): string {
+  if (value === undefined) return "-";
+  return `${value.toFixed(2)}%`;
 }
 
 function renderDashboard(state: DashboardState): void {
   process.stdout.write("\u001b[2J\u001b[H");
-  console.log(`${ui.bold}${ui.blue}WATCHED SYMBOLS${ui.reset}`);
+  console.log(`${ui.bold}${ui.blue}WATCHED SYMBOLS${ui.reset} ${ui.gray}(live, in-place)${ui.reset}`);
+  const learningStatusColor = state.learning.active ? ui.green : ui.gray;
+  const learningCycle = state.learning.cycleRunning ? `${ui.yellow}cycle running${ui.reset}` : `${ui.gray}idle${ui.reset}`;
+  console.log(
+    `${ui.bold}learning:${ui.reset} ${learningStatusColor}${state.learning.active ? "RUNNING" : "STOPPED"}${ui.reset}  ` +
+      `${learningCycle}  ` +
+      `${ui.gray}symbols:${state.learning.symbolsCount} pending:${state.learning.pendingSimulations}${ui.reset}`
+  );
   if (state.watchRows.size === 0) {
     console.log(`${ui.gray}No active watches. Use: watch BTC --every 1${ui.reset}`);
   } else {
-    console.log(`${ui.gray}Symbol   Signal      Regime            Conf  Setup  Updated   Reason${ui.reset}`);
-    for (const row of state.watchRows.values()) {
-      const signalColor =
-        row.signal === "LONG" ? ui.green : row.signal === "SHORT" ? ui.red : row.signal === "COOLDOWN" ? ui.yellow : ui.gray;
-      const conf = row.confidence !== undefined ? `${row.confidence}%` : "-";
-      const quality = row.setupQuality !== undefined ? `${row.setupQuality}%` : "-";
-      const reason = row.reason ? row.reason.slice(0, 36) : "";
+    const rows = [...state.watchRows.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
+    const longCount = rows.filter((row) => row.signal === "LONG").length;
+    const shortCount = rows.filter((row) => row.signal === "SHORT").length;
+    const noTradeCount = rows.filter((row) => row.signal === "NO_TRADE").length;
+    const cooldownCount = rows.filter((row) => row.signal === "COOLDOWN").length;
+    console.log(
+      `${ui.gray}active:${ui.reset} ${rows.length}  ` +
+      `${ui.green}long:${longCount}${ui.reset}  ` +
+      `${ui.red}short:${shortCount}${ui.reset}  ` +
+      `${ui.yellow}no-trade:${noTradeCount}${ui.reset}  ` +
+      `${ui.yellow}cooldown:${cooldownCount}${ui.reset}`
+    );
+    console.log(`${ui.gray}signal / regime / confidence / setup / age${ui.reset}`);
+    for (const row of rows) {
+      const conf = formatPct(row.confidence);
+      const setup = formatPct(row.setupQuality);
+      const note = row.reason ?? "-";
       console.log(
-        `${ui.cyan}${row.symbol.padEnd(8)}${ui.reset}` +
-          `${signalColor}${row.signal.padEnd(12)}${ui.reset}` +
-          `${(row.regime ?? "-").padEnd(18)}` +
-          `${conf.padEnd(6)} ` +
-          `${quality.padEnd(6)} ` +
-          `${row.updatedAt.padEnd(8)} ` +
-          `${reason}`
+        `${ui.cyan}${ui.bold}${row.symbol}${ui.reset}  ` +
+          `${signalColor(row.signal)}${row.signal}${ui.reset}  ` +
+          `${ui.gray}${row.regime ?? "-"}${ui.reset}  ` +
+          `${scoreColor(row.confidence)}conf ${conf}${ui.reset}  ` +
+          `${scoreColor(row.setupQuality)}setup ${setup}${ui.reset}  ` +
+          `${ui.gray}${ageLabel(row.updatedAtMs)}${ui.reset}`
       );
+      console.log(`${ui.gray}  note:${ui.reset} ${note}`);
     }
   }
 
@@ -201,9 +259,27 @@ async function main(): Promise<void> {
   const watchIntervals = new Map<string, NodeJS.Timeout>();
   const watchSignatures = new Map<string, string>();
   const watchRunning = new Set<string>();
+  const learningRunner: LearningRunnerState = {
+    active: false,
+    cycleRunning: false,
+    pendingTimers: new Set<NodeJS.Timeout>(),
+    symbols: []
+  };
   const dashboard: DashboardState = {
     watchRows: new Map<string, WatchRow>(),
-    latestQueryLines: []
+    latestQueryLines: [],
+    learning: {
+      active: false,
+      cycleRunning: false,
+      symbolsCount: 0,
+      pendingSimulations: 0
+    }
+  };
+  const syncLearningIndicator = (): void => {
+    dashboard.learning.active = learningRunner.active;
+    dashboard.learning.cycleRunning = learningRunner.cycleRunning;
+    dashboard.learning.symbolsCount = learningRunner.symbols.length;
+    dashboard.learning.pendingSimulations = learningRunner.pendingTimers.size;
   };
   let isPrompting = false;
   let pendingRender = false;
@@ -219,7 +295,7 @@ async function main(): Promise<void> {
     while (true) {
       isPrompting = true;
       const raw = await rl.question(
-        `${ui.bold}${ui.cyan}Command${ui.reset} ${ui.gray}(e.g. BTC | watch BTC | help | rec | exit)${ui.reset}: `
+        `${ui.bold}${ui.cyan}Command${ui.reset} ${ui.gray}(e.g. BTC | watch BTC | learn --start | help | rec | exit)${ui.reset}: `
       );
       isPrompting = false;
       if (pendingRender) {
@@ -254,6 +330,64 @@ async function main(): Promise<void> {
           `${ui.bold}${ui.blue}ACTIVE WATCHES${ui.reset}`,
           ...(watchIntervals.size === 0 ? [`${ui.gray}No active watches.${ui.reset}`] : [...watchIntervals.keys()].map((s) => `- ${s}`))
         ];
+        requestRender();
+        continue;
+      }
+      if (normalized === "learn --start") {
+        if (learningRunner.active) {
+          dashboard.latestQueryLines = [`${ui.yellow}[learn] already running.${ui.reset}`];
+          syncLearningIndicator();
+          requestRender();
+          continue;
+        }
+        learningRunner.active = true;
+        dashboard.latestQueryLines = [
+          `${ui.green}[learn] started background learning.${ui.reset}`,
+          `${ui.gray}horizons:${ui.reset} ${LEARN_HORIZONS_MINUTES.join(", ")} minutes`,
+          `${ui.gray}cycle:${ui.reset} every ${LEARN_CYCLE_INTERVAL_MINUTES} minutes`
+        ];
+        syncLearningIndicator();
+        requestRender();
+        learningRunner.intervalId = setInterval(() => {
+          void runLearningCycle({
+            logger,
+            runner: learningRunner,
+            recommendationUseCase: useCase,
+            symbolUniverseProvider: marketData,
+            marketData,
+            learning,
+            tracker,
+            onStateChanged: () => {
+              syncLearningIndicator();
+              requestRender();
+            }
+          });
+        }, LEARN_CYCLE_INTERVAL_MINUTES * 60_000);
+        void runLearningCycle({
+          logger,
+          runner: learningRunner,
+          recommendationUseCase: useCase,
+          symbolUniverseProvider: marketData,
+          marketData,
+          learning,
+          tracker,
+          onStateChanged: () => {
+            syncLearningIndicator();
+            requestRender();
+          }
+        });
+        syncLearningIndicator();
+        requestRender();
+        continue;
+      }
+      if (normalized === "learn --stop") {
+        if (!learningRunner.active) {
+          dashboard.latestQueryLines = [`${ui.yellow}[learn] not running.${ui.reset}`];
+        } else {
+          stopLearningRunner(learningRunner);
+          dashboard.latestQueryLines = [`${ui.green}[learn] stopped.${ui.reset}`];
+        }
+        syncLearningIndicator();
         requestRender();
         continue;
       }
@@ -293,9 +427,6 @@ async function main(): Promise<void> {
             watchRows: dashboard.watchRows,
             requestRender
           });
-          dashboard.latestQueryLines = [
-            `${ui.green}[watch] Started ${key} every ${watchConfig.everyMinutes}m. Use 'unwatch ${key}' to stop.${ui.reset}`
-          ];
         } catch (error) {
           const message = error instanceof Error ? error.message : "Invalid watch command";
           dashboard.latestQueryLines = [`${ui.red}[error] ${message}${ui.reset}`];
@@ -379,6 +510,8 @@ async function main(): Promise<void> {
     renderDashboard(dashboard);
     process.exitCode = 1;
   } finally {
+    stopLearningRunner(learningRunner);
+    syncLearningIndicator();
     for (const timer of watchIntervals.values()) {
       clearInterval(timer);
     }
@@ -449,6 +582,107 @@ async function runRecommendationRanking(input: {
   }
   write("");
   return lines;
+}
+
+async function getLearningSymbols(input: {
+  recommendationUseCase: GenerateRecommendationUseCase;
+  symbolUniverseProvider: BackpackMarketDataClient;
+}): Promise<string[]> {
+  const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase, input.symbolUniverseProvider);
+  const selected = await input.symbolUniverseProvider.getTopPerpSymbolsByVolumeWithOpenInterest(15);
+  const result = await rankUseCase.execute({
+    symbols: selected.map((item) => item.symbol),
+    top: 5
+  });
+  const ranked = result.ranked.map((row) => row.symbol);
+  if (ranked.length > 0) {
+    return ranked;
+  }
+  return selected.slice(0, 5).map((item) => item.symbol);
+}
+
+async function runLearningCycle(input: {
+  logger: ConsoleLogger;
+  runner: LearningRunnerState;
+  recommendationUseCase: GenerateRecommendationUseCase;
+  symbolUniverseProvider: BackpackMarketDataClient;
+  marketData: BackpackMarketDataClient;
+  learning: AdaptiveLearningService;
+  tracker: SessionPerformanceTracker;
+  onStateChanged?: () => void;
+}): Promise<void> {
+  if (!input.runner.active || input.runner.cycleRunning) {
+    return;
+  }
+  input.runner.cycleRunning = true;
+  input.onStateChanged?.();
+  try {
+    const symbols = await getLearningSymbols({
+      recommendationUseCase: input.recommendationUseCase,
+      symbolUniverseProvider: input.symbolUniverseProvider
+    });
+    input.runner.symbols = symbols;
+    input.onStateChanged?.();
+
+    for (const symbol of symbols) {
+      const pair = `${symbol}-USD`;
+      for (const horizonMinutes of LEARN_HORIZONS_MINUTES) {
+        if (!input.runner.active) {
+          return;
+        }
+        let recommendation = await input.recommendationUseCase.execute({
+          pair,
+          interval: "1m",
+          biasInterval: "15m",
+          leverage: 20,
+          positionSizeUsd: 250,
+          objectiveHorizon: String(horizonMinutes)
+        });
+        recommendation = await input.learning.applyPolicy({
+          recommendation,
+          timeframe: "1m"
+        });
+        scheduleSimulation({
+          marketData: input.marketData,
+          recommendation,
+          interval: "1m",
+          horizonMinutes,
+          silent: true,
+          timerRegistry: input.runner.pendingTimers,
+          onResult: async (result) => {
+            input.tracker.recordSimulation(pair, result.status, "1m");
+            await input.learning.recordSimulationOutcome({
+              recommendation,
+              timeframe: "1m",
+              horizonMinutes,
+              status: result.status,
+              pnlUsd: result.pnlUsd
+            });
+          }
+        });
+        input.onStateChanged?.();
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Learning cycle failed";
+    input.logger.error(`[learn] ${message}`);
+  } finally {
+    input.runner.cycleRunning = false;
+    input.onStateChanged?.();
+  }
+}
+
+function stopLearningRunner(runner: LearningRunnerState): void {
+  runner.active = false;
+  if (runner.intervalId) {
+    clearInterval(runner.intervalId);
+    runner.intervalId = undefined;
+  }
+  for (const timer of runner.pendingTimers.values()) {
+    clearTimeout(timer);
+  }
+  runner.pendingTimers.clear();
+  runner.cycleRunning = false;
 }
 
 function parseWatchCommand(raw: string): WatchConfig {
@@ -531,7 +765,7 @@ async function runWatchIteration(input: {
           confidence: undefined,
           setupQuality: undefined,
           reason: `Cooldown ${Math.ceil(cooldownRemainingMs / 60_000)}m`,
-          updatedAt: nowLabel()
+          updatedAtMs: Date.now()
         });
         input.requestRender();
       }
@@ -572,7 +806,7 @@ async function runWatchIteration(input: {
       confidence: recommendation.confidence,
       setupQuality: recommendation.confidenceBreakdown.setupQuality,
       reason: guardReason,
-      updatedAt: nowLabel()
+      updatedAtMs: Date.now()
     });
     input.requestRender();
   } catch (error) {
@@ -583,7 +817,7 @@ async function runWatchIteration(input: {
       confidence: undefined,
       setupQuality: undefined,
       reason: error instanceof Error ? error.message : "Watch iteration failed",
-      updatedAt: nowLabel()
+      updatedAtMs: Date.now()
     });
     input.requestRender();
   } finally {
@@ -728,6 +962,8 @@ function scheduleSimulation(input: {
   horizonMinutes: number;
   onResult?: (result: { status: "SUCCESS" | "FAILURE"; pnlUsd?: number }) => void | Promise<void>;
   onRendered?: (lines: string[]) => void;
+  silent?: boolean;
+  timerRegistry?: Set<NodeJS.Timeout>;
 }): void {
   const signal = resolveSimulationSignal(input.recommendation);
 
@@ -736,8 +972,9 @@ function scheduleSimulation(input: {
   const timeframeMs = intervalToMs(input.interval);
   const minLimit = Math.max(120, Math.ceil(horizonMs / Math.max(timeframeMs, 60_000)) + 40);
 
-  void (async () => {
-    await delay(horizonMs);
+  const timeout = setTimeout(() => {
+    void (async () => {
+      input.timerRegistry?.delete(timeout);
     try {
       const candles = await input.marketData.getCandles({
         pair: input.recommendation.pair,
@@ -773,7 +1010,9 @@ function scheduleSimulation(input: {
           `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`,
         `${ui.gray}reason:${ui.reset} ${outcome.reason}`
       ];
-      if (input.onRendered) {
+      if (input.silent) {
+        // Keep learn-mode background simulations non-intrusive for the interactive dashboard.
+      } else if (input.onRendered) {
         input.onRendered(rendered);
       } else {
         rendered.forEach((line) => console.log(line));
@@ -782,13 +1021,17 @@ function scheduleSimulation(input: {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unhandled simulation error";
       const rendered = [`${ui.red}[sim] Failed to evaluate ${input.recommendation.pair}: ${message}${ui.reset}`];
-      if (input.onRendered) {
+      if (input.silent) {
+        // noop
+      } else if (input.onRendered) {
         input.onRendered(rendered);
       } else {
         rendered.forEach((line) => console.log(line));
       }
     }
-  })();
+    })();
+  }, horizonMs);
+  input.timerRegistry?.add(timeout);
 }
 
 async function promptWithDefault(rl: readline.Interface, label: string, defaultValue: string): Promise<string> {
@@ -889,10 +1132,6 @@ function intervalToMs(interval: string): number {
   return amount * 24 * 60 * 60_000;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function resolveSimulationHorizonMinutes(objectiveHorizon?: string): number {
   if (!objectiveHorizon) {
     return 15;
@@ -924,6 +1163,8 @@ function getInteractiveHelpText(): string {
     "- watch <SYMBOL> [--every N]    Re-check symbol every N minutes (status changes only)",
     "- unwatch <SYMBOL>              Stop one active watch",
     "- watches                       List active watches",
+    "- learn --start                 Start background learning runner",
+    "- learn --stop                  Stop background learning runner",
     "- rec                           Run top recommendations scan",
     "- help                          Show this help",
     "- exit | quit                   Close the app",
