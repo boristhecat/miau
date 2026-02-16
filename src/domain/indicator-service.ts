@@ -44,6 +44,8 @@ export class IndicatorService {
     const latestStochRsi = this.lastOrThrow(stochRsi, "StochRSI");
     const latestVwap = this.lastOrThrow(vwap, "VWAP");
 
+    const recentCandleContext = this.computeRecentCandleContext(candles);
+
     return {
       rsi14: this.round(latestRsi),
       ema20: this.round(latestEma20),
@@ -58,7 +60,42 @@ export class IndicatorService {
       bbLower: this.round(latestBb.lower ?? 0),
       stochRsiK: this.round(latestStochRsi.k ?? 0),
       stochRsiD: this.round(latestStochRsi.d ?? 0),
-      vwap: this.round(latestVwap)
+      vwap: this.round(latestVwap),
+      recentCandleContext
+    };
+  }
+
+  private computeRecentCandleContext(candles: Candle[]): IndicatorSnapshot["recentCandleContext"] {
+    const recent = candles.slice(-5);
+    if (recent.length < 5) {
+      return undefined;
+    }
+
+    const bullishCloseRatio5 = recent.filter((candle) => candle.close > candle.open).length / recent.length;
+    const bearishCloseRatio5 = recent.filter((candle) => candle.close < candle.open).length / recent.length;
+
+    const closeNow = recent[recent.length - 1]!.close;
+    const close3Ago = recent[recent.length - 4]!.close;
+    const momentumPct3 = ((closeNow - close3Ago) / Math.max(close3Ago, 1)) * 100;
+
+    const avgRangePct5 =
+      recent.reduce((sum, candle) => sum + (candle.high - candle.low) / Math.max(candle.close, 1), 0) / recent.length;
+    const last = recent[recent.length - 1]!;
+    const lastRangePct = (last.high - last.low) / Math.max(last.close, 1);
+    const rangeExpansionRatio = avgRangePct5 > 0 ? lastRangePct / avgRangePct5 : 1;
+
+    const prev4 = recent.slice(0, 4);
+    const prevHigh = Math.max(...prev4.map((candle) => candle.high));
+    const prevLow = Math.min(...prev4.map((candle) => candle.low));
+    const breakoutUp = last.close > prevHigh;
+    const breakoutDown = last.close < prevLow;
+
+    return {
+      momentumPct3: this.round(momentumPct3),
+      bullishCloseRatio5: this.round(bullishCloseRatio5),
+      bearishCloseRatio5: this.round(bearishCloseRatio5),
+      rangeExpansionRatio: this.round(rangeExpansionRatio),
+      breakoutDirection: breakoutUp ? "UP" : breakoutDown ? "DOWN" : "NONE"
     };
   }
 

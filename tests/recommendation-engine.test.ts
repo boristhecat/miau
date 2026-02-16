@@ -353,4 +353,40 @@ describe("RecommendationEngine", () => {
     expect(rec.netRiskRewardRatio).toBeGreaterThan(0);
     expect(rec.expectedValueUsd).toBeDefined();
   });
+
+  it("blocks SHORT when recent candles show a strong bullish impulse", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 42,
+      ema20: 49800,
+      ema50: 50200,
+      macd: -18,
+      macdSignal: -10,
+      macdHistogram: -6,
+      atr14: 180,
+      adx14: 30,
+      bbUpper: 50700,
+      bbMiddle: 50000,
+      bbLower: 49300,
+      stochRsiK: 35,
+      stochRsiD: 45,
+      vwap: 49900,
+      recentCandleContext: {
+        momentumPct3: 0.65,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.45,
+        breakoutDirection: "UP"
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp
+    });
+
+    expect(rec.signal).toBe("NO_TRADE");
+    expect(rec.rationale.some((line) => line.includes("avoid fading a strong recent bullish impulse"))).toBe(true);
+  });
 });

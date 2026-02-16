@@ -101,6 +101,12 @@
 - [x] Extend trade-level console output with regime + EV/net metrics
 - [x] Add/adjust tests for regime classification and EV/net output math
 
+## Task: Recent-candle anti-fade filter (2026-02-16)
+- [x] Add recent candle context to indicator snapshot (momentum, close skew, breakout impulse)
+- [x] Use recent-candle context in recommendation scoring to avoid shorting strong pumps / longing strong dumps
+- [x] Add no-trade guard when signal fades a strong opposite impulse
+- [x] Add unit test for anti-fade behavior
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

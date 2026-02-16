@@ -44,7 +44,7 @@ export class RecommendationEngine {
       objectiveHorizon,
       baseInterval
     } = input;
-    const { signal, confidence, rationale, regime, marketRegime } = this.evaluate(
+    const { signal, confidence, rationale, regime, marketRegime, impulseBias } = this.evaluate(
       indicators,
       perp,
       lastPrice,
@@ -155,6 +155,7 @@ export class RecommendationEngine {
       signal,
       regime,
       marketRegime,
+      impulseBias,
       confidence,
       riskRewardRatio,
       rationale
@@ -218,6 +219,7 @@ export class RecommendationEngine {
     confidence: number;
     rationale: string[];
     marketRegime: MarketRegime;
+    impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
     regime: "TRADEABLE" | "CHOPPY";
   } {
     let longScore = 0;
@@ -227,6 +229,7 @@ export class RecommendationEngine {
     rationale.push(...regimeContext.rationale);
     let regime = regimeContext.regime;
     const marketRegime = regimeContext.marketRegime;
+    let impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE" = "NONE";
 
     if (indicators.ema20 > indicators.ema50) {
       longScore += 28;
@@ -333,6 +336,32 @@ export class RecommendationEngine {
       }
     }
 
+    const recent = indicators.recentCandleContext;
+    if (recent) {
+      const upImpulse =
+        recent.momentumPct3 >= 0.28 &&
+        recent.bullishCloseRatio5 >= 0.6 &&
+        (recent.breakoutDirection === "UP" || recent.rangeExpansionRatio >= 1.25);
+      const downImpulse =
+        recent.momentumPct3 <= -0.28 &&
+        recent.bearishCloseRatio5 >= 0.6 &&
+        (recent.breakoutDirection === "DOWN" || recent.rangeExpansionRatio >= 1.25);
+
+      if (upImpulse) {
+        impulseBias = "UP_IMPULSE";
+        longScore += 12;
+        shortScore -= 10;
+        rationale.push("Recent candles show a bullish impulse (momentum + close skew + expansion/breakout).");
+      } else if (downImpulse) {
+        impulseBias = "DOWN_IMPULSE";
+        shortScore += 12;
+        longScore -= 10;
+        rationale.push("Recent candles show a bearish impulse (momentum + close skew + expansion/breakout).");
+      } else {
+        rationale.push("Recent candle impulse is neutral.");
+      }
+    }
+
     const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
     if (atrPct < 0.8) {
       longScore += 3;
@@ -399,7 +428,7 @@ export class RecommendationEngine {
       rationale.push("VWAP filter: price is too close to VWAP; intraday direction is not clean.");
     }
 
-    return { signal, confidence, rationale, regime, marketRegime };
+    return { signal, confidence, rationale, regime, marketRegime, impulseBias };
   }
 
   private computeAtrPct(indicators: IndicatorSnapshot): number {
@@ -653,10 +682,19 @@ export class RecommendationEngine {
     signal: Exclude<Signal, "NO_TRADE">;
     regime: "TRADEABLE" | "CHOPPY";
     marketRegime: MarketRegime;
+    impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
     confidence: number;
     riskRewardRatio: number;
     rationale: string[];
   }): Signal {
+    if (input.signal === "SHORT" && input.impulseBias === "UP_IMPULSE") {
+      input.rationale.push("No-trade guard: avoid fading a strong recent bullish impulse.");
+      return "NO_TRADE";
+    }
+    if (input.signal === "LONG" && input.impulseBias === "DOWN_IMPULSE") {
+      input.rationale.push("No-trade guard: avoid fading a strong recent bearish impulse.");
+      return "NO_TRADE";
+    }
     if (input.marketRegime === "LOW_LIQ_CHOP") {
       input.rationale.push("No-trade guard: low-liquidity chop regime.");
       return "NO_TRADE";

@@ -1,6 +1,7 @@
 export type Signal = "LONG" | "SHORT" | "NO_TRADE";
 export type TradeAction = "LONG" | "SHORT" | "NO TRADE";
 export type MarketRegime = "TREND" | "RANGE" | "VOLATILE_SPIKE" | "LOW_LIQ_CHOP";
+export type ImpulseDirection = "UP" | "DOWN" | "NONE";
 
 export interface Candle {
   timestamp: number;
@@ -26,6 +27,13 @@ export interface IndicatorSnapshot {
   stochRsiK: number;
   stochRsiD: number;
   vwap: number;
+  recentCandleContext?: {
+    momentumPct3: number;
+    bullishCloseRatio5: number;
+    bearishCloseRatio5: number;
+    rangeExpansionRatio: number;
+    breakoutDirection: ImpulseDirection;
+  };
 }
 
 export interface PerpMarketSnapshot {
