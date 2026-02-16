@@ -305,7 +305,7 @@ async function main(): Promise<void> {
     while (true) {
       isPrompting = true;
       const raw = await rl.question(
-        `${ui.bold}${ui.cyan}Command${ui.reset} ${ui.gray}(e.g. BTC | watch BTC | learn --start | learn --stats | help | rec | exit)${ui.reset}: `
+        `${ui.bold}${ui.cyan}Input${ui.reset} ${ui.gray}(symbol | help | exit)${ui.reset}: `
       );
       isPrompting = false;
       if (pendingRender) {
