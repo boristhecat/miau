@@ -4,6 +4,7 @@ import type {
   MarketRegime,
   PerpMarketSnapshot,
   Recommendation,
+  SetupGrade,
   Signal,
   TradeAction
 } from "./types.js";
@@ -14,6 +15,7 @@ interface BuildRecommendationInput {
   lastPrice: number;
   indicators: IndicatorSnapshot;
   perp: PerpMarketSnapshot;
+  forcedDirection?: "LONG" | "SHORT";
   biasTrend?: Signal;
   biasInterval?: string;
   leverage?: number;
@@ -33,6 +35,19 @@ interface RegimeContext {
   rationale: string[];
 }
 
+interface SetupAssessment {
+  setupQuality: number;
+  setupGrade: SetupGrade;
+  factorScores: {
+    location: number;
+    trigger: number;
+    microstructure: number;
+    regime: number;
+    riskEfficiency: number;
+    friction: number;
+  };
+}
+
 export class RecommendationEngine {
   build(input: BuildRecommendationInput): Recommendation {
     const {
@@ -46,19 +61,39 @@ export class RecommendationEngine {
       tpPct,
       slUsd,
       tpUsd,
+      forcedDirection,
       biasTrend,
       biasInterval,
       objectiveUsdc,
       objectiveHorizon,
       baseInterval
     } = input;
-    const { signal, confidence, rationale, regime, marketRegime, impulseBias, pullbackExtended, breakoutValidationFailed, confidenceBreakdown } = this.evaluate(
+    const {
+      signal,
+      confidence: baseConfidence,
+      rationale,
+      regime,
+      marketRegime,
+      impulseBias,
+      pullbackExtended,
+      breakoutValidationFailed,
+      confidenceBreakdown
+    } = this.evaluate(
       indicators,
       perp,
       lastPrice,
       biasTrend,
       biasInterval
     );
+    let confidence = baseConfidence;
+    const modelSignal = signal;
+    const tradeSignal: Exclude<Signal, "NO_TRADE"> = forcedDirection ?? signal;
+    if (forcedDirection) {
+      rationale.unshift(`Direction override: user requested ${forcedDirection}; model bias was ${modelSignal}.`);
+      if (forcedDirection !== modelSignal) {
+        confidence = Math.max(1, confidence - 10);
+      }
+    }
 
     const atr = indicators.atr14;
     const atrPct = this.computeAtrPct(indicators);
@@ -67,13 +102,13 @@ export class RecommendationEngine {
     let stopLoss = lastPrice;
     let takeProfit = lastPrice;
 
-    if (signal === "LONG") {
+    if (tradeSignal === "LONG") {
       stopLoss = Math.min(lastPrice - atrProfile.slAtrMultiplier * atr, indicators.bbMiddle);
       takeProfit = Math.max(lastPrice + atrProfile.tpAtrMultiplier * atr, indicators.bbUpper);
       if (takeProfit <= entry) {
         takeProfit = lastPrice + atrProfile.tpFallbackAtrMultiplier * atr;
       }
-    } else if (signal === "SHORT") {
+    } else if (tradeSignal === "SHORT") {
       stopLoss = Math.max(lastPrice + atrProfile.slAtrMultiplier * atr, indicators.bbMiddle);
       takeProfit = Math.min(lastPrice - atrProfile.tpAtrMultiplier * atr, indicators.bbLower);
       if (takeProfit >= entry) {
@@ -106,7 +141,7 @@ export class RecommendationEngine {
         throw new Error("Objective targeting requires leverage and position size.");
       }
       const objectiveTargets = applyObjectiveTargeting({
-        signal,
+        signal: tradeSignal,
         entry,
         atr,
         baseInterval: baseInterval ?? "1m",
@@ -133,14 +168,14 @@ export class RecommendationEngine {
       };
     } else {
       stopLoss = this.applyStopLossOverride({
-        signal,
+        signal: tradeSignal,
         entry,
         current: stopLoss,
         slPct,
         slUsd
       });
       takeProfit = this.applyTakeProfitOverride({
-        signal,
+        signal: tradeSignal,
         entry,
         current: takeProfit,
         tpPct,
@@ -148,10 +183,10 @@ export class RecommendationEngine {
       });
     }
 
-    this.validateLevels(signal, entry, stopLoss, takeProfit);
+    this.validateLevels(tradeSignal, entry, stopLoss, takeProfit);
 
     const pnl = this.computeEstimatedPnL({
-      signal,
+      signal: tradeSignal,
       entry,
       stopLoss,
       takeProfit,
@@ -159,31 +194,59 @@ export class RecommendationEngine {
       positionSizeUsd
     });
     const riskRewardRatio = this.computeRiskReward(entry, stopLoss, takeProfit);
-    const finalSignal = this.applyTradeGuards({
-      signal,
+    const estimatedPnLAtStopLoss = objectiveContext?.expectedPnlAtStopLoss ?? pnl?.atStopLoss;
+    const estimatedPnLAtTakeProfit = objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit;
+    const setupAssessment = this.assessSetupQuality({
+      signal: tradeSignal,
+      indicators,
+      perp,
+      marketRegime,
+      entry,
+      stopLoss,
+      takeProfit,
+      riskRewardRatio,
+      baseSetupQuality: confidenceBreakdown.setupQuality,
+      estimatedPnLAtTakeProfit,
+      leverage,
+      positionSizeUsd
+    });
+    confidenceBreakdown.setupQuality = setupAssessment.setupQuality;
+    confidence = Math.round(this.clamp(confidence * 0.55 + setupAssessment.setupQuality * 0.45, 1, 99));
+    rationale.push(
+      `Setup grade ${setupAssessment.setupGrade}: loc ${setupAssessment.factorScores.location} / trig ${setupAssessment.factorScores.trigger} / micro ${setupAssessment.factorScores.microstructure} / regime ${setupAssessment.factorScores.regime} / risk ${setupAssessment.factorScores.riskEfficiency} / friction ${setupAssessment.factorScores.friction}.`
+    );
+    const guardResult = this.applyTradeGuards({
+      signal: tradeSignal,
+      forcedDirection,
       regime,
       marketRegime,
       impulseBias,
       pullbackExtended,
       breakoutValidationFailed,
+      interval: baseInterval ?? "1m",
+      setupGrade: setupAssessment.setupGrade,
       setupQuality: confidenceBreakdown.setupQuality,
       confidence,
       riskRewardRatio,
       rationale
     });
+    const finalSignal = guardResult.signal;
     const action = this.toAction(finalSignal, confidence, regime);
     const executionStats = this.computeExecutionStats({
       signal: finalSignal,
       leverage,
       positionSizeUsd,
       confidence,
-      estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtStopLoss ?? pnl?.atStopLoss,
-      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit
+      estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtStopLoss,
+      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit
     });
 
     return {
       pair,
       signal: finalSignal,
+      modelSignal,
+      requestedDirection: forcedDirection,
+      qualityVerdict: guardResult.blocked ? "WEAK" : "VALID",
       action,
       regime,
       marketRegime,
@@ -193,10 +256,11 @@ export class RecommendationEngine {
       leverage,
       positionSizeUsd,
       estimatedPnLAtStopLoss:
-        finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtStopLoss ?? pnl?.atStopLoss,
+        finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtStopLoss,
       estimatedPnLAtTakeProfit:
-        finalSignal === "NO_TRADE" ? undefined : objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit,
+        finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit,
       riskRewardRatio: this.round(riskRewardRatio),
+      setupGrade: setupAssessment.setupGrade,
       objectiveUsdc: objectiveContext?.objectiveUsdc,
       objectiveHorizon: objectiveContext?.horizon,
       objectiveHorizonMinutes: objectiveContext?.horizonMinutes,
@@ -603,6 +667,141 @@ export class RecommendationEngine {
     };
   }
 
+  private assessSetupQuality(input: {
+    signal: Exclude<Signal, "NO_TRADE">;
+    indicators: IndicatorSnapshot;
+    perp: PerpMarketSnapshot;
+    marketRegime: MarketRegime;
+    entry: number;
+    stopLoss: number;
+    takeProfit: number;
+    riskRewardRatio: number;
+    baseSetupQuality: number;
+    estimatedPnLAtTakeProfit?: number;
+    leverage?: number;
+    positionSizeUsd?: number;
+  }): SetupAssessment {
+    const atr = Math.max(input.indicators.atr14, 1e-8);
+    const recent = input.indicators.recentCandleContext;
+    const extensionAtr = Math.abs(input.entry - input.indicators.ema20) / atr;
+    const location = (() => {
+      if (input.marketRegime === "LOW_LIQ_CHOP") return 20;
+      if (input.marketRegime === "VOLATILE_SPIKE") return 40;
+      if (input.marketRegime === "RANGE") {
+        const nearestBandDistance = Math.min(
+          Math.abs(input.entry - input.indicators.bbLower),
+          Math.abs(input.indicators.bbUpper - input.entry)
+        );
+        return this.clamp(100 - (nearestBandDistance / (atr * 1.6)) * 100, 0, 100);
+      }
+      return this.clamp(100 - extensionAtr * 55, 0, 100);
+    })();
+
+    const trigger = (() => {
+      if (!recent) return 55;
+      if (input.signal === "LONG") {
+        if (recent.breakoutDirection === "UP" && recent.momentumPct3 > 0 && recent.bullishCloseRatio5 >= 0.6) {
+          return 84;
+        }
+        if (recent.breakoutDirection === "DOWN") {
+          return 24;
+        }
+        return this.clamp(50 + recent.momentumPct3 * 90 + (recent.bullishCloseRatio5 - 0.5) * 35, 0, 100);
+      }
+      if (recent.breakoutDirection === "DOWN" && recent.momentumPct3 < 0 && recent.bearishCloseRatio5 >= 0.6) {
+        return 84;
+      }
+      if (recent.breakoutDirection === "UP") {
+        return 24;
+      }
+      return this.clamp(50 - recent.momentumPct3 * 90 + (recent.bearishCloseRatio5 - 0.5) * 35, 0, 100);
+    })();
+
+    const microstructure = (() => {
+      let score = 50;
+      if (input.signal === "LONG") {
+        if (input.perp.fundingRate > 0.00005) score -= 10;
+        if (input.perp.premiumPct > 0.15) score -= 10;
+        if (input.perp.fundingRate < -0.00005) score += 8;
+        if (input.perp.premiumPct < -0.15) score += 8;
+      } else {
+        if (input.perp.fundingRate < -0.00005) score -= 10;
+        if (input.perp.premiumPct < -0.15) score -= 10;
+        if (input.perp.fundingRate > 0.00005) score += 8;
+        if (input.perp.premiumPct > 0.15) score += 8;
+      }
+      return this.clamp(score, 0, 100);
+    })();
+
+    const regime = (() => {
+      if (input.marketRegime === "LOW_LIQ_CHOP") return 15;
+      if (input.marketRegime === "VOLATILE_SPIKE") return 45;
+      if (input.marketRegime === "RANGE") return 58;
+      const trendAligned =
+        (input.signal === "LONG" && input.indicators.ema20 >= input.indicators.ema50) ||
+        (input.signal === "SHORT" && input.indicators.ema20 <= input.indicators.ema50);
+      return trendAligned ? 82 : 34;
+    })();
+
+    const riskEfficiency = (() => {
+      const slAtr = Math.abs(input.entry - input.stopLoss) / atr;
+      const tpAtr = Math.abs(input.takeProfit - input.entry) / atr;
+      return this.clamp(45 + (input.riskRewardRatio - 1) * 25 - Math.max(0, slAtr - 1.4) * 20 - Math.max(0, tpAtr - 2.5) * 15, 0, 100);
+    })();
+
+    const friction = (() => {
+      if (
+        input.leverage === undefined ||
+        input.positionSizeUsd === undefined ||
+        input.estimatedPnLAtTakeProfit === undefined
+      ) {
+        return 55;
+      }
+      const notional = input.leverage * input.positionSizeUsd;
+      const costs = notional * 0.0014;
+      const gross = Math.abs(input.estimatedPnLAtTakeProfit);
+      if (gross <= 1e-8) {
+        return 20;
+      }
+      const burden = this.clamp(costs / gross, 0, 2);
+      return this.clamp(100 - burden * 120, 5, 100);
+    })();
+
+    const setupQuality = this.round(
+      this.clamp(
+        input.baseSetupQuality * 0.4 +
+          location * 0.14 +
+          trigger * 0.14 +
+          microstructure * 0.1 +
+          regime * 0.1 +
+          riskEfficiency * 0.08 +
+          friction * 0.04,
+        0,
+        100
+      )
+    );
+    const setupGrade = this.toSetupGrade(setupQuality);
+    return {
+      setupQuality,
+      setupGrade,
+      factorScores: {
+        location: this.round(location),
+        trigger: this.round(trigger),
+        microstructure: this.round(microstructure),
+        regime: this.round(regime),
+        riskEfficiency: this.round(riskEfficiency),
+        friction: this.round(friction)
+      }
+    };
+  }
+
+  private toSetupGrade(setupQuality: number): SetupGrade {
+    if (setupQuality >= 78) return "A";
+    if (setupQuality >= 64) return "B";
+    if (setupQuality >= 52) return "C";
+    return "D";
+  }
+
   private getAtrProfile(atrPct: number, marketRegime: MarketRegime): {
     slAtrMultiplier: number;
     tpAtrMultiplier: number;
@@ -817,6 +1016,9 @@ export class RecommendationEngine {
 
   private applyTradeGuards(input: {
     signal: Exclude<Signal, "NO_TRADE">;
+    forcedDirection?: "LONG" | "SHORT";
+    interval: string;
+    setupGrade: SetupGrade;
     regime: "TRADEABLE" | "CHOPPY";
     marketRegime: MarketRegime;
     impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
@@ -826,44 +1028,73 @@ export class RecommendationEngine {
     confidence: number;
     riskRewardRatio: number;
     rationale: string[];
-  }): Signal {
+  }): { signal: Signal; blocked: boolean } {
+    const intervalMinutes = this.parseIntervalToMinutes(input.interval);
+    const forceActive = input.forcedDirection !== undefined;
+    const block = (message: string): { signal: Signal; blocked: boolean } => {
+      if (forceActive) {
+        input.rationale.push(`Guard advisory: ${message}`);
+        return { signal: input.signal, blocked: true };
+      }
+      input.rationale.push(`No-trade guard: ${message}`);
+      return { signal: "NO_TRADE", blocked: true };
+    };
     if (input.signal === "SHORT" && input.impulseBias === "UP_IMPULSE") {
-      input.rationale.push("No-trade guard: avoid fading a strong recent bullish impulse.");
-      return "NO_TRADE";
+      return block("avoid fading a strong recent bullish impulse.");
     }
     if (input.signal === "LONG" && input.impulseBias === "DOWN_IMPULSE") {
-      input.rationale.push("No-trade guard: avoid fading a strong recent bearish impulse.");
-      return "NO_TRADE";
+      return block("avoid fading a strong recent bearish impulse.");
     }
     if (input.pullbackExtended) {
-      input.rationale.push("No-trade guard: trend entry is extended; wait for pullback.");
-      return "NO_TRADE";
+      return block("trend entry is extended; wait for pullback.");
     }
     if (input.breakoutValidationFailed) {
-      input.rationale.push("No-trade guard: breakout failed follow-through validation.");
-      return "NO_TRADE";
+      return block("breakout failed follow-through validation.");
     }
     if (input.marketRegime === "LOW_LIQ_CHOP") {
-      input.rationale.push("No-trade guard: low-liquidity chop regime.");
-      return "NO_TRADE";
+      return block("low-liquidity chop regime.");
     }
     if (input.regime === "CHOPPY") {
-      input.rationale.push("No-trade guard: choppy regime.");
-      return "NO_TRADE";
+      return block("choppy regime.");
     }
     if (input.riskRewardRatio < 1.2) {
-      input.rationale.push("No-trade guard: risk/reward below 1.2.");
-      return "NO_TRADE";
+      return block("risk/reward below 1.2.");
+    }
+    if (input.setupGrade === "D") {
+      return block("setup grade D.");
+    }
+    if (intervalMinutes <= 10 && input.setupGrade === "C") {
+      return block("setup grade C is too weak for <=10m trading.");
     }
     if (input.confidence < 45) {
-      input.rationale.push("No-trade guard: confidence too low.");
-      return "NO_TRADE";
+      return block("confidence too low.");
+    }
+    if (intervalMinutes <= 10 && input.confidence < 52) {
+      return block("confidence below short-timeframe threshold (52).");
     }
     if (input.setupQuality < 52) {
-      input.rationale.push("No-trade guard: setup quality below threshold.");
-      return "NO_TRADE";
+      return block("setup quality below threshold.");
     }
-    return input.signal;
+    if (intervalMinutes <= 10 && input.setupQuality < 60) {
+      return block("setup quality below short-timeframe threshold (60).");
+    }
+    return { signal: input.signal, blocked: false };
+  }
+
+  private parseIntervalToMinutes(interval: string): number {
+    const normalized = interval.trim().toLowerCase();
+    const match = normalized.match(/^(\d+)([mhd])$/);
+    if (!match) {
+      return 1;
+    }
+    const amount = Number(match[1]);
+    const unit = match[2];
+    if (Number.isNaN(amount) || amount <= 0) {
+      return 1;
+    }
+    if (unit === "m") return amount;
+    if (unit === "h") return amount * 60;
+    return amount * 60 * 24;
   }
 
   private toAction(

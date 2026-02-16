@@ -150,6 +150,12 @@
 - [x] Remove `watches` command/help/docs references
 - [x] Update parser tests and usage/help text
 
+## Task: Setup grading for short intraday quality (2026-02-16)
+- [x] Add domain setup grading (`A/B/C/D`) using location/trigger/microstructure/regime/risk/friction factors
+- [x] Blend setup grade into confidence and tighten short-timeframe no-trade guards
+- [x] Surface setup grade in console output
+- [x] Add tests for setup grade output and stricter short-timeframe quality gating
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

@@ -1,6 +1,7 @@
 export type Signal = "LONG" | "SHORT" | "NO_TRADE";
 export type TradeAction = "LONG" | "SHORT" | "NO TRADE";
 export type MarketRegime = "TREND" | "RANGE" | "VOLATILE_SPIKE" | "LOW_LIQ_CHOP";
+export type SetupGrade = "A" | "B" | "C" | "D";
 export type ImpulseDirection = "UP" | "DOWN" | "NONE";
 
 export interface ConfidenceBreakdown {
@@ -58,6 +59,9 @@ export interface PerpMarketSnapshot {
 export interface Recommendation {
   pair: string;
   signal: Signal;
+  modelSignal?: "LONG" | "SHORT";
+  requestedDirection?: "LONG" | "SHORT";
+  qualityVerdict?: "VALID" | "WEAK";
   action: TradeAction;
   regime: "TRADEABLE" | "CHOPPY";
   marketRegime: MarketRegime;
@@ -85,6 +89,7 @@ export interface Recommendation {
   expectedValueUsd?: number;
   expectedValuePerMarginPct?: number;
   confidence: number;
+  setupGrade: SetupGrade;
   confidenceBreakdown: ConfidenceBreakdown;
   rationale: string[];
   indicators: IndicatorSnapshot;

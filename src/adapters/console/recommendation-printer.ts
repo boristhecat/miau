@@ -42,6 +42,18 @@ function setupQualityColor(value: number): string {
   return colors.brightRed;
 }
 
+function setupGradeColor(grade: Recommendation["setupGrade"]): string {
+  if (grade === "A") return colors.brightGreen;
+  if (grade === "B") return colors.brightYellow;
+  return colors.brightRed;
+}
+
+function qualityVerdictColor(verdict?: Recommendation["qualityVerdict"]): string {
+  if (verdict === "VALID") return colors.brightGreen;
+  if (verdict === "WEAK") return colors.brightYellow;
+  return colors.white;
+}
+
 function fmt(value: number): string {
   return Number(value.toFixed(4)).toString();
 }
@@ -205,6 +217,21 @@ export class RecommendationPrinter {
     write(
       `${label("Setup Quality")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
     );
+    write(`${label("Setup Grade")} ${setupGradeColor(rec.setupGrade)}${colors.bold}${rec.setupGrade}${colors.reset}`);
+    if (rec.qualityVerdict) {
+      write(
+        `${label("Quality Verdict")} ${qualityVerdictColor(rec.qualityVerdict)}${colors.bold}${rec.qualityVerdict}${colors.reset}`
+      );
+    }
+    if (rec.requestedDirection) {
+      const conflict = rec.modelSignal && rec.modelSignal !== rec.requestedDirection;
+      write(
+        `${label("Direction Input")} ${colors.white}${rec.requestedDirection}${colors.reset}` +
+          (rec.modelSignal
+            ? ` ${colors.brightBlack}(model ${rec.modelSignal}${conflict ? ", conflict" : ", aligned"})${colors.reset}`
+            : "")
+      );
+    }
     write(
       `${label("Current Price")} ${
         hasCurrentPrice ? `${colors.white}${fmt(rec.perp.markPrice)}${colors.reset}` : `${colors.brightBlack}n/a${colors.reset}`

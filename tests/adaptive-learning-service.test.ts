@@ -47,6 +47,7 @@ function baseRecommendation(): Recommendation {
     stopLoss: 99,
     takeProfit: 102,
     confidence: 58,
+    setupGrade: "B",
     confidenceBreakdown: {
       trend: 70,
       momentum: 62,

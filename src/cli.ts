@@ -538,6 +538,7 @@ async function main(): Promise<void> {
             })
           : {
               symbol: baseInput.symbol,
+              requestedDirection: baseInput.requestedDirection,
               customValues: false,
               runSimulation: baseInput.runSimulation,
               objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
@@ -559,6 +560,7 @@ async function main(): Promise<void> {
             : undefined;
         let recommendation = await useCase.execute({
           pair,
+          forcedDirection: tradeInput.requestedDirection,
           interval: tradeInput.timeframe,
           biasInterval: tradeInput.biasTimeframe,
           leverage: tradeInput.leverage,
@@ -842,6 +844,7 @@ function parseWatchCommand(raw: string): WatchConfig {
       customValues: false,
       runSimulation: false,
       objectiveHorizon: base.objectiveHorizon ?? "15",
+      requestedDirection: base.requestedDirection,
       timeframe: "1m",
       biasTimeframe: "15m",
       leverage: 20,
@@ -878,6 +881,7 @@ async function runWatchIteration(input: {
 
     let recommendation = await input.useCase.execute({
       pair,
+      forcedDirection: input.watchConfig.input.requestedDirection,
       interval: input.watchConfig.input.timeframe,
       biasInterval: input.watchConfig.input.biasTimeframe,
       leverage: input.watchConfig.input.leverage,
@@ -975,6 +979,7 @@ async function promptQuickTradeInput(
 
   return {
     symbol: base.symbol,
+    requestedDirection: base.requestedDirection,
     customValues: true,
     runSimulation: base.runSimulation,
     objectiveHorizon,
@@ -1150,7 +1155,7 @@ function getInteractiveHelpText(): string {
   return [
     "",
     "TRADING",
-    "- <SYMBOL> [--custom] [--horizon <minutes>] [--simulate]",
+    "- <SYMBOL> [long|short] [--custom] [--horizon <minutes>] [--simulate]",
     "  Run a single-symbol analysis (defaults mode by default; --custom prompts values).",
     "- defaults",
     "  Set default leverage, size, horizon, timeframe, and bias timeframe.",

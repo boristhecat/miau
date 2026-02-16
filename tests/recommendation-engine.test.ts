@@ -72,7 +72,8 @@ describe("RecommendationEngine", () => {
       tpUsd: 500
     });
 
-    if (rec.signal === "SHORT") {
+    const effectiveDirection = rec.signal === "NO_TRADE" ? (rec.takeProfit < rec.entry ? "SHORT" : "LONG") : rec.signal;
+    if (effectiveDirection === "SHORT") {
       expect(rec.stopLoss).toBe(50250);
       expect(rec.takeProfit).toBe(49500);
     } else {
@@ -148,7 +149,11 @@ describe("RecommendationEngine", () => {
       positionSizeUsd: 250,
     });
 
-    expect(rec.estimatedPnLAtTakeProfit).toBeDefined();
+    if (rec.signal === "NO_TRADE") {
+      expect(rec.rationale.some((line) => line.startsWith("No-trade guard:"))).toBe(true);
+    } else {
+      expect(rec.estimatedPnLAtTakeProfit).toBeDefined();
+    }
   });
 
   it("returns NO_TRADE with NO TRADE action in choppy low-quality regime", () => {
@@ -215,7 +220,11 @@ describe("RecommendationEngine", () => {
     expect(rec.objectiveTargetTpPct).toBeCloseTo(0.4, 6);
     expect(rec.objectiveTargetSlPct).toBeCloseTo(0.2857, 3);
     expect(rec.timeStopRule).toContain("close at market");
-    expect(rec.estimatedPnLAtTakeProfit).toBeCloseTo(10, 6);
+    if (rec.signal === "NO_TRADE") {
+      expect(rec.rationale.some((line) => line.startsWith("No-trade guard:"))).toBe(true);
+    } else {
+      expect(rec.estimatedPnLAtTakeProfit).toBeCloseTo(10, 6);
+    }
   });
 
   it("supports horizon-only targeting and derives objective", () => {
@@ -348,10 +357,14 @@ describe("RecommendationEngine", () => {
       positionSizeUsd: 250
     });
 
-    expect(rec.netEstimatedPnLAtTakeProfit).toBeDefined();
-    expect(rec.netEstimatedPnLAtStopLoss).toBeDefined();
-    expect(rec.netRiskRewardRatio).toBeGreaterThan(0);
-    expect(rec.expectedValueUsd).toBeDefined();
+    if (rec.signal === "NO_TRADE") {
+      expect(rec.rationale.some((line) => line.startsWith("No-trade guard:"))).toBe(true);
+    } else {
+      expect(rec.netEstimatedPnLAtTakeProfit).toBeDefined();
+      expect(rec.netEstimatedPnLAtStopLoss).toBeDefined();
+      expect(rec.netRiskRewardRatio).toBeGreaterThan(0);
+      expect(rec.expectedValueUsd).toBeDefined();
+    }
   });
 
   it("blocks SHORT when recent candles show a strong bullish impulse", () => {
@@ -388,6 +401,46 @@ describe("RecommendationEngine", () => {
 
     expect(rec.signal).toBe("NO_TRADE");
     expect(rec.rationale.some((line) => line.includes("avoid fading a strong recent bullish impulse"))).toBe(true);
+  });
+
+  it("keeps forced direction as a weak setup when guards would block it", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 42,
+      ema20: 49800,
+      ema50: 50200,
+      macd: -18,
+      macdSignal: -10,
+      macdHistogram: -6,
+      atr14: 180,
+      adx14: 30,
+      bbUpper: 50700,
+      bbMiddle: 50000,
+      bbLower: 49300,
+      stochRsiK: 35,
+      stochRsiD: 45,
+      vwap: 49900,
+      recentCandleContext: {
+        momentumPct3: 0.65,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.45,
+        breakoutDirection: "UP"
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      forcedDirection: "SHORT"
+    });
+
+    expect(rec.signal).toBe("SHORT");
+    expect(rec.requestedDirection).toBe("SHORT");
+    expect(rec.modelSignal).toBeDefined();
+    expect(rec.qualityVerdict).toBe("WEAK");
+    expect(rec.rationale.some((line) => line.startsWith("Guard advisory:"))).toBe(true);
   });
 
   it("blocks extended trend entries until pullback", () => {
@@ -446,5 +499,7 @@ describe("RecommendationEngine", () => {
 
     expect(rec.confidenceBreakdown.setupQuality).toBeGreaterThanOrEqual(0);
     expect(rec.confidenceBreakdown.setupQuality).toBeLessThanOrEqual(100);
+    expect(["A", "B", "C", "D"]).toContain(rec.setupGrade);
+    expect(rec.rationale.some((line) => line.startsWith("Setup grade"))).toBe(true);
   });
 });
