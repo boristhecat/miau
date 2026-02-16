@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
+import { AdaptiveLearningService } from "./application/adaptive-learning-service.js";
 import { getUsageText, parseCliInput } from "./application/parse-cli-input.js";
 import { parseTradingInput, type TradingInput } from "./application/parse-trading-input.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
@@ -8,10 +9,12 @@ import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-da
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { RecommendationPrinter } from "./adapters/console/recommendation-printer.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
+import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
 import { IndicatorService } from "./domain/indicator-service.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { evaluatePaperTrade } from "./domain/simulation-evaluator.js";
 import type { Recommendation } from "./domain/types.js";
+import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
@@ -167,6 +170,8 @@ async function main(): Promise<void> {
     indicatorService: new IndicatorService(),
     recommendationEngine: new RecommendationEngine()
   });
+  const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
+  const learning = new AdaptiveLearningService(learningStore);
   const printer = new RecommendationPrinter();
 
   if (!cliInput) {
@@ -267,6 +272,7 @@ async function main(): Promise<void> {
             void runWatchIteration({
               key,
               useCase,
+              learning,
               tracker,
               watchConfig,
               watchSignatures,
@@ -279,6 +285,7 @@ async function main(): Promise<void> {
           await runWatchIteration({
             key,
             useCase,
+            learning,
             tracker,
             watchConfig,
             watchSignatures,
@@ -311,7 +318,7 @@ async function main(): Promise<void> {
           requestRender();
           continue;
         }
-        const recommendation = await useCase.execute({
+        let recommendation = await useCase.execute({
           pair,
           interval: tradeInput.timeframe,
           biasInterval: tradeInput.biasTimeframe,
@@ -322,6 +329,10 @@ async function main(): Promise<void> {
           slUsd: tradeInput.slUsd,
           tpUsd: tradeInput.tpUsd,
           objectiveHorizon: tradeInput.objectiveHorizon
+        });
+        recommendation = await learning.applyPolicy({
+          recommendation,
+          timeframe: tradeInput.timeframe ?? "1m"
         });
         const calibration = tracker.applyConfidenceCalibration(pair, recommendation.confidence);
         recommendation.confidence = calibration.confidence;
@@ -340,8 +351,15 @@ async function main(): Promise<void> {
             recommendation,
             interval: tradeInput.timeframe ?? "1m",
             horizonMinutes: simulationHorizonMinutes,
-            onResult: (status) => {
-              tracker.recordSimulation(pair, status, tradeInput.timeframe ?? "1m");
+            onResult: async (result) => {
+              tracker.recordSimulation(pair, result.status, tradeInput.timeframe ?? "1m");
+              await learning.recordSimulationOutcome({
+                recommendation,
+                timeframe: tradeInput.timeframe ?? "1m",
+                horizonMinutes: simulationHorizonMinutes,
+                status: result.status,
+                pnlUsd: result.pnlUsd
+              });
             },
             onRendered: (lines) => {
               dashboard.latestQueryLines = lines;
@@ -487,6 +505,7 @@ function parseWatchCommand(raw: string): WatchConfig {
 async function runWatchIteration(input: {
   key: string;
   useCase: GenerateRecommendationUseCase;
+  learning: AdaptiveLearningService;
   tracker: SessionPerformanceTracker;
   watchConfig: WatchConfig;
   watchSignatures: Map<string, string>;
@@ -519,13 +538,17 @@ async function runWatchIteration(input: {
       return;
     }
 
-    const recommendation = await input.useCase.execute({
+    let recommendation = await input.useCase.execute({
       pair,
       interval: input.watchConfig.input.timeframe,
       biasInterval: input.watchConfig.input.biasTimeframe,
       leverage: input.watchConfig.input.leverage,
       positionSizeUsd: input.watchConfig.input.positionSizeUsd,
       objectiveHorizon: input.watchConfig.input.objectiveHorizon
+    });
+    recommendation = await input.learning.applyPolicy({
+      recommendation,
+      timeframe: input.watchConfig.input.timeframe ?? "1m"
     });
     const calibration = input.tracker.applyConfidenceCalibration(pair, recommendation.confidence);
     recommendation.confidence = calibration.confidence;
@@ -703,7 +726,7 @@ function scheduleSimulation(input: {
   recommendation: Recommendation;
   interval: string;
   horizonMinutes: number;
-  onResult?: (status: "SUCCESS" | "FAILURE") => void;
+  onResult?: (result: { status: "SUCCESS" | "FAILURE"; pnlUsd?: number }) => void | Promise<void>;
   onRendered?: (lines: string[]) => void;
 }): void {
   const signal = resolveSimulationSignal(input.recommendation);
@@ -755,7 +778,7 @@ function scheduleSimulation(input: {
       } else {
         rendered.forEach((line) => console.log(line));
       }
-      input.onResult?.(outcome.status);
+      await input.onResult?.({ status: outcome.status, pnlUsd });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unhandled simulation error";
       const rendered = [`${ui.red}[sim] Failed to evaluate ${input.recommendation.pair}: ${message}${ui.reset}`];

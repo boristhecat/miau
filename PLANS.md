@@ -126,6 +126,18 @@
 - [x] Add bottom single-symbol section that stores and shows latest output only
 - [x] Route recommendation/rec/simulation output through dashboard renderer instead of streaming logs
 
+## Task: Persistent learning calibration (2026-02-16)
+- [x] Add learning store port + persistence adapter for local outcome history
+- [x] Add adaptive learning service for rolling confidence calibration + dynamic quality gates
+- [x] Wire simulation outcomes into persistence for continuous learning
+- [x] Apply learned policy in single-symbol and watch recommendation flows
+- [x] Add unit tests for adaptive learning policy behavior
+
+## Task: Enforce SQLite requirement (2026-02-16)
+- [x] Remove in-memory learning fallback path
+- [x] Make startup require SQLite adapter initialization
+- [x] Update dependency/docs to require `better-sqlite3`
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

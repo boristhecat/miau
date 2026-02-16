@@ -15,6 +15,7 @@ It does **not** place orders or access private/account endpoints.
 
 - Node.js `>=20`
 - npm
+- `better-sqlite3` (`npm i better-sqlite3`)
 
 ## Install
 
@@ -63,7 +64,7 @@ npm run dev -- rec
 
 ## Interactive usage
 
-After starting the app, enter input at the `Symbol` prompt:
+After starting the app, enter input at the `Command` prompt:
 
 - `help` or `?` -> show interactive commands + flags
 - `rec` -> run top recommendations scan in-app
@@ -72,6 +73,9 @@ After starting the app, enter input at the `Symbol` prompt:
 - `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
 - `BTC --manual-levels` -> direct manual SL/TP mode
 - `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
+- `watch BTC --every 1` -> add symbol to live watch section (top panel)
+- `unwatch BTC` -> remove symbol from live watch section
+- `watches` -> list active watched symbols
 - `exit` or `quit` -> close the app
 
 Interactive screen layout:
@@ -136,6 +140,7 @@ Tips:
 - Net PnL at SL/TP, Net R/R, and EV (Expected Value) when leverage + position size are provided
 - No-trade decision + compact guard reason when setup is rejected
 - Optional simulation result (`SUCCESS`/`FAILURE`) based on public candles only
+- Learning calibration note when enough historical outcomes exist
 - Objective/horizon metadata with time-stop rule when objective targeting is enabled
 - Full indicator/rationale/perp context output when detail mode is enabled in full interactive flow
 - Optional `rec` ranking output with top 5 tokens (highest recommendation -> lowest)
@@ -163,3 +168,4 @@ Tips:
 - Input symbol must be base asset only (examples: `BTC`, `ETH`, `SOL`).
 - The app maps symbol input to `<SYMBOL>-USD` internally and resolves Backpack PERP markets.
 - Uses Backpack **public** endpoints only.
+- Learning outcomes are stored locally in `data/learning.sqlite` (SQLite is required at startup).
