@@ -198,11 +198,17 @@ export class RecommendationPrinter {
     const direction = tradeDirection(rec);
     const directionColor =
       direction === "LONG" ? colors.brightGreen : direction === "SHORT" ? colors.brightRed : colors.yellow;
+    const hasCurrentPrice = Number.isFinite(rec.perp.markPrice) && rec.perp.markPrice > 0;
 
     write(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
     write(`${label("Trade Direction")} ${directionColor}${colors.bold}${direction}${colors.reset}`);
     write(
       `${label("Setup Quality")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
+    );
+    write(
+      `${label("Current Price")} ${
+        hasCurrentPrice ? `${colors.white}${fmt(rec.perp.markPrice)}${colors.reset}` : `${colors.brightBlack}n/a${colors.reset}`
+      }`
     );
     write(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
     write(
