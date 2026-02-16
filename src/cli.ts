@@ -91,7 +91,7 @@ interface WatchConfig {
 
 interface WatchRow {
   symbol: string;
-  signal: Recommendation["signal"] | "COOLDOWN";
+  signal: Recommendation["signal"];
   regime?: string;
   confidence?: number;
   setupQuality?: number;
@@ -121,6 +121,19 @@ interface LearningRunnerState {
 const LEARN_HORIZONS_MINUTES = [5, 10, 15, 30, 60, 90] as const;
 const LEARN_CYCLE_INTERVAL_MINUTES = 10;
 
+function getLearningGates(horizonMinutes: number): { minSetupQuality: number; minConfidence: number } {
+  if (horizonMinutes <= 5) {
+    return { minSetupQuality: 68, minConfidence: 62 };
+  }
+  if (horizonMinutes <= 10) {
+    return { minSetupQuality: 64, minConfidence: 58 };
+  }
+  if (horizonMinutes <= 15) {
+    return { minSetupQuality: 58, minConfidence: 52 };
+  }
+  return { minSetupQuality: 54, minConfidence: 48 };
+}
+
 function ageLabel(updatedAtMs: number): string {
   const sec = Math.max(0, Math.floor((Date.now() - updatedAtMs) / 1000));
   if (sec < 60) return `${sec}s`;
@@ -133,7 +146,6 @@ function ageLabel(updatedAtMs: number): string {
 function signalColor(signal: WatchRow["signal"]): string {
   if (signal === "LONG") return ui.green;
   if (signal === "SHORT") return ui.red;
-  if (signal === "COOLDOWN") return ui.yellow;
   return ui.gray;
 }
 
@@ -166,13 +178,11 @@ function renderDashboard(state: DashboardState): void {
     const longCount = rows.filter((row) => row.signal === "LONG").length;
     const shortCount = rows.filter((row) => row.signal === "SHORT").length;
     const noTradeCount = rows.filter((row) => row.signal === "NO_TRADE").length;
-    const cooldownCount = rows.filter((row) => row.signal === "COOLDOWN").length;
     console.log(
       `${ui.gray}active:${ui.reset} ${rows.length}  ` +
       `${ui.green}long:${longCount}${ui.reset}  ` +
       `${ui.red}short:${shortCount}${ui.reset}  ` +
-      `${ui.yellow}no-trade:${noTradeCount}${ui.reset}  ` +
-      `${ui.yellow}cooldown:${cooldownCount}${ui.reset}`
+      `${ui.yellow}no-trade:${noTradeCount}${ui.reset}`
     );
     console.log(`${ui.gray}signal / regime / confidence / setup / age${ui.reset}`);
     for (const row of rows) {
@@ -295,7 +305,7 @@ async function main(): Promise<void> {
     while (true) {
       isPrompting = true;
       const raw = await rl.question(
-        `${ui.bold}${ui.cyan}Command${ui.reset} ${ui.gray}(e.g. BTC | watch BTC | learn --start | help | rec | exit)${ui.reset}: `
+        `${ui.bold}${ui.cyan}Command${ui.reset} ${ui.gray}(e.g. BTC | watch BTC | learn --start | learn --stats | help | rec | exit)${ui.reset}: `
       );
       isPrompting = false;
       if (pendingRender) {
@@ -391,6 +401,25 @@ async function main(): Promise<void> {
         requestRender();
         continue;
       }
+      if (normalized === "learn --stats") {
+        try {
+          const overview = await learning.getOverview(14);
+          dashboard.latestQueryLines = [
+            `${ui.bold}${ui.blue}LEARNING STATS${ui.reset} ${ui.gray}(last 14d)${ui.reset}`,
+            `${ui.gray}simulated:${ui.reset} ${overview.totalSamples}`,
+            `${ui.green}wins:${ui.reset} ${overview.wins}   ${ui.red}losses:${ui.reset} ${overview.losses}`,
+            `${ui.gray}win-rate:${ui.reset} ${(overview.winRate * 100).toFixed(2)}%`,
+            `${ui.gray}avg pnl:${ui.reset} ${overview.avgPnlUsd >= 0 ? "+" : ""}${overview.avgPnlUsd.toFixed(2)} USDC`,
+            `${ui.gray}learn mode:${ui.reset} ${learningRunner.active ? "running" : "stopped"}`
+          ];
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to read learning stats";
+          dashboard.latestQueryLines = [`${ui.red}[learn] ${message}${ui.reset}`];
+        }
+        syncLearningIndicator();
+        requestRender();
+        continue;
+      }
       if (normalized.startsWith("unwatch ")) {
         const symbol = normalized.replace(/^unwatch\s+/, "").trim().toUpperCase();
         dashboard.latestQueryLines = [stopWatchSymbol(symbol, watchIntervals, watchSignatures, dashboard)];
@@ -442,13 +471,10 @@ async function main(): Promise<void> {
           : await promptQuickTradeInput(rl, baseInput);
         const pair = `${tradeInput.symbol}-USD`;
         const cooldownRemainingMs = tracker.getCooldownRemainingMs(pair);
-        if (cooldownRemainingMs > 0) {
-          dashboard.latestQueryLines = [
-            `${ui.yellow}[guard] Cooldown active for ${pair}: wait ${Math.ceil(cooldownRemainingMs / 60_000)}m before next entry.${ui.reset}`
-          ];
-          requestRender();
-          continue;
-        }
+        const cooldownAdvisory =
+          cooldownRemainingMs > 0
+            ? `Cooldown advisory: ${Math.ceil(cooldownRemainingMs / 60_000)}m remaining after recent failure.`
+            : undefined;
         let recommendation = await useCase.execute({
           pair,
           interval: tradeInput.timeframe,
@@ -470,9 +496,15 @@ async function main(): Promise<void> {
         if (calibration.note) {
           recommendation.rationale.unshift(`Calibration: ${calibration.note}.`);
         }
+        if (cooldownAdvisory) {
+          recommendation.rationale.unshift(cooldownAdvisory);
+        }
         dashboard.latestQueryLines = printer.render(recommendation, {
           showDetails: tradeInput.showDetails
         });
+        if (cooldownAdvisory) {
+          dashboard.latestQueryLines.push(`${ui.yellow}${cooldownAdvisory}${ui.reset}`);
+        }
         requestRender();
 
         if (tradeInput.runSimulation) {
@@ -642,6 +674,15 @@ async function runLearningCycle(input: {
           recommendation,
           timeframe: "1m"
         });
+        const gates = getLearningGates(horizonMinutes);
+        if (
+          recommendation.signal === "NO_TRADE" ||
+          recommendation.marketRegime === "LOW_LIQ_CHOP" ||
+          recommendation.confidence < gates.minConfidence ||
+          recommendation.confidenceBreakdown.setupQuality < gates.minSetupQuality
+        ) {
+          continue;
+        }
         scheduleSimulation({
           marketData: input.marketData,
           recommendation,
@@ -754,23 +795,8 @@ async function runWatchIteration(input: {
   try {
     const pair = `${input.watchConfig.symbol}-USD`;
     const cooldownRemainingMs = input.tracker.getCooldownRemainingMs(pair);
-    if (cooldownRemainingMs > 0) {
-      const signature = `COOLDOWN:${Math.ceil(cooldownRemainingMs / 60_000)}`;
-      if (input.watchSignatures.get(input.key) !== signature) {
-        input.watchSignatures.set(input.key, signature);
-        input.watchRows.set(input.key, {
-          symbol: input.key,
-          signal: "COOLDOWN",
-          regime: "-",
-          confidence: undefined,
-          setupQuality: undefined,
-          reason: `Cooldown ${Math.ceil(cooldownRemainingMs / 60_000)}m`,
-          updatedAtMs: Date.now()
-        });
-        input.requestRender();
-      }
-      return;
-    }
+    const cooldownAdvisory =
+      cooldownRemainingMs > 0 ? `Cooldown advisory ${Math.ceil(cooldownRemainingMs / 60_000)}m` : undefined;
 
     let recommendation = await input.useCase.execute({
       pair,
@@ -787,9 +813,10 @@ async function runWatchIteration(input: {
     const calibration = input.tracker.applyConfidenceCalibration(pair, recommendation.confidence);
     recommendation.confidence = calibration.confidence;
     const guardSignatureReason = recommendation.rationale.find((line) => line.startsWith("No-trade guard:")) ?? "";
+    const cooldownSignature = cooldownAdvisory ?? "";
     const signature =
       `${recommendation.signal}|${recommendation.marketRegime}|${Math.round(recommendation.confidence / 5) * 5}|` +
-      `${guardSignatureReason}`;
+      `${guardSignatureReason}|${cooldownSignature}`;
 
     if (input.watchSignatures.get(input.key) === signature) {
       return;
@@ -799,13 +826,14 @@ async function runWatchIteration(input: {
       recommendation.signal === "NO_TRADE"
         ? recommendation.rationale.find((line) => line.startsWith("No-trade guard:"))?.replace("No-trade guard: ", "")
         : "OK";
+    const reason = cooldownAdvisory ? `${guardReason ? `${guardReason}; ` : ""}${cooldownAdvisory}` : guardReason;
     input.watchRows.set(input.key, {
       symbol: input.key,
       signal: recommendation.signal,
       regime: recommendation.marketRegime,
       confidence: recommendation.confidence,
       setupQuality: recommendation.confidenceBreakdown.setupQuality,
-      reason: guardReason,
+      reason,
       updatedAtMs: Date.now()
     });
     input.requestRender();
@@ -1165,6 +1193,7 @@ function getInteractiveHelpText(): string {
     "- watches                       List active watches",
     "- learn --start                 Start background learning runner",
     "- learn --stop                  Stop background learning runner",
+    "- learn --stats                 Show learning performance stats",
     "- rec                           Run top recommendations scan",
     "- help                          Show this help",
     "- exit | quit                   Close the app",

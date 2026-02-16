@@ -78,6 +78,7 @@ After starting the app, enter input at the `Command` prompt:
 - `watches` -> list active watched symbols
 - `learn --start` -> start background learning runner
 - `learn --stop` -> stop background learning runner
+- `learn --stats` -> show learning stats (simulated trades, wins/losses, win-rate, avg PnL)
 - `exit` or `quit` -> close the app
 
 Interactive screen layout:

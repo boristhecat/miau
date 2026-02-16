@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AdaptiveLearningService } from "../src/application/adaptive-learning-service.js";
 import type {
+  LearningOverview,
   LearningOutcomeRecord,
   LearningStatsQuery,
   LearningStatsResult,
@@ -62,7 +63,7 @@ function baseRecommendation(): Recommendation {
 }
 
 class FakeLearningStore implements LearningStorePort {
-  constructor(private readonly stats: LearningStatsResult) {}
+  constructor(private readonly stats: LearningStatsResult, private readonly overview?: LearningOverview) {}
 
   public lastRecord?: LearningOutcomeRecord;
 
@@ -72,6 +73,18 @@ class FakeLearningStore implements LearningStorePort {
 
   async getStats(_input: LearningStatsQuery): Promise<LearningStatsResult> {
     return this.stats;
+  }
+
+  async getOverview(_input: { lookbackDays: number }): Promise<LearningOverview> {
+    return (
+      this.overview ?? {
+        totalSamples: this.stats.samples,
+        wins: Math.round(this.stats.winRate * this.stats.samples),
+        losses: Math.max(0, this.stats.samples - Math.round(this.stats.winRate * this.stats.samples)),
+        winRate: this.stats.winRate,
+        avgPnlUsd: this.stats.avgPnlUsd
+      }
+    );
   }
 }
 
@@ -138,5 +151,26 @@ describe("AdaptiveLearningService", () => {
     expect(store.lastRecord?.pair).toBe("BTC-USD");
     expect(store.lastRecord?.status).toBe("SUCCESS");
     expect(store.lastRecord?.pnlUsd).toBe(12.3);
+  });
+
+  it("does not apply learning adjustments below activation sample size", async () => {
+    const service = new AdaptiveLearningService(
+      new FakeLearningStore({
+        samples: 20,
+        winRate: 0.2,
+        avgPnlUsd: -10,
+        recentStatuses: ["FAILURE", "FAILURE", "FAILURE", "FAILURE", "FAILURE"]
+      })
+    );
+    const rec = baseRecommendation();
+    const originalConfidence = rec.confidence;
+
+    const adjusted = await service.applyPolicy({
+      recommendation: rec,
+      timeframe: "1m"
+    });
+
+    expect(adjusted.confidence).toBe(originalConfidence);
+    expect(adjusted.signal).toBe("LONG");
   });
 });

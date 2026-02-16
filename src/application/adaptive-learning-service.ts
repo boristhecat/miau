@@ -1,5 +1,10 @@
 import type { Recommendation } from "../domain/types.js";
-import type { LearningOutcomeRecord, LearningStorePort, OutcomeStatus } from "../ports/learning-store-port.js";
+import type {
+  LearningOutcomeRecord,
+  LearningOverview,
+  LearningStorePort,
+  OutcomeStatus
+} from "../ports/learning-store-port.js";
 
 export interface LearningPolicy {
   confidenceDelta: number;
@@ -7,10 +12,15 @@ export interface LearningPolicy {
   minSetupQuality: number;
   note?: string;
   sampleSize: number;
+  active: boolean;
 }
 
 export class AdaptiveLearningService {
   constructor(private readonly store: LearningStorePort) {}
+
+  async getOverview(lookbackDays = 14): Promise<LearningOverview> {
+    return this.store.getOverview({ lookbackDays });
+  }
 
   async getPolicy(input: {
     pair: string;
@@ -29,7 +39,8 @@ export class AdaptiveLearningService {
         confidenceDelta: 0,
         minConfidence: 45,
         minSetupQuality: 52,
-        sampleSize: stats.samples
+        sampleSize: stats.samples,
+        active: false
       };
     }
 
@@ -47,6 +58,7 @@ export class AdaptiveLearningService {
       minConfidence: clamp(minConfidence + strictnessBump, 35, 70),
       minSetupQuality: clamp(minSetupQuality + strictnessBump, 40, 75),
       sampleSize: stats.samples,
+      active: stats.samples >= 30,
       note:
         `learning win ${Math.round(stats.winRate * 100)}% / avg ${stats.avgPnlUsd.toFixed(2)} USDC (${stats.samples} samples)`
     };
@@ -62,6 +74,9 @@ export class AdaptiveLearningService {
       timeframe: input.timeframe,
       marketRegime: rec.marketRegime
     });
+    if (!policy.active) {
+      return rec;
+    }
     rec.confidence = clamp(rec.confidence + policy.confidenceDelta, 1, 99);
     if (policy.note) {
       rec.rationale.unshift(`Learning: ${policy.note}.`);

@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type {
+  LearningOverview,
   LearningOutcomeRecord,
   LearningStatsQuery,
   LearningStatsResult,
@@ -107,6 +108,31 @@ class SqliteLearningStore implements LearningStorePort {
       recentStatuses: recentRows
         .map((row) => String(row.status).toUpperCase())
         .filter((value): value is OutcomeStatus => value === "SUCCESS" || value === "FAILURE")
+    };
+  }
+
+  async getOverview(input: { lookbackDays: number }): Promise<LearningOverview> {
+    const row =
+      this.db
+        .prepare(
+          `SELECT
+            COUNT(*) AS totalSamples,
+            SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN status = 'FAILURE' THEN 1 ELSE 0 END) AS losses,
+            AVG(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0.0 END) AS winRate,
+            AVG(COALESCE(pnl_usd, 0)) AS avgPnlUsd
+          FROM learning_outcomes
+          WHERE recorded_at >= datetime('now', '-' || @lookbackDays || ' days')`
+        )
+        .get(input) ?? {};
+
+    const totalSamples = Number(row.totalSamples ?? 0);
+    return {
+      totalSamples,
+      wins: Number(row.wins ?? 0),
+      losses: Number(row.losses ?? 0),
+      winRate: totalSamples > 0 ? Number(row.winRate ?? 0) : 0,
+      avgPnlUsd: totalSamples > 0 ? Number(row.avgPnlUsd ?? 0) : 0
     };
   }
 }

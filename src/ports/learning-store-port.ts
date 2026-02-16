@@ -28,7 +28,16 @@ export interface LearningStatsResult {
   recentStatuses: OutcomeStatus[];
 }
 
+export interface LearningOverview {
+  totalSamples: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  avgPnlUsd: number;
+}
+
 export interface LearningStorePort {
   recordOutcome(input: LearningOutcomeRecord): Promise<void>;
   getStats(input: LearningStatsQuery): Promise<LearningStatsResult>;
+  getOverview(input: { lookbackDays: number }): Promise<LearningOverview>;
 }
