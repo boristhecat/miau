@@ -1,4 +1,12 @@
-import type { IndicatorSnapshot, MarketRegime, PerpMarketSnapshot, Recommendation, Signal, TradeAction } from "./types.js";
+import type {
+  ConfidenceBreakdown,
+  IndicatorSnapshot,
+  MarketRegime,
+  PerpMarketSnapshot,
+  Recommendation,
+  Signal,
+  TradeAction
+} from "./types.js";
 import { applyObjectiveTargeting } from "./targeting-policy.js";
 
 interface BuildRecommendationInput {
@@ -44,7 +52,7 @@ export class RecommendationEngine {
       objectiveHorizon,
       baseInterval
     } = input;
-    const { signal, confidence, rationale, regime, marketRegime, impulseBias } = this.evaluate(
+    const { signal, confidence, rationale, regime, marketRegime, impulseBias, pullbackExtended, breakoutValidationFailed, confidenceBreakdown } = this.evaluate(
       indicators,
       perp,
       lastPrice,
@@ -156,6 +164,9 @@ export class RecommendationEngine {
       regime,
       marketRegime,
       impulseBias,
+      pullbackExtended,
+      breakoutValidationFailed,
+      setupQuality: confidenceBreakdown.setupQuality,
       confidence,
       riskRewardRatio,
       rationale
@@ -202,6 +213,7 @@ export class RecommendationEngine {
       expectedValueUsd: executionStats?.expectedValueUsd,
       expectedValuePerMarginPct: executionStats?.expectedValuePerMarginPct,
       confidence,
+      confidenceBreakdown,
       rationale,
       indicators,
       perp
@@ -217,9 +229,12 @@ export class RecommendationEngine {
   ): {
     signal: Exclude<Signal, "NO_TRADE">;
     confidence: number;
+    confidenceBreakdown: ConfidenceBreakdown;
     rationale: string[];
     marketRegime: MarketRegime;
     impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
+    pullbackExtended: boolean;
+    breakoutValidationFailed: boolean;
     regime: "TRADEABLE" | "CHOPPY";
   } {
     let longScore = 0;
@@ -230,6 +245,8 @@ export class RecommendationEngine {
     let regime = regimeContext.regime;
     const marketRegime = regimeContext.marketRegime;
     let impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE" = "NONE";
+    let pullbackExtended = false;
+    let breakoutValidationFailed = false;
 
     if (indicators.ema20 > indicators.ema50) {
       longScore += 28;
@@ -336,14 +353,17 @@ export class RecommendationEngine {
       }
     }
 
+    const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
+    const impulseMomentumThreshold = this.clamp(0.2 + atrPct * 0.14, 0.22, 0.45);
+    const vwapDistanceThresholdPct = this.clamp(0.02 + atrPct * 0.01, 0.02, 0.06);
     const recent = indicators.recentCandleContext;
     if (recent) {
       const upImpulse =
-        recent.momentumPct3 >= 0.28 &&
+        recent.momentumPct3 >= impulseMomentumThreshold &&
         recent.bullishCloseRatio5 >= 0.6 &&
         (recent.breakoutDirection === "UP" || recent.rangeExpansionRatio >= 1.25);
       const downImpulse =
-        recent.momentumPct3 <= -0.28 &&
+        recent.momentumPct3 <= -impulseMomentumThreshold &&
         recent.bearishCloseRatio5 >= 0.6 &&
         (recent.breakoutDirection === "DOWN" || recent.rangeExpansionRatio >= 1.25);
 
@@ -360,9 +380,30 @@ export class RecommendationEngine {
       } else {
         rationale.push("Recent candle impulse is neutral.");
       }
+
+      if (recent.breakoutDirection === "UP") {
+        const validated = recent.momentumPct3 >= impulseMomentumThreshold * 0.9 && recent.bullishCloseRatio5 >= 0.6;
+        if (validated) {
+          longScore += 6;
+          rationale.push("Breakout check: upside breakout has follow-through confirmation.");
+        } else {
+          shortScore += 4;
+          breakoutValidationFailed = true;
+          rationale.push("Breakout check: upside breakout lacks follow-through; fade risk increased.");
+        }
+      } else if (recent.breakoutDirection === "DOWN") {
+        const validated = recent.momentumPct3 <= -impulseMomentumThreshold * 0.9 && recent.bearishCloseRatio5 >= 0.6;
+        if (validated) {
+          shortScore += 6;
+          rationale.push("Breakout check: downside breakout has follow-through confirmation.");
+        } else {
+          longScore += 4;
+          breakoutValidationFailed = true;
+          rationale.push("Breakout check: downside breakout lacks follow-through; fade risk increased.");
+        }
+      }
     }
 
-    const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
     if (atrPct < 0.8) {
       longScore += 3;
       shortScore += 3;
@@ -422,13 +463,42 @@ export class RecommendationEngine {
     }
 
     const vwapDistancePct = Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1) * 100;
-    if (vwapDistancePct < 0.03) {
+    if (vwapDistancePct < vwapDistanceThresholdPct) {
       regime = "CHOPPY";
       confidence = Math.max(25, confidence - 12);
       rationale.push("VWAP filter: price is too close to VWAP; intraday direction is not clean.");
     }
 
-    return { signal, confidence, rationale, regime, marketRegime, impulseBias };
+    if (marketRegime === "TREND") {
+      const extensionAtr = Math.abs(lastPrice - indicators.ema20) / Math.max(indicators.atr14, 1e-8);
+      if (extensionAtr > 1.35) {
+        pullbackExtended = true;
+        confidence = Math.max(25, confidence - 10);
+        rationale.push("Pullback filter: price is extended from EMA20; wait for pullback entry.");
+      }
+    }
+
+    const confidenceBreakdown = this.computeConfidenceBreakdown({
+      indicators,
+      marketRegime,
+      impulseBias,
+      biasTrend,
+      breakoutValidationFailed,
+      pullbackExtended
+    });
+    confidence = Math.round(this.clamp(confidence * 0.62 + confidenceBreakdown.setupQuality * 0.38, 1, 99));
+
+    return {
+      signal,
+      confidence,
+      confidenceBreakdown,
+      rationale,
+      regime,
+      marketRegime,
+      impulseBias,
+      pullbackExtended,
+      breakoutValidationFailed
+    };
   }
 
   private computeAtrPct(indicators: IndicatorSnapshot): number {
@@ -440,7 +510,8 @@ export class RecommendationEngine {
     const spread = indicators.ema20 - indicators.ema50;
     const spreadPct = Math.abs(spread) / Math.max(lastPrice, 1) * 100;
     const bandWidthPct = Math.abs(indicators.bbUpper - indicators.bbLower) / Math.max(lastPrice, 1) * 100;
-    const nearVwap = Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1) * 100 < 0.03;
+    const nearVwapThreshold = this.clamp(0.02 + atrPct * 0.01, 0.02, 0.06);
+    const nearVwap = Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1) * 100 < nearVwapThreshold;
 
     if (atrPct < 0.12 && bandWidthPct < 0.35) {
       return {
@@ -467,6 +538,68 @@ export class RecommendationEngine {
       marketRegime: "RANGE",
       regime: "TRADEABLE",
       rationale: ["Regime classifier: range (no persistent trend edge detected)."]
+    };
+  }
+
+  private computeConfidenceBreakdown(input: {
+    indicators: IndicatorSnapshot;
+    marketRegime: MarketRegime;
+    impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
+    biasTrend?: Signal;
+    breakoutValidationFailed: boolean;
+    pullbackExtended: boolean;
+  }): ConfidenceBreakdown {
+    const atrPct = this.computeAtrPct(input.indicators);
+    const emaSpreadPct =
+      Math.abs(input.indicators.ema20 - input.indicators.ema50) / Math.max(input.indicators.ema20, 1) * 100;
+    const trend = this.clamp(
+      35 +
+        input.indicators.adx14 * 1.1 +
+        emaSpreadPct * 40 +
+        (input.marketRegime === "TREND" ? 12 : input.marketRegime === "RANGE" ? -4 : 0),
+      0,
+      100
+    );
+    const momentum = this.clamp(
+      45 +
+        Math.abs(input.indicators.macdHistogram) * 2.2 +
+        (input.indicators.rsi14 > 55 || input.indicators.rsi14 < 45 ? 8 : -5) +
+        (input.impulseBias === "NONE" ? 0 : 12),
+      0,
+      100
+    );
+    const volatility = this.clamp(100 - Math.abs(atrPct - 0.65) * 70, 0, 100);
+    const vwapDistancePct =
+      Math.abs(input.indicators.ema20 - input.indicators.vwap) / Math.max(input.indicators.vwap, 1) * 100;
+    const structure = this.clamp(
+      45 +
+        vwapDistancePct * 130 +
+        (input.breakoutValidationFailed ? -18 : 8) +
+        (input.pullbackExtended ? -10 : 0),
+      0,
+      100
+    );
+    const context = this.clamp(
+      50 +
+        (Math.abs(input.indicators.macdHistogram) > 0.2 ? 8 : -4) +
+        (input.biasTrend ? 6 : 0) +
+        (input.marketRegime === "LOW_LIQ_CHOP" ? -20 : 0) +
+        (input.marketRegime === "VOLATILE_SPIKE" ? -8 : 0),
+      0,
+      100
+    );
+    const setupQuality = this.clamp(
+      trend * 0.28 + momentum * 0.24 + volatility * 0.16 + structure * 0.2 + context * 0.12,
+      0,
+      100
+    );
+    return {
+      trend: this.round(trend),
+      momentum: this.round(momentum),
+      volatility: this.round(volatility),
+      structure: this.round(structure),
+      context: this.round(context),
+      setupQuality: this.round(setupQuality)
     };
   }
 
@@ -527,6 +660,10 @@ export class RecommendationEngine {
 
   private round(value: number): number {
     return Number(value.toFixed(4));
+  }
+
+  private clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
   }
 
   private applyStopLossOverride(input: {
@@ -683,6 +820,9 @@ export class RecommendationEngine {
     regime: "TRADEABLE" | "CHOPPY";
     marketRegime: MarketRegime;
     impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
+    pullbackExtended: boolean;
+    breakoutValidationFailed: boolean;
+    setupQuality: number;
     confidence: number;
     riskRewardRatio: number;
     rationale: string[];
@@ -693,6 +833,14 @@ export class RecommendationEngine {
     }
     if (input.signal === "LONG" && input.impulseBias === "DOWN_IMPULSE") {
       input.rationale.push("No-trade guard: avoid fading a strong recent bearish impulse.");
+      return "NO_TRADE";
+    }
+    if (input.pullbackExtended) {
+      input.rationale.push("No-trade guard: trend entry is extended; wait for pullback.");
+      return "NO_TRADE";
+    }
+    if (input.breakoutValidationFailed) {
+      input.rationale.push("No-trade guard: breakout failed follow-through validation.");
       return "NO_TRADE";
     }
     if (input.marketRegime === "LOW_LIQ_CHOP") {
@@ -709,6 +857,10 @@ export class RecommendationEngine {
     }
     if (input.confidence < 45) {
       input.rationale.push("No-trade guard: confidence too low.");
+      return "NO_TRADE";
+    }
+    if (input.setupQuality < 52) {
+      input.rationale.push("No-trade guard: setup quality below threshold.");
       return "NO_TRADE";
     }
     return input.signal;

@@ -3,6 +3,15 @@ export type TradeAction = "LONG" | "SHORT" | "NO TRADE";
 export type MarketRegime = "TREND" | "RANGE" | "VOLATILE_SPIKE" | "LOW_LIQ_CHOP";
 export type ImpulseDirection = "UP" | "DOWN" | "NONE";
 
+export interface ConfidenceBreakdown {
+  trend: number;
+  momentum: number;
+  volatility: number;
+  structure: number;
+  context: number;
+  setupQuality: number;
+}
+
 export interface Candle {
   timestamp: number;
   open: number;
@@ -76,6 +85,7 @@ export interface Recommendation {
   expectedValueUsd?: number;
   expectedValuePerMarginPct?: number;
   confidence: number;
+  confidenceBreakdown: ConfidenceBreakdown;
   rationale: string[];
   indicators: IndicatorSnapshot;
   perp: PerpMarketSnapshot;

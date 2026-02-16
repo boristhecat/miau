@@ -107,6 +107,14 @@
 - [x] Add no-trade guard when signal fades a strong opposite impulse
 - [x] Add unit test for anti-fade behavior
 
+## Task: Short-term quality pipeline + watch mode (2026-02-16)
+- [x] Add setup-quality scoring + confidence decomposition in domain output
+- [x] Add breakout validation and pullback-extension no-trade guards
+- [x] Add volatility-normalized thresholds for impulse/VWAP proximity logic
+- [x] Add session-level cooldown + confidence calibration from simulation outcomes
+- [x] Add optional read-only watch mode that rechecks symbols and prints only status changes
+- [x] Add tests for new guards/scoring behavior
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

@@ -28,6 +28,64 @@ const ui = {
   blue: "\u001b[34m"
 };
 
+interface SessionStats {
+  wins: number;
+  losses: number;
+}
+
+class SessionPerformanceTracker {
+  private readonly byPair = new Map<string, SessionStats>();
+  private readonly cooldownUntilMsByPair = new Map<string, number>();
+
+  applyConfidenceCalibration(pair: string, confidence: number): { confidence: number; note?: string } {
+    const stats = this.byPair.get(pair);
+    if (!stats) {
+      return { confidence };
+    }
+    const samples = stats.wins + stats.losses;
+    if (samples < 3) {
+      return { confidence };
+    }
+    const winRate = stats.wins / Math.max(samples, 1);
+    const delta = Math.round((winRate - 0.5) * 20);
+    if (delta === 0) {
+      return { confidence };
+    }
+    const adjusted = Math.min(99, Math.max(1, confidence + delta));
+    return {
+      confidence: adjusted,
+      note: `session calibration ${delta >= 0 ? "+" : ""}${delta}% from ${samples} sims (${Math.round(winRate * 100)}% win)`
+    };
+  }
+
+  recordSimulation(pair: string, status: "SUCCESS" | "FAILURE", interval: string): void {
+    const current = this.byPair.get(pair) ?? { wins: 0, losses: 0 };
+    if (status === "SUCCESS") {
+      current.wins += 1;
+    } else {
+      current.losses += 1;
+      const intervalMs = intervalToMs(interval);
+      const cooldownMs = Math.max(intervalMs, 60_000) * 8;
+      this.cooldownUntilMsByPair.set(pair, Date.now() + cooldownMs);
+    }
+    this.byPair.set(pair, current);
+  }
+
+  getCooldownRemainingMs(pair: string): number {
+    const until = this.cooldownUntilMsByPair.get(pair);
+    if (!until) {
+      return 0;
+    }
+    return Math.max(0, until - Date.now());
+  }
+}
+
+interface WatchConfig {
+  symbol: string;
+  everyMinutes: number;
+  input: TradingInput;
+}
+
 async function main(): Promise<void> {
   const logger = new ConsoleLogger();
   let cliInput: ReturnType<typeof parseCliInput> | undefined;
@@ -78,10 +136,14 @@ async function main(): Promise<void> {
   }
 
   const rl = readline.createInterface({ input, output });
+  const tracker = new SessionPerformanceTracker();
+  const watchIntervals = new Map<string, NodeJS.Timeout>();
+  const watchSignatures = new Map<string, string>();
+  const watchRunning = new Set<string>();
   try {
     while (true) {
       const raw = await rl.question(
-        `${ui.bold}${ui.cyan}Symbol${ui.reset} ${ui.gray}(e.g. BTC, ETH | 'help' | 'rec' | 'exit')${ui.reset}: `
+        `${ui.bold}${ui.cyan}Symbol${ui.reset} ${ui.gray}(e.g. BTC, ETH | 'watch BTC' | 'help' | 'rec' | 'exit')${ui.reset}: `
       );
       const normalized = raw.trim().toLowerCase();
       if (normalized === "help" || normalized === "?") {
@@ -104,14 +166,64 @@ async function main(): Promise<void> {
       if (normalized === "exit" || normalized === "quit") {
         break;
       }
+      if (normalized === "watches") {
+        printActiveWatches(watchIntervals);
+        continue;
+      }
+      if (normalized.startsWith("unwatch ")) {
+        const symbol = normalized.replace(/^unwatch\s+/, "").trim().toUpperCase();
+        stopWatchSymbol(symbol, watchIntervals, watchSignatures);
+        continue;
+      }
+      if (normalized.startsWith("watch ")) {
+        try {
+          const watchConfig = parseWatchCommand(raw);
+          const key = watchConfig.symbol.toUpperCase();
+          stopWatchSymbol(key, watchIntervals, watchSignatures);
+          const timer = setInterval(() => {
+            void runWatchIteration({
+              key,
+              logger,
+              useCase,
+              tracker,
+              watchConfig,
+              watchSignatures,
+              watchRunning
+            });
+          }, watchConfig.everyMinutes * 60_000);
+          watchIntervals.set(key, timer);
+          await runWatchIteration({
+            key,
+            logger,
+            useCase,
+            tracker,
+            watchConfig,
+            watchSignatures,
+            watchRunning
+          });
+          logger.info(`[watch] Started ${key} every ${watchConfig.everyMinutes}m. Use 'unwatch ${key}' to stop.`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Invalid watch command";
+          logger.error(message);
+        }
+        continue;
+      }
 
       try {
         const baseInput = parseTradingInput(raw);
         const tradeInput = baseInput.fullInteractive
           ? await promptInteractiveTradeInput(rl, baseInput)
           : await promptQuickTradeInput(rl, baseInput);
+        const pair = `${tradeInput.symbol}-USD`;
+        const cooldownRemainingMs = tracker.getCooldownRemainingMs(pair);
+        if (cooldownRemainingMs > 0) {
+          logger.info(
+            `[guard] Cooldown active for ${pair}: wait ${Math.ceil(cooldownRemainingMs / 60_000)}m before next entry.`
+          );
+          continue;
+        }
         const recommendation = await useCase.execute({
-          pair: `${tradeInput.symbol}-USD`,
+          pair,
           interval: tradeInput.timeframe,
           biasInterval: tradeInput.biasTimeframe,
           leverage: tradeInput.leverage,
@@ -123,6 +235,11 @@ async function main(): Promise<void> {
           objectiveUsdc: tradeInput.objectiveUsdc,
           objectiveHorizon: tradeInput.objectiveHorizon
         });
+        const calibration = tracker.applyConfidenceCalibration(pair, recommendation.confidence);
+        recommendation.confidence = calibration.confidence;
+        if (calibration.note) {
+          recommendation.rationale.unshift(`Calibration: ${calibration.note}.`);
+        }
         new RecommendationPrinter().print(recommendation, {
           showDetails: tradeInput.showDetails
         });
@@ -134,7 +251,10 @@ async function main(): Promise<void> {
             marketData,
             recommendation,
             interval: tradeInput.timeframe ?? "1m",
-            horizonMinutes: simulationHorizonMinutes
+            horizonMinutes: simulationHorizonMinutes,
+            onResult: (status) => {
+              tracker.recordSimulation(pair, status, tradeInput.timeframe ?? "1m");
+            }
           });
         }
       } catch (error) {
@@ -147,6 +267,9 @@ async function main(): Promise<void> {
     logger.error(`Interactive session failed: ${message}`);
     process.exitCode = 1;
   } finally {
+    for (const timer of watchIntervals.values()) {
+      clearInterval(timer);
+    }
     rl.close();
   }
 }
@@ -211,6 +334,139 @@ async function runRecommendationRanking(input: {
     input.logger.info(`[rec] Sample skipped symbols: ${sample}`);
   }
   console.log("");
+}
+
+function parseWatchCommand(raw: string): WatchConfig {
+  const parts = raw.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2 || parts[0]?.toLowerCase() !== "watch") {
+    throw new Error("Invalid watch command. Use: watch <SYMBOL> [--every <minutes>] [--objective <USDC> | --horizon <minutes>]");
+  }
+  let everyMinutes = 1;
+  const queryTokens: string[] = [];
+  for (let i = 1; i < parts.length; i += 1) {
+    const token = parts[i]!;
+    if (token === "--every") {
+      const value = parts[i + 1];
+      if (!value || !/^\d+$/.test(value)) {
+        throw new Error("Invalid --every value. Use minutes as a positive integer.");
+      }
+      everyMinutes = Number(value);
+      if (everyMinutes <= 0) {
+        throw new Error("Invalid --every value. Must be greater than 0.");
+      }
+      i += 1;
+      continue;
+    }
+    queryTokens.push(token);
+  }
+
+  const base = parseTradingInput(queryTokens.join(" "));
+  if (base.manualLevels) {
+    throw new Error("Watch mode supports objective/horizon mode only; manual SL/TP is disabled.");
+  }
+
+  return {
+    symbol: base.symbol,
+    everyMinutes,
+    input: {
+      symbol: base.symbol,
+      fullInteractive: false,
+      manualLevels: false,
+      runSimulation: false,
+      objectiveUsdc: base.objectiveUsdc,
+      objectiveHorizon: base.objectiveHorizon ?? "15",
+      timeframe: "1m",
+      biasTimeframe: "15m",
+      leverage: 20,
+      positionSizeUsd: 250,
+      slPct: undefined,
+      tpPct: undefined,
+      slUsd: undefined,
+      tpUsd: undefined,
+      showDetails: false
+    }
+  };
+}
+
+async function runWatchIteration(input: {
+  key: string;
+  logger: ConsoleLogger;
+  useCase: GenerateRecommendationUseCase;
+  tracker: SessionPerformanceTracker;
+  watchConfig: WatchConfig;
+  watchSignatures: Map<string, string>;
+  watchRunning: Set<string>;
+}): Promise<void> {
+  if (input.watchRunning.has(input.key)) {
+    return;
+  }
+  input.watchRunning.add(input.key);
+  try {
+    const pair = `${input.watchConfig.symbol}-USD`;
+    const cooldownRemainingMs = input.tracker.getCooldownRemainingMs(pair);
+    if (cooldownRemainingMs > 0) {
+      const signature = `COOLDOWN:${Math.ceil(cooldownRemainingMs / 60_000)}`;
+      if (input.watchSignatures.get(input.key) !== signature) {
+        input.watchSignatures.set(input.key, signature);
+        input.logger.info(
+          `[watch] ${pair} cooldown active for ${Math.ceil(cooldownRemainingMs / 60_000)}m; waiting for next check.`
+        );
+      }
+      return;
+    }
+
+    const recommendation = await input.useCase.execute({
+      pair,
+      interval: input.watchConfig.input.timeframe,
+      biasInterval: input.watchConfig.input.biasTimeframe,
+      leverage: input.watchConfig.input.leverage,
+      positionSizeUsd: input.watchConfig.input.positionSizeUsd,
+      objectiveUsdc: input.watchConfig.input.objectiveUsdc,
+      objectiveHorizon: input.watchConfig.input.objectiveHorizon
+    });
+    const calibration = input.tracker.applyConfidenceCalibration(pair, recommendation.confidence);
+    recommendation.confidence = calibration.confidence;
+    const guardReason = recommendation.rationale.find((line) => line.startsWith("No-trade guard:")) ?? "";
+    const signature =
+      `${recommendation.signal}|${recommendation.marketRegime}|${Math.round(recommendation.confidence / 5) * 5}|` +
+      `${guardReason}`;
+
+    if (input.watchSignatures.get(input.key) === signature) {
+      return;
+    }
+    input.watchSignatures.set(input.key, signature);
+    console.log("");
+    input.logger.info(`[watch] Status change for ${pair}`);
+    new RecommendationPrinter().print(recommendation, { showDetails: false });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Watch iteration failed";
+    input.logger.error(`[watch] ${input.key} failed: ${message}`);
+  } finally {
+    input.watchRunning.delete(input.key);
+  }
+}
+
+function stopWatchSymbol(symbol: string, watchIntervals: Map<string, NodeJS.Timeout>, watchSignatures: Map<string, string>): void {
+  const timer = watchIntervals.get(symbol);
+  if (!timer) {
+    console.log(`${ui.yellow}[watch]${ui.reset} ${symbol} was not active.`);
+    return;
+  }
+  clearInterval(timer);
+  watchIntervals.delete(symbol);
+  watchSignatures.delete(symbol);
+  console.log(`${ui.green}[watch]${ui.reset} Stopped ${symbol}.`);
+}
+
+function printActiveWatches(watchIntervals: Map<string, NodeJS.Timeout>): void {
+  if (watchIntervals.size === 0) {
+    console.log(`${ui.gray}[watch] No active watches.${ui.reset}`);
+    return;
+  }
+  console.log(`${ui.bold}${ui.blue}ACTIVE WATCHES${ui.reset}`);
+  for (const symbol of watchIntervals.keys()) {
+    console.log(`- ${symbol}`);
+  }
 }
 
 async function promptInteractiveTradeInput(
@@ -362,6 +618,7 @@ function scheduleSimulation(input: {
   recommendation: Recommendation;
   interval: string;
   horizonMinutes: number;
+  onResult?: (status: "SUCCESS" | "FAILURE") => void;
 }): void {
   const signal = resolveSimulationSignal(input.recommendation);
 
@@ -416,6 +673,7 @@ function scheduleSimulation(input: {
       );
       console.log(`${ui.gray}reason:${ui.reset} ${outcome.reason}`);
       console.log("");
+      input.onResult?.(outcome.status);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unhandled simulation error";
       input.logger.error(`[sim] Failed to evaluate ${input.recommendation.pair}: ${message}`);
@@ -553,6 +811,9 @@ function getInteractiveHelpText(): string {
     "Interactive commands:",
     "- <SYMBOL>                      Quick mode (example: BTC)",
     "- <SYMBOL> -i                   Full interactive mode",
+    "- watch <SYMBOL> [--every N]    Re-check symbol every N minutes (status changes only)",
+    "- unwatch <SYMBOL>              Stop one active watch",
+    "- watches                       List active watches",
     "- rec                           Run top recommendations scan",
     "- help                          Show this help",
     "- exit | quit                   Close the app",

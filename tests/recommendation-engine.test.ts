@@ -389,4 +389,62 @@ describe("RecommendationEngine", () => {
     expect(rec.signal).toBe("NO_TRADE");
     expect(rec.rationale.some((line) => line.includes("avoid fading a strong recent bullish impulse"))).toBe(true);
   });
+
+  it("blocks extended trend entries until pullback", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 62,
+      ema20: 51000,
+      ema50: 50000,
+      macd: 20,
+      macdSignal: 14,
+      macdHistogram: 6,
+      atr14: 180,
+      adx14: 32,
+      bbUpper: 51380,
+      bbMiddle: 51000,
+      bbLower: 50620,
+      stochRsiK: 68,
+      stochRsiD: 60,
+      vwap: 50500
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 51480,
+      indicators,
+      perp: basePerp
+    });
+
+    expect(rec.signal).toBe("NO_TRADE");
+    expect(rec.rationale.some((line) => line.toLowerCase().includes("pullback") || line.toLowerCase().includes("extended"))).toBe(true);
+  });
+
+  it("exposes confidence breakdown with setup quality", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 56,
+      ema20: 50300,
+      ema50: 50050,
+      macd: 6,
+      macdSignal: 4,
+      macdHistogram: 2,
+      atr14: 120,
+      adx14: 24,
+      bbUpper: 50700,
+      bbMiddle: 50200,
+      bbLower: 49700,
+      stochRsiK: 58,
+      stochRsiD: 52,
+      vwap: 50150
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50320,
+      indicators,
+      perp: basePerp
+    });
+
+    expect(rec.confidenceBreakdown.setupQuality).toBeGreaterThanOrEqual(0);
+    expect(rec.confidenceBreakdown.setupQuality).toBeLessThanOrEqual(100);
+  });
 });

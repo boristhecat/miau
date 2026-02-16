@@ -36,6 +36,12 @@ function confidenceBand(confidence: number): "LOW" | "MEDIUM" | "HIGH" | "VERY H
   return "LOW";
 }
 
+function setupQualityColor(value: number): string {
+  if (value >= 70) return colors.brightGreen;
+  if (value >= 55) return colors.brightYellow;
+  return colors.brightRed;
+}
+
 function fmt(value: number): string {
   return Number(value.toFixed(4)).toString();
 }
@@ -108,6 +114,9 @@ export class RecommendationPrinter {
       `${label("ACTION")} ${colors.bold}${colors.white}${rec.action}${colors.reset}   ` +
       `${label("R/R")} ${colors.white}${rec.riskRewardRatio.toFixed(2)}${colors.reset}`
     );
+    console.log(
+      `${label("SETUP QUALITY")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${colors.bold}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
+    );
     console.log(divider());
 
     this.printTradeLevels(rec, hasPosition);
@@ -136,6 +145,19 @@ export class RecommendationPrinter {
     console.log(
       `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
       `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
+    );
+    console.log(divider());
+
+    console.log(`${colors.bold}${colors.cyan}CONFIDENCE BREAKDOWN${colors.reset}`);
+    console.log(
+      `${label("Trend")} ${fmt(rec.confidenceBreakdown.trend)}   ` +
+      `${label("Momentum")} ${fmt(rec.confidenceBreakdown.momentum)}   ` +
+      `${label("Volatility")} ${fmt(rec.confidenceBreakdown.volatility)}`
+    );
+    console.log(
+      `${label("Structure")} ${fmt(rec.confidenceBreakdown.structure)}   ` +
+      `${label("Context")} ${fmt(rec.confidenceBreakdown.context)}   ` +
+      `${label("Setup Quality")} ${fmt(rec.confidenceBreakdown.setupQuality)}`
     );
     console.log(divider());
 
@@ -169,6 +191,9 @@ export class RecommendationPrinter {
 
     console.log(`${colors.bold}${colors.cyan}TRADE LEVELS${colors.reset}`);
     console.log(`${label("Trade Direction")} ${directionColor}${colors.bold}${direction}${colors.reset}`);
+    console.log(
+      `${label("Setup Quality")} ${setupQualityColor(rec.confidenceBreakdown.setupQuality)}${rec.confidenceBreakdown.setupQuality}%${colors.reset}`
+    );
     console.log(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
     console.log(
       `${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}` +

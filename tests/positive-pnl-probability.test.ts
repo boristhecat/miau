@@ -40,6 +40,14 @@ function makeRecommendation(input: Partial<Recommendation>): Recommendation {
     stopLoss: 99,
     takeProfit: 102,
     confidence: 70,
+    confidenceBreakdown: {
+      trend: 70,
+      momentum: 70,
+      volatility: 70,
+      structure: 70,
+      context: 70,
+      setupQuality: 70
+    },
     rationale: ["test"],
     riskRewardRatio: 2,
     indicators,
