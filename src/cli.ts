@@ -211,14 +211,16 @@ function formatPct(value?: number): string {
 
 function renderDashboard(state: DashboardState): void {
   process.stdout.write("\u001b[2J\u001b[H");
-  console.log(`${ui.bold}${ui.blue}WATCHED SYMBOLS${ui.reset} ${ui.gray}(live, in-place)${ui.reset}`);
   const learningStatusColor = state.learning.active ? ui.green : ui.gray;
   const learningCycle = state.learning.cycleRunning ? `${ui.yellow}cycle running${ui.reset}` : `${ui.gray}idle${ui.reset}`;
+  console.log(`${ui.bold}${ui.blue}LEARNING STATUS${ui.reset}`);
   console.log(
     `${ui.bold}learning:${ui.reset} ${learningStatusColor}${state.learning.active ? "RUNNING" : "STOPPED"}${ui.reset}  ` +
       `${learningCycle}  ` +
       `${ui.gray}symbols:${state.learning.symbolsCount} pending:${state.learning.pendingSimulations}${ui.reset}`
   );
+  console.log(`${ui.gray}${"-".repeat(92)}${ui.reset}`);
+  console.log(`${ui.bold}${ui.blue}WATCHED SYMBOLS${ui.reset} ${ui.gray}(live, in-place)${ui.reset}`);
   if (state.watchRows.size === 0) {
     console.log(`${ui.gray}No active watches. Use: watch BTC --every 1${ui.reset}`);
   } else {
