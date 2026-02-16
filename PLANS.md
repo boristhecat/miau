@@ -156,6 +156,12 @@
 - [x] Surface setup grade in console output
 - [x] Add tests for setup grade output and stricter short-timeframe quality gating
 
+## Task: Horizon-adaptive timeframe selection (2026-02-16)
+- [x] Auto-select base/bias timeframe from selected horizon in single-symbol flow
+- [x] Apply the same adaptive timeframe logic in watch iterations
+- [x] Surface active adaptive timeframe in single-symbol output
+- [x] Update CLI help and README notes
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

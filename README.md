@@ -103,6 +103,10 @@ Custom prompt mode (`--custom`) prompts for core risk inputs:
 - Leverage
 - Position size (USDC margin)
 - Trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
+- Timeframes are selected automatically from horizon:
+  - `<=15m`: base `1m`, bias `15m`
+  - `<=45m`: base `5m`, bias `15m`
+  - `>45m`: base `5m`, bias `1h`
 - Simulation is flag-driven (`--simulate`) and is not prompted interactively
 - Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
 - Simulation always runs, even when recommendation says `NO_TRADE`

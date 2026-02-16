@@ -209,6 +209,47 @@ function formatPct(value?: number): string {
   return `${value.toFixed(2)}%`;
 }
 
+function resolveAdaptiveTimeframes(objectiveHorizon?: string): {
+  timeframe: string;
+  biasTimeframe: string;
+  source: "horizon-adaptive" | "fallback";
+} {
+  if (!objectiveHorizon || !/^\d+$/.test(objectiveHorizon.trim())) {
+    return {
+      timeframe: "1m",
+      biasTimeframe: "15m",
+      source: "fallback"
+    };
+  }
+  const minutes = Number(objectiveHorizon);
+  if (Number.isNaN(minutes) || minutes <= 0) {
+    return {
+      timeframe: "1m",
+      biasTimeframe: "15m",
+      source: "fallback"
+    };
+  }
+  if (minutes <= 15) {
+    return {
+      timeframe: "1m",
+      biasTimeframe: "15m",
+      source: "horizon-adaptive"
+    };
+  }
+  if (minutes <= 45) {
+    return {
+      timeframe: "5m",
+      biasTimeframe: "15m",
+      source: "horizon-adaptive"
+    };
+  }
+  return {
+    timeframe: "5m",
+    biasTimeframe: "1h",
+    source: "horizon-adaptive"
+  };
+}
+
 function renderDashboard(state: DashboardState): void {
   process.stdout.write("\u001b[2J\u001b[H");
   const learningStatusColor = state.learning.active ? ui.green : ui.gray;
@@ -554,6 +595,9 @@ async function main(): Promise<void> {
               tpUsd: undefined,
               showDetails: false
             };
+        const adaptiveTimeframes = resolveAdaptiveTimeframes(tradeInput.objectiveHorizon);
+        const interval = adaptiveTimeframes.timeframe;
+        const biasInterval = adaptiveTimeframes.biasTimeframe;
         const pair = `${tradeInput.symbol}-USD`;
         const cooldownRemainingMs = tracker.getCooldownRemainingMs(pair);
         const cooldownAdvisory =
@@ -563,8 +607,8 @@ async function main(): Promise<void> {
         let recommendation = await useCase.execute({
           pair,
           forcedDirection: tradeInput.requestedDirection,
-          interval: tradeInput.timeframe,
-          biasInterval: tradeInput.biasTimeframe,
+          interval,
+          biasInterval,
           leverage: tradeInput.leverage,
           positionSizeUsd: tradeInput.positionSizeUsd,
           slPct: tradeInput.slPct,
@@ -575,7 +619,7 @@ async function main(): Promise<void> {
         });
         recommendation = await learning.applyPolicy({
           recommendation,
-          timeframe: tradeInput.timeframe ?? "1m"
+          timeframe: interval
         });
         const calibration = tracker.applyConfidenceCalibration(pair, recommendation.confidence);
         recommendation.confidence = calibration.confidence;
@@ -588,6 +632,11 @@ async function main(): Promise<void> {
         dashboard.latestQueryLines = printer.render(recommendation, {
           showDetails: tradeInput.showDetails
         });
+        if (adaptiveTimeframes.source === "horizon-adaptive") {
+          dashboard.latestQueryLines.unshift(
+            `${ui.gray}[tf] Adaptive: base ${interval}, bias ${biasInterval} (horizon ${tradeInput.objectiveHorizon ?? "n/a"}m).${ui.reset}`
+          );
+        }
         if (cooldownAdvisory) {
           dashboard.latestQueryLines.push(`${ui.yellow}${cooldownAdvisory}${ui.reset}`);
         }
@@ -598,13 +647,13 @@ async function main(): Promise<void> {
           scheduleSimulation({
             marketData,
             recommendation,
-            interval: tradeInput.timeframe ?? "1m",
+            interval,
             horizonMinutes: simulationHorizonMinutes,
             onResult: async (result) => {
-              tracker.recordSimulation(pair, result.status, tradeInput.timeframe ?? "1m");
+              tracker.recordSimulation(pair, result.status, interval);
               await learning.recordSimulationOutcome({
                 recommendation,
-                timeframe: tradeInput.timeframe ?? "1m",
+                timeframe: interval,
                 horizonMinutes: simulationHorizonMinutes,
                 status: result.status,
                 pnlUsd: result.pnlUsd
@@ -877,6 +926,7 @@ async function runWatchIteration(input: {
   input.watchRunning.add(input.key);
   try {
     const pair = `${input.watchConfig.symbol}-USD`;
+    const adaptiveTimeframes = resolveAdaptiveTimeframes(input.watchConfig.input.objectiveHorizon);
     const cooldownRemainingMs = input.tracker.getCooldownRemainingMs(pair);
     const cooldownAdvisory =
       cooldownRemainingMs > 0 ? `Cooldown advisory ${Math.ceil(cooldownRemainingMs / 60_000)}m` : undefined;
@@ -884,15 +934,15 @@ async function runWatchIteration(input: {
     let recommendation = await input.useCase.execute({
       pair,
       forcedDirection: input.watchConfig.input.requestedDirection,
-      interval: input.watchConfig.input.timeframe,
-      biasInterval: input.watchConfig.input.biasTimeframe,
+      interval: adaptiveTimeframes.timeframe,
+      biasInterval: adaptiveTimeframes.biasTimeframe,
       leverage: input.watchConfig.input.leverage,
       positionSizeUsd: input.watchConfig.input.positionSizeUsd,
       objectiveHorizon: input.watchConfig.input.objectiveHorizon
     });
     recommendation = await input.learning.applyPolicy({
       recommendation,
-      timeframe: input.watchConfig.input.timeframe ?? "1m"
+      timeframe: adaptiveTimeframes.timeframe
     });
     const calibration = input.tracker.applyConfidenceCalibration(pair, recommendation.confidence);
     recommendation.confidence = calibration.confidence;
@@ -1182,6 +1232,7 @@ function getInteractiveHelpText(): string {
     "",
     "Rules:",
     "- --horizon defaults to 15 when omitted in targeting mode.",
+    "- Base/bias timeframes are auto-selected from horizon: <=15m => 1m/15m, <=45m => 5m/15m, >45m => 5m/1h.",
     ""
   ].join("\n");
 }
