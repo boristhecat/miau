@@ -144,6 +144,12 @@
 - [x] Schedule background simulations for horizons 5/10/15/30/60/90 per selected symbol
 - [x] Ensure learn runner can stop cleanly and cancel pending timers
 
+## Task: Remove deprecated CLI flags/modes (2026-02-16)
+- [x] Remove `-i/--interactive` and full interactive prompt flow
+- [x] Remove `--manual-levels` parser/validation and manual SL/TP prompt flow
+- [x] Remove `watches` command/help/docs references
+- [x] Update parser tests and usage/help text
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

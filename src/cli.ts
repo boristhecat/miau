@@ -406,14 +406,6 @@ async function main(): Promise<void> {
       if (normalized === "exit" || normalized === "quit") {
         break;
       }
-      if (normalized === "watches") {
-        dashboard.latestQueryLines = [
-          `${ui.bold}${ui.blue}ACTIVE WATCHES${ui.reset}`,
-          ...(watchIntervals.size === 0 ? [`${ui.gray}No active watches.${ui.reset}`] : [...watchIntervals.keys()].map((s) => `- ${s}`))
-        ];
-        requestRender();
-        continue;
-      }
       if (normalized === "learn --start") {
         if (learningRunner.active) {
           dashboard.latestQueryLines = [`${ui.yellow}[learn] already running.${ui.reset}`];
@@ -537,42 +529,28 @@ async function main(): Promise<void> {
 
       try {
         const baseInput = parseTradingInput(raw);
-        if (baseInput.manualLevels && !baseInput.customValues && !baseInput.fullInteractive) {
-          throw new Error("Manual levels require --custom to provide SL/TP values.");
-        }
-        const tradeInput = baseInput.fullInteractive
-          ? await promptInteractiveTradeInput(rl, {
+        const tradeInput = baseInput.customValues
+          ? await promptQuickTradeInput(rl, {
               ...baseInput,
               leverage: baseInput.leverage ?? tradeDefaults.leverage,
               positionSizeUsd: baseInput.positionSizeUsd ?? tradeDefaults.positionSizeUsd,
-              objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
-              timeframe: baseInput.timeframe ?? tradeDefaults.timeframe,
-              biasTimeframe: baseInput.biasTimeframe ?? tradeDefaults.biasTimeframe
+              objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon
             })
-          : baseInput.customValues
-            ? await promptQuickTradeInput(rl, {
-                ...baseInput,
-                leverage: baseInput.leverage ?? tradeDefaults.leverage,
-                positionSizeUsd: baseInput.positionSizeUsd ?? tradeDefaults.positionSizeUsd,
-                objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon
-              })
-            : {
-                symbol: baseInput.symbol,
-                fullInteractive: false,
-                customValues: false,
-                manualLevels: false,
-                runSimulation: baseInput.runSimulation,
-                objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
-                timeframe: tradeDefaults.timeframe,
-                biasTimeframe: tradeDefaults.biasTimeframe,
-                leverage: tradeDefaults.leverage,
-                positionSizeUsd: tradeDefaults.positionSizeUsd,
-                slPct: undefined,
-                tpPct: undefined,
-                slUsd: undefined,
-                tpUsd: undefined,
-                showDetails: false
-              };
+          : {
+              symbol: baseInput.symbol,
+              customValues: false,
+              runSimulation: baseInput.runSimulation,
+              objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
+              timeframe: tradeDefaults.timeframe,
+              biasTimeframe: tradeDefaults.biasTimeframe,
+              leverage: tradeDefaults.leverage,
+              positionSizeUsd: tradeDefaults.positionSizeUsd,
+              slPct: undefined,
+              tpPct: undefined,
+              slUsd: undefined,
+              tpUsd: undefined,
+              showDetails: false
+            };
         const pair = `${tradeInput.symbol}-USD`;
         const cooldownRemainingMs = tracker.getCooldownRemainingMs(pair);
         const cooldownAdvisory =
@@ -855,18 +833,13 @@ function parseWatchCommand(raw: string): WatchConfig {
   }
 
   const base = parseTradingInput(queryTokens.join(" "));
-  if (base.manualLevels) {
-    throw new Error("Watch mode supports horizon mode only; manual SL/TP is disabled.");
-  }
 
   return {
     symbol: base.symbol,
     everyMinutes,
     input: {
       symbol: base.symbol,
-      fullInteractive: false,
       customValues: false,
-      manualLevels: false,
       runSimulation: false,
       objectiveHorizon: base.objectiveHorizon ?? "15",
       timeframe: "1m",
@@ -991,115 +964,26 @@ async function promptTradeDefaults(rl: readline.Interface, current: TradeDefault
   };
 }
 
-async function promptInteractiveTradeInput(
-  rl: readline.Interface,
-  base: TradingInput
-): Promise<TradingInput> {
-  const tf = await promptWithDefault(rl, "Timeframe (--tf)", base.timeframe ?? "1m");
-  const biasTf = await promptWithDefault(rl, "Bias timeframe (--bias-tf)", base.biasTimeframe ?? "15m");
-  const leverage = await promptOptional(rl, "Leverage (-l)", base.leverage?.toString() ?? "20");
-  const size = await promptOptional(rl, "Position size USDC (-s)", base.positionSizeUsd?.toString() ?? "250");
-  const manualLevels = base.manualLevels;
-  const parsedLeverage = parseOptionalLeverageInput(leverage);
-  const parsedPositionSize = parseOptionalNumberInput(size, "position size");
-
-  let slMode: "none" | "pct" | "usd" = "none";
-  let slValue: string | undefined;
-  let tpMode: "none" | "pct" | "usd" = "none";
-  let tpValue: string | undefined;
-  let objectiveHorizon: string | undefined;
-
-  if (manualLevels) {
-    slMode = parseRiskMode(
-      await promptWithDefault(rl, "Stop-loss mode [none|pct|usd]", currentMode(base.slPct, base.slUsd, "pct")),
-      "stop-loss"
-    );
-    slValue =
-      slMode === "pct"
-        ? await promptWithDefault(rl, "Stop-loss percent (--sl)", (base.slPct ?? 0.6).toString())
-        : slMode === "usd"
-          ? await promptWithDefault(rl, "Stop-loss USD (--sl-usd)", (base.slUsd ?? 30).toString())
-          : undefined;
-
-    tpMode = parseRiskMode(
-      await promptWithDefault(rl, "Take-profit mode [none|pct|usd]", currentMode(base.tpPct, base.tpUsd, "pct")),
-      "take-profit"
-    );
-    tpValue =
-      tpMode === "pct"
-        ? await promptWithDefault(rl, "Take-profit percent (--tp)", (base.tpPct ?? 1.2).toString())
-        : tpMode === "usd"
-          ? await promptWithDefault(rl, "Take-profit USD (--tp-usd)", (base.tpUsd ?? 60).toString())
-          : undefined;
-  } else {
-    const horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon ?? "15");
-    objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
-    if (objectiveHorizon === undefined) {
-      objectiveHorizon = "15";
-    }
-    if (parsedLeverage === undefined || parsedPositionSize === undefined) {
-      throw new Error("Horizon mode requires leverage and position size.");
-    }
-  }
-
-  const verboseAnswer = await promptWithDefault(rl, "Show details? [y|n]", base.showDetails ? "y" : "n");
-
-  return {
-    symbol: base.symbol,
-    fullInteractive: true,
-    customValues: true,
-    manualLevels,
-    runSimulation: base.runSimulation,
-    timeframe: parseIntervalInput(tf, "timeframe"),
-    biasTimeframe: parseIntervalInput(biasTf, "bias timeframe"),
-    objectiveHorizon,
-    leverage: parsedLeverage,
-    positionSizeUsd: parsedPositionSize,
-    slPct: slMode === "pct" ? parseRequiredNumberInput(slValue, "stop-loss percentage") : undefined,
-    tpPct: tpMode === "pct" ? parseRequiredNumberInput(tpValue, "take-profit percentage") : undefined,
-    slUsd: slMode === "usd" ? parseRequiredNumberInput(slValue, "stop-loss USD") : undefined,
-    tpUsd: tpMode === "usd" ? parseRequiredNumberInput(tpValue, "take-profit USD") : undefined,
-    showDetails: verboseAnswer.toLowerCase() === "y"
-  };
-}
-
 async function promptQuickTradeInput(
   rl: readline.Interface,
   base: TradingInput
 ): Promise<TradingInput> {
   const leverage = await promptWithDefault(rl, "Leverage", base.leverage?.toString() ?? "20");
   const size = await promptWithDefault(rl, "Position size USDC", base.positionSizeUsd?.toString() ?? "250");
-  const manualLevels = base.manualLevels;
-
-  let slValue: string | undefined;
-  let tpValue: string | undefined;
-  let horizonRaw: string | undefined;
-  if (manualLevels) {
-    slValue = await promptWithDefault(rl, "Stop-loss percent", (base.slPct ?? 0.6).toString());
-    tpValue = await promptWithDefault(rl, "Take-profit percent", (base.tpPct ?? 1.2).toString());
-  } else {
-    horizonRaw = await promptOptional(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon ?? "15");
-  }
-  let objectiveHorizon = parseOptionalHorizonInput(horizonRaw);
-  if (!manualLevels) {
-    if (objectiveHorizon === undefined) {
-      objectiveHorizon = "15";
-    }
-  }
+  const horizonRaw = await promptWithDefault(rl, "Trade horizon minutes (--horizon)", base.objectiveHorizon ?? "15");
+  const objectiveHorizon = parseOptionalHorizonInput(horizonRaw) ?? "15";
 
   return {
     symbol: base.symbol,
-    fullInteractive: false,
     customValues: true,
-    manualLevels,
     runSimulation: base.runSimulation,
     objectiveHorizon,
     timeframe: "1m",
     biasTimeframe: "15m",
-    leverage: parseOptionalLeverageInput(leverage),
+    leverage: parseRequiredNumberInput(leverage, "leverage"),
     positionSizeUsd: parseRequiredNumberInput(size, "position size"),
-    slPct: manualLevels ? parseRequiredNumberInput(slValue, "stop-loss percentage") : undefined,
-    tpPct: manualLevels ? parseRequiredNumberInput(tpValue, "take-profit percentage") : undefined,
+    slPct: undefined,
+    tpPct: undefined,
     slUsd: undefined,
     tpUsd: undefined,
     showDetails: false
@@ -1193,47 +1077,12 @@ async function promptWithDefault(rl: readline.Interface, label: string, defaultV
   return trimmed === "" ? defaultValue : trimmed;
 }
 
-async function promptOptional(rl: readline.Interface, label: string, current?: string): Promise<string | undefined> {
-  const hint = current ? `[${current}]` : "[none]";
-  const answer = await rl.question(
-    `${ui.cyan}${label}${ui.reset} ${ui.gray}${hint}${ui.reset}: `
-  );
-  const trimmed = answer.trim();
-  if (trimmed === "") return current;
-  if (trimmed === "-") return undefined;
-  return trimmed;
-}
-
-function currentMode(pct?: number, usd?: number, fallback: "none" | "pct" | "usd" = "none"): "none" | "pct" | "usd" {
-  if (pct !== undefined) return "pct";
-  if (usd !== undefined) return "usd";
-  return fallback;
-}
-
-function parseOptionalLeverageInput(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Number(value);
-  if (Number.isNaN(parsed) || parsed <= 0 || parsed > 100) {
-    throw new Error("Invalid leverage. Use a number between 0 and 100 (e.g. 5).");
-  }
-  return parsed;
-}
-
 function parseIntervalInput(value: string, label: string): string {
   const normalized = value.trim().toLowerCase();
   if (!/^\d+[mhd]$/.test(normalized)) {
     throw new Error(`Invalid ${label}. Use format like 1m, 5m, 15m, 1h.`);
   }
   return normalized;
-}
-
-function parseOptionalNumberInput(value: string | undefined, label: string): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  return parseRequiredNumberInput(value, label);
 }
 
 function parseOptionalHorizonInput(value: string | undefined): string | undefined {
@@ -1245,14 +1094,6 @@ function parseOptionalHorizonInput(value: string | undefined): string | undefine
     throw new Error("Invalid trade horizon. Use minutes as a positive integer (e.g. 15, 75, 90).");
   }
   return normalized;
-}
-
-function parseRiskMode(value: string, label: "stop-loss" | "take-profit"): "none" | "pct" | "usd" {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "none" || normalized === "pct" || normalized === "usd") {
-    return normalized;
-  }
-  throw new Error(`Invalid ${label} mode. Use one of: none, pct, usd.`);
 }
 
 function parseRequiredNumberInput(value: string | undefined, label: string): number {
@@ -1308,30 +1149,32 @@ function resolveSimulationSignal(recommendation: Recommendation): "LONG" | "SHOR
 function getInteractiveHelpText(): string {
   return [
     "",
-    "Interactive commands:",
-    "- <SYMBOL>                      Run immediately with saved defaults",
-    "- defaults                      Set default leverage/size/horizon/tf values",
-    "- <SYMBOL> --custom             Prompt quick custom values (same fields as old simple mode)",
-    "- <SYMBOL> -i                   Full interactive mode",
-    "- watch <SYMBOL> [--every N]    Re-check symbol every N minutes (status changes only)",
-    "- unwatch <SYMBOL>              Stop one active watch",
-    "- watches                       List active watches",
-    "- learn --start                 Start background learning runner",
-    "- learn --stop                  Stop background learning runner",
-    "- learn --stats                 Show learning performance stats",
-    "- rec                           Run top recommendations scan",
-    "- help                          Show this help",
-    "- exit | quit                   Close the app",
+    "TRADING",
+    "- <SYMBOL> [--custom] [--horizon <minutes>] [--simulate]",
+    "  Run a single-symbol analysis (defaults mode by default; --custom prompts values).",
+    "- defaults",
+    "  Set default leverage, size, horizon, timeframe, and bias timeframe.",
     "",
-    "Query flags (after SYMBOL):",
-    "- --custom                      Prompt quick trade values for this run",
-    "- --horizon <minutes>           Horizon in minutes (targeting mode)",
-    "- --manual-levels               Enable manual SL/TP prompts",
-    "- --simulate                    Always run simulation in background (uses --horizon minutes, else 15m)",
+    "SCANNING & WATCH",
+    "- rec",
+    "  Scan top symbols and show ranked recommendations.",
+    "- watch <SYMBOL> [--every N]",
+    "  Track a symbol and refresh status every N minutes.",
+    "- unwatch <SYMBOL>",
+    "  Remove one watched symbol.",
+    "",
+    "LEARNING",
+    "- learn --start | learn --stop | learn --stats",
+    "  Control background learning and view aggregate stats.",
+    "",
+    "SYSTEM",
+    "- help | ?",
+    "  Show this help.",
+    "- exit | quit",
+    "  Close the app.",
     "",
     "Rules:",
     "- --horizon defaults to 15 when omitted in targeting mode.",
-    "- --manual-levels cannot be combined with --horizon.",
     ""
   ].join("\n");
 }

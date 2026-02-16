@@ -2,9 +2,7 @@ import { parseTradingSymbol } from "./parse-trading-symbol.js";
 
 export interface TradingInput {
   symbol: string;
-  fullInteractive: boolean;
   customValues: boolean;
-  manualLevels: boolean;
   runSimulation: boolean;
   objectiveHorizon?: string;
   timeframe?: string;
@@ -24,25 +22,14 @@ export function parseTradingInput(raw: string): TradingInput {
     throw new Error("Symbol is required.");
   }
   const symbol = parseTradingSymbol(parts[0] ?? "");
-  let fullInteractive = false;
   let customValues = false;
-  let manualLevels = false;
   let runSimulation = false;
   let objectiveHorizon: string | undefined;
 
   for (let i = 1; i < parts.length; i += 1) {
     const token = parts[i];
-    if (token === "-i" || token === "--interactive") {
-      fullInteractive = true;
-      continue;
-    }
     if (token === "--custom") {
       customValues = true;
-      continue;
-    }
-
-    if (token === "--manual-levels") {
-      manualLevels = true;
       continue;
     }
     if (token === "--simulate") {
@@ -64,19 +51,13 @@ export function parseTradingInput(raw: string): TradingInput {
     }
 
     throw new Error(
-      "Only -i/--interactive, --custom, --manual-levels, --simulate, and --horizon <minutes> are supported after symbol."
+      "Only --custom, --simulate, and --horizon <minutes> are supported after symbol."
     );
-  }
-
-  if (manualLevels && objectiveHorizon !== undefined) {
-    throw new Error("Manual levels mode cannot be combined with --horizon.");
   }
 
   return {
     symbol,
-    fullInteractive,
     customValues,
-    manualLevels,
     runSimulation,
     objectiveHorizon,
     showDetails: false

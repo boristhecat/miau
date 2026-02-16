@@ -71,13 +71,10 @@ After starting the app, enter input at the `Command` prompt:
 - `defaults` -> set saved defaults for symbol-only runs
 - `BTC` -> run immediately with saved defaults
 - `BTC --custom` -> prompt quick values for this run
-- `ETH -i` -> full interactive mode
 - `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
-- `BTC --manual-levels` -> direct manual SL/TP mode
 - `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
 - `watch BTC --every 1` -> add symbol to live watch section (top panel)
 - `unwatch BTC` -> remove symbol from live watch section
-- `watches` -> list active watched symbols
 - `learn --start` -> start background learning runner
 - `learn --stop` -> stop background learning runner
 - `learn --stats` -> show learning stats (simulated trades, wins/losses, win-rate, avg PnL)
@@ -105,14 +102,10 @@ Custom prompt mode (`--custom`) prompts for core risk inputs:
 
 - Leverage
 - Position size (USDC margin)
-- Target mode selection:
-  - horizon mode (`--horizon`, where horizon is minutes)
-  - manual levels mode (`--manual-levels`) for direct SL/TP percentages
+- Trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
 - Simulation is flag-driven (`--simulate`) and is not prompted interactively
 - Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
 - Simulation always runs, even when recommendation says `NO_TRADE`
-- Trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
-- In manual mode: Stop-loss percent and Take-profit percent
 
 Defaults to:
 
@@ -122,30 +115,6 @@ Defaults to:
 - Timeframe: `1m`
 - Higher-timeframe bias: `15m`
 - Detailed output: disabled
-
-### Full interactive mode (`-i`)
-
-Prompts for all configuration fields with defaults:
-
-- Timeframe (`1m`, `5m`, `15m`, `1h`, etc.)
-- Bias timeframe
-- Optional leverage
-- Optional position size
-- Target mode is selected by query flag before prompts:
-  - manual mode via `--manual-levels`
-  - horizon mode without `--manual-levels`
-- In manual mode: stop-loss and take-profit mode (`none`, `pct`, `usd`)
-- In horizon mode: provide horizon or leave empty to use default horizon `15`
-- Show details: `y` / `n`
-- Simulation is flag-driven (`--simulate`) and is not prompted interactively
-- Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
-- Simulation always runs, even when recommendation says `NO_TRADE`
-- Trade horizon minutes (`--horizon`, optional)
-
-Tips:
-
-- Press `Enter` to keep the default.
-- Type `-` to clear optional values where supported.
 
 ## What the output includes
 
@@ -159,7 +128,6 @@ Tips:
 - Optional simulation result (`SUCCESS`/`FAILURE`) based on public candles only
 - Learning calibration note when enough historical outcomes exist
 - Objective/horizon metadata with time-stop rule when objective targeting is enabled
-- Full indicator/rationale/perp context output when detail mode is enabled in full interactive flow
 - Optional `rec` ranking output with top 5 tokens (highest recommendation -> lowest)
 
 ## Indicators used
