@@ -548,4 +548,34 @@ describe("RecommendationEngine", () => {
     expect(longHorizon.expectedRangeHorizonMinutes).toBe(60);
     expect(shortHorizon.expectedRangeHorizonMinutes).toBe(15);
   });
+
+  it("reduces EMA-led short-timeframe conviction without fast confirmations", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 50,
+      ema20: 50020,
+      ema50: 50000,
+      macd: 0,
+      macdSignal: 0,
+      macdHistogram: 0,
+      atr14: 100,
+      adx14: 20,
+      bbUpper: 50300,
+      bbMiddle: 50000,
+      bbLower: 49700,
+      stochRsiK: 50,
+      stochRsiD: 50,
+      vwap: 50050
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      baseInterval: "1m"
+    });
+
+    expect(rec.rationale.some((line) => line.includes("EMA spread is tight"))).toBe(true);
+    expect(rec.rationale.some((line) => line.includes("needs at least one fast confirmation"))).toBe(true);
+  });
 });

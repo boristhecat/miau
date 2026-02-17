@@ -85,7 +85,8 @@ export class RecommendationEngine {
       perp,
       lastPrice,
       biasTrend,
-      biasInterval
+      biasInterval,
+      baseInterval ?? "1m"
     );
     let confidence = baseConfidence;
     const modelSignal = signal;
@@ -303,7 +304,8 @@ export class RecommendationEngine {
     perp: PerpMarketSnapshot,
     lastPrice: number,
     biasTrend?: Signal,
-    biasInterval?: string
+    biasInterval?: string,
+    baseInterval = "1m"
   ): {
     signal: Exclude<Signal, "NO_TRADE">;
     confidence: number;
@@ -318,6 +320,8 @@ export class RecommendationEngine {
     let longScore = 0;
     let shortScore = 0;
     const rationale: string[] = [];
+    const intervalMinutes = this.parseIntervalToMinutes(baseInterval);
+    const shortHorizon = intervalMinutes <= 15;
     const regimeContext = this.classifyRegime(indicators, lastPrice);
     rationale.push(...regimeContext.rationale);
     let regime = regimeContext.regime;
@@ -326,11 +330,12 @@ export class RecommendationEngine {
     let pullbackExtended = false;
     let breakoutValidationFailed = false;
 
+    const emaTrendWeight = shortHorizon ? 17 : 28;
     if (indicators.ema20 > indicators.ema50) {
-      longScore += 28;
+      longScore += emaTrendWeight;
       rationale.push("EMA20 is above EMA50 (bullish trend).");
     } else {
-      shortScore += 28;
+      shortScore += emaTrendWeight;
       rationale.push("EMA20 is below EMA50 (bearish trend).");
     }
 
@@ -513,6 +518,37 @@ export class RecommendationEngine {
       longScore -= 4;
       shortScore -= 4;
       rationale.push("Volatility spike regime: reduce conviction until expansion settles.");
+    }
+
+    const emaSpreadPct = Math.abs(indicators.ema20 - indicators.ema50) / Math.max(lastPrice, 1) * 100;
+    if (shortHorizon && emaSpreadPct < 0.08) {
+      longScore -= 8;
+      shortScore -= 8;
+      rationale.push("Short-horizon filter: EMA spread is tight; likely chop around crossover.");
+    }
+
+    const bullishFastConfirmations = [
+      indicators.macdHistogram > 0 && indicators.macd > indicators.macdSignal,
+      lastPrice > indicators.vwap,
+      indicators.rsi14 > 52,
+      (indicators.recentCandleContext?.momentumPct3 ?? 0) > 0
+    ].filter(Boolean).length;
+    const bearishFastConfirmations = [
+      indicators.macdHistogram < 0 && indicators.macd < indicators.macdSignal,
+      lastPrice < indicators.vwap,
+      indicators.rsi14 < 48,
+      (indicators.recentCandleContext?.momentumPct3 ?? 0) < 0
+    ].filter(Boolean).length;
+    const emaTrendDirection: Exclude<Signal, "NO_TRADE"> = indicators.ema20 >= indicators.ema50 ? "LONG" : "SHORT";
+    if (shortHorizon) {
+      if (emaTrendDirection === "LONG" && bullishFastConfirmations === 0) {
+        longScore -= 12;
+        rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a long.");
+      }
+      if (emaTrendDirection === "SHORT" && bearishFastConfirmations === 0) {
+        shortScore -= 12;
+        rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a short.");
+      }
     }
 
     const diff = Math.abs(longScore - shortScore);
