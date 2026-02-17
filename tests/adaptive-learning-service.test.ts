@@ -96,7 +96,13 @@ describe("AdaptiveLearningService", () => {
         samples: 40,
         winRate: 0.66,
         avgPnlUsd: 7.5,
-        recentStatuses: ["SUCCESS", "SUCCESS", "SUCCESS", "FAILURE", "SUCCESS"]
+        recentOutcomes: [
+          { status: "SUCCESS", failureType: "NONE" },
+          { status: "SUCCESS", failureType: "NONE" },
+          { status: "SUCCESS", failureType: "NONE" },
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "SUCCESS", failureType: "NONE" }
+        ]
       })
     );
 
@@ -116,7 +122,13 @@ describe("AdaptiveLearningService", () => {
         samples: 35,
         winRate: 0.33,
         avgPnlUsd: -8.5,
-        recentStatuses: ["FAILURE", "FAILURE", "FAILURE", "FAILURE", "SUCCESS"]
+        recentOutcomes: [
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "FAILURE", failureType: "TIMEOUT_LOSS" },
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "SUCCESS", failureType: "NONE" }
+        ]
       })
     );
 
@@ -135,7 +147,7 @@ describe("AdaptiveLearningService", () => {
       samples: 0,
       winRate: 0,
       avgPnlUsd: 0,
-      recentStatuses: []
+      recentOutcomes: []
     });
     const service = new AdaptiveLearningService(store);
     const rec = baseRecommendation();
@@ -145,12 +157,18 @@ describe("AdaptiveLearningService", () => {
       timeframe: "1m",
       horizonMinutes: 15,
       status: "SUCCESS",
+      failureType: "NONE",
+      directionalCorrect: true,
+      maxFavorableExcursionPct: 1.2,
+      maxAdverseExcursionPct: 0.5,
       pnlUsd: 12.3
     });
 
     expect(store.lastRecord).toBeDefined();
     expect(store.lastRecord?.pair).toBe("BTC-USD");
     expect(store.lastRecord?.status).toBe("SUCCESS");
+    expect(store.lastRecord?.failureType).toBe("NONE");
+    expect(store.lastRecord?.directionalCorrect).toBe(true);
     expect(store.lastRecord?.pnlUsd).toBe(12.3);
   });
 
@@ -160,7 +178,13 @@ describe("AdaptiveLearningService", () => {
         samples: 20,
         winRate: 0.2,
         avgPnlUsd: -10,
-        recentStatuses: ["FAILURE", "FAILURE", "FAILURE", "FAILURE", "FAILURE"]
+        recentOutcomes: [
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+          { status: "FAILURE", failureType: "WRONG_DIRECTION" }
+        ]
       })
     );
     const rec = baseRecommendation();
@@ -173,5 +197,30 @@ describe("AdaptiveLearningService", () => {
 
     expect(adjusted.confidence).toBe(originalConfidence);
     expect(adjusted.signal).toBe("LONG");
+  });
+
+  it("does not over-penalize tight-stop rebound failures", async () => {
+    const service = new AdaptiveLearningService(
+      new FakeLearningStore({
+        samples: 36,
+        winRate: 0.4,
+        avgPnlUsd: -1.2,
+        recentOutcomes: [
+          { status: "FAILURE", failureType: "STOP_TOO_TIGHT_REBOUND" },
+          { status: "FAILURE", failureType: "STOP_TOO_TIGHT_REBOUND" },
+          { status: "SUCCESS", failureType: "NONE" },
+          { status: "SUCCESS", failureType: "NONE" },
+          { status: "SUCCESS", failureType: "NONE" }
+        ]
+      })
+    );
+
+    const rec = await service.applyPolicy({
+      recommendation: baseRecommendation(),
+      timeframe: "1m"
+    });
+
+    expect(rec.signal).toBe("LONG");
+    expect(rec.rationale.some((line) => line.includes("tight-stop"))).toBe(true);
   });
 });

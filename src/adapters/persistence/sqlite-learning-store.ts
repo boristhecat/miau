@@ -3,9 +3,11 @@ import path from "node:path";
 import type {
   LearningOverview,
   LearningOutcomeRecord,
+  LearningOutcomeSummary,
   LearningStatsQuery,
   LearningStatsResult,
   LearningStorePort,
+  OutcomeFailureType,
   OutcomeStatus
 } from "../../ports/learning-store-port.js";
 
@@ -47,9 +49,17 @@ class SqliteLearningStore implements LearningStorePort {
         confidence REAL NOT NULL,
         setup_quality REAL NOT NULL,
         status TEXT NOT NULL,
+        failure_type TEXT NOT NULL DEFAULT 'NONE',
+        directional_correct INTEGER,
+        mfe_pct REAL,
+        mae_pct REAL,
         pnl_usd REAL
       )`
     ).run();
+    this.ensureColumn("learning_outcomes", "failure_type", "TEXT NOT NULL DEFAULT 'NONE'");
+    this.ensureColumn("learning_outcomes", "directional_correct", "INTEGER");
+    this.ensureColumn("learning_outcomes", "mfe_pct", "REAL");
+    this.ensureColumn("learning_outcomes", "mae_pct", "REAL");
     this.db.prepare(
       `CREATE INDEX IF NOT EXISTS idx_learning_outcomes_lookup
        ON learning_outcomes(pair, timeframe, market_regime, recorded_at)`
@@ -60,12 +70,17 @@ class SqliteLearningStore implements LearningStorePort {
     this.db.prepare(
       `INSERT INTO learning_outcomes (
         pair, symbol, timeframe, horizon_minutes, market_regime,
-        signal, confidence, setup_quality, status, pnl_usd
+        signal, confidence, setup_quality, status, failure_type, directional_correct, mfe_pct, mae_pct, pnl_usd
       ) VALUES (
         @pair, @symbol, @timeframe, @horizonMinutes, @marketRegime,
-        @signal, @confidence, @setupQuality, @status, @pnlUsd
+        @signal, @confidence, @setupQuality, @status, @failureType, @directionalCorrect, @maxFavorableExcursionPct, @maxAdverseExcursionPct, @pnlUsd
       )`
-    ).run(input);
+    ).run({
+      ...input,
+      failureType: input.failureType ?? "NONE",
+      directionalCorrect:
+        input.directionalCorrect === undefined ? null : input.directionalCorrect ? 1 : 0
+    });
   }
 
   async getStats(input: LearningStatsQuery): Promise<LearningStatsResult> {
@@ -86,7 +101,7 @@ class SqliteLearningStore implements LearningStorePort {
 
     const recentRows = this.db
       .prepare(
-        `SELECT status
+        `SELECT status, failure_type
          FROM learning_outcomes
          WHERE pair = @pair
            AND timeframe = @timeframe
@@ -99,15 +114,22 @@ class SqliteLearningStore implements LearningStorePort {
 
     const samples = Number(aggregate.samples ?? 0);
     if (!samples) {
-      return { samples: 0, winRate: 0, avgPnlUsd: 0, recentStatuses: [] };
+      return { samples: 0, winRate: 0, avgPnlUsd: 0, recentOutcomes: [] };
     }
     return {
       samples,
       winRate: Number(aggregate.winRate ?? 0),
       avgPnlUsd: Number(aggregate.avgPnlUsd ?? 0),
-      recentStatuses: recentRows
-        .map((row) => String(row.status).toUpperCase())
-        .filter((value): value is OutcomeStatus => value === "SUCCESS" || value === "FAILURE")
+      recentOutcomes: recentRows
+        .map((row): LearningOutcomeSummary | null => {
+          const status = String(row.status).toUpperCase();
+          if (status !== "SUCCESS" && status !== "FAILURE") {
+            return null;
+          }
+          const failureType = normalizeFailureType(row.failure_type);
+          return { status, failureType };
+        })
+        .filter((value): value is LearningOutcomeSummary => value !== null)
     };
   }
 
@@ -135,4 +157,25 @@ class SqliteLearningStore implements LearningStorePort {
       avgPnlUsd: totalSamples > 0 ? Number(row.avgPnlUsd ?? 0) : 0
     };
   }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all();
+    const exists = columns.some((row) => String(row.name).toLowerCase() === column.toLowerCase());
+    if (!exists) {
+      this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+    }
+  }
+}
+
+function normalizeFailureType(value: unknown): OutcomeFailureType {
+  const normalized = String(value ?? "NONE").toUpperCase();
+  if (
+    normalized === "WRONG_DIRECTION" ||
+    normalized === "STOP_TOO_TIGHT_REBOUND" ||
+    normalized === "TIMEOUT_LOSS" ||
+    normalized === "WHIPSAW_SL_TP"
+  ) {
+    return normalized;
+  }
+  return "NONE";
 }

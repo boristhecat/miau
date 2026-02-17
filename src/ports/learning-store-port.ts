@@ -1,4 +1,15 @@
 export type OutcomeStatus = "SUCCESS" | "FAILURE";
+export type OutcomeFailureType =
+  | "NONE"
+  | "WRONG_DIRECTION"
+  | "STOP_TOO_TIGHT_REBOUND"
+  | "TIMEOUT_LOSS"
+  | "WHIPSAW_SL_TP";
+
+export interface LearningOutcomeSummary {
+  status: OutcomeStatus;
+  failureType: OutcomeFailureType;
+}
 
 export interface LearningOutcomeRecord {
   pair: string;
@@ -10,6 +21,10 @@ export interface LearningOutcomeRecord {
   confidence: number;
   setupQuality: number;
   status: OutcomeStatus;
+  failureType?: OutcomeFailureType;
+  directionalCorrect?: boolean;
+  maxFavorableExcursionPct?: number;
+  maxAdverseExcursionPct?: number;
   pnlUsd?: number;
 }
 
@@ -25,7 +40,7 @@ export interface LearningStatsResult {
   samples: number;
   winRate: number;
   avgPnlUsd: number;
-  recentStatuses: OutcomeStatus[];
+  recentOutcomes: LearningOutcomeSummary[];
 }
 
 export interface LearningOverview {

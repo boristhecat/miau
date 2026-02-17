@@ -2,7 +2,9 @@ import type { Recommendation } from "../domain/types.js";
 import type {
   LearningOutcomeRecord,
   LearningOverview,
+  LearningOutcomeSummary,
   LearningStorePort,
+  OutcomeFailureType,
   OutcomeStatus
 } from "../ports/learning-store-port.js";
 
@@ -44,13 +46,19 @@ export class AdaptiveLearningService {
       };
     }
 
+    const weightedWinRate = computeWeightedWinRate(stats.recentOutcomes, stats.winRate);
     const pnlBias = stats.avgPnlUsd >= 0 ? Math.min(5, stats.avgPnlUsd / 4) : -Math.min(5, Math.abs(stats.avgPnlUsd) / 4);
-    const confidenceDelta = clamp(Math.round((stats.winRate - 0.5) * 24 + pnlBias), -15, 15);
+    const confidenceDelta = clamp(Math.round((weightedWinRate - 0.5) * 24 + pnlBias), -15, 15);
     const minConfidence =
-      stats.winRate < 0.45 ? 50 : stats.winRate > 0.58 ? 43 : 45;
+      weightedWinRate < 0.45 ? 50 : weightedWinRate > 0.58 ? 43 : 45;
     const minSetupQuality =
-      stats.winRate < 0.45 ? 58 : stats.winRate > 0.58 ? 49 : 52;
-    const recentFailures = stats.recentStatuses.filter((status) => status === "FAILURE").length;
+      weightedWinRate < 0.45 ? 58 : weightedWinRate > 0.58 ? 49 : 52;
+    const recentFailures = stats.recentOutcomes.filter(
+      (outcome) => outcome.status === "FAILURE" && outcome.failureType !== "STOP_TOO_TIGHT_REBOUND"
+    ).length;
+    const tightStopFailures = stats.recentOutcomes.filter(
+      (outcome) => outcome.status === "FAILURE" && outcome.failureType === "STOP_TOO_TIGHT_REBOUND"
+    ).length;
     const strictnessBump = recentFailures >= 4 ? 3 : 0;
 
     return {
@@ -60,7 +68,7 @@ export class AdaptiveLearningService {
       sampleSize: stats.samples,
       active: stats.samples >= 30,
       note:
-        `learning win ${Math.round(stats.winRate * 100)}% / avg ${stats.avgPnlUsd.toFixed(2)} USDC (${stats.samples} samples)`
+        `learning win ${Math.round(weightedWinRate * 100)}% (raw ${Math.round(stats.winRate * 100)}%, tight-stop ${tightStopFailures}) / avg ${stats.avgPnlUsd.toFixed(2)} USDC (${stats.samples} samples)`
     };
   }
 
@@ -101,6 +109,10 @@ export class AdaptiveLearningService {
     timeframe: string;
     horizonMinutes: number;
     status: OutcomeStatus;
+    failureType?: OutcomeFailureType;
+    directionalCorrect?: boolean;
+    maxFavorableExcursionPct?: number;
+    maxAdverseExcursionPct?: number;
     pnlUsd?: number;
   }): Promise<void> {
     const symbol = input.recommendation.pair.split("-")[0] ?? input.recommendation.pair;
@@ -114,6 +126,10 @@ export class AdaptiveLearningService {
       confidence: input.recommendation.confidence,
       setupQuality: input.recommendation.confidenceBreakdown.setupQuality,
       status: input.status,
+      failureType: input.failureType,
+      directionalCorrect: input.directionalCorrect,
+      maxFavorableExcursionPct: input.maxFavorableExcursionPct,
+      maxAdverseExcursionPct: input.maxAdverseExcursionPct,
       pnlUsd: input.pnlUsd
     };
     await this.store.recordOutcome(record);
@@ -122,4 +138,24 @@ export class AdaptiveLearningService {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function computeWeightedWinRate(recentOutcomes: LearningOutcomeSummary[], fallbackWinRate: number): number {
+  if (recentOutcomes.length === 0) {
+    return fallbackWinRate;
+  }
+  let weightedWins = 0;
+  let weightedLosses = 0;
+  for (const outcome of recentOutcomes) {
+    if (outcome.status === "SUCCESS") {
+      weightedWins += 1;
+      continue;
+    }
+    weightedLosses += outcome.failureType === "STOP_TOO_TIGHT_REBOUND" ? 0.35 : 1;
+  }
+  const total = weightedWins + weightedLosses;
+  if (total <= 0) {
+    return fallbackWinRate;
+  }
+  return weightedWins / total;
 }

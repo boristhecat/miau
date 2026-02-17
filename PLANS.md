@@ -180,6 +180,12 @@
 - [x] Render AI opinion block in single-symbol output as additional context only
 - [x] Add tests for AI use-case mapping and parser support
 
+## Task: Learning failure decomposition for SL-hit rebounds (2026-02-17)
+- [x] Add simulation outcome classification fields (wrong-direction vs tight-stop rebound)
+- [x] Persist decomposition fields in SQLite learning store with safe schema migration
+- [x] Use decomposed failures in adaptive learning policy (reduced penalty for tight-stop rebounds)
+- [x] Add/adjust tests for simulation classification and adaptive-policy behavior
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

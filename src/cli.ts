@@ -6,6 +6,7 @@ import { AdaptiveLearningService } from "./application/adaptive-learning-service
 import { getUsageText, parseCliInput } from "./application/parse-cli-input.js";
 import { parseTradingInput, type TradingInput } from "./application/parse-trading-input.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
+import type { RecommendationGenerator } from "./application/rank-top-opportunities-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { OpenAiAiAdvisor } from "./adapters/ai/openai-ai-advisor.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
@@ -346,6 +347,7 @@ async function main(): Promise<void> {
       const lines = await runRecommendationRanking({
         logger,
         recommendationUseCase: useCase,
+        learning,
         symbolUniverseProvider: marketData,
         defaults: tradeDefaults
       });
@@ -417,6 +419,7 @@ async function main(): Promise<void> {
           dashboard.latestQueryLines = await runRecommendationRanking({
             logger,
             recommendationUseCase: useCase,
+            learning,
             symbolUniverseProvider: marketData,
             defaults: tradeDefaults
           });
@@ -674,6 +677,10 @@ async function main(): Promise<void> {
                 timeframe: interval,
                 horizonMinutes: simulationHorizonMinutes,
                 status: result.status,
+                failureType: result.failureType,
+                directionalCorrect: result.directionalCorrect,
+                maxFavorableExcursionPct: result.maxFavorableExcursionPct,
+                maxAdverseExcursionPct: result.maxAdverseExcursionPct,
                 pnlUsd: result.pnlUsd
               });
             },
@@ -707,13 +714,23 @@ async function main(): Promise<void> {
 async function runRecommendationRanking(input: {
   logger: ConsoleLogger;
   recommendationUseCase: GenerateRecommendationUseCase;
+  learning: AdaptiveLearningService;
   symbolUniverseProvider: BackpackMarketDataClient;
   defaults: TradeDefaults;
 }): Promise<string[]> {
   const lines: string[] = [];
   const write = (line = "") => lines.push(line);
-  const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase, input.symbolUniverseProvider);
   const adaptiveTimeframes = resolveAdaptiveTimeframes(input.defaults.objectiveHorizon);
+  const learningAwareGenerator: RecommendationGenerator = {
+    execute: async (request) => {
+      const recommendation = await input.recommendationUseCase.execute(request);
+      return input.learning.applyPolicy({
+        recommendation,
+        timeframe: request.interval ?? adaptiveTimeframes.timeframe
+      });
+    }
+  };
+  const rankUseCase = new RankTopOpportunitiesUseCase(learningAwareGenerator, input.symbolUniverseProvider);
   write(`${ui.gray}[rec] Fetching top PERP symbols by 24h volume...${ui.reset}`);
 
   const selected = await input.symbolUniverseProvider.getTopPerpSymbolsByVolumeWithOpenInterest(15);
@@ -857,6 +874,10 @@ async function runLearningCycle(input: {
               timeframe: "1m",
               horizonMinutes,
               status: result.status,
+              failureType: result.failureType,
+              directionalCorrect: result.directionalCorrect,
+              maxFavorableExcursionPct: result.maxFavorableExcursionPct,
+              maxAdverseExcursionPct: result.maxAdverseExcursionPct,
               pnlUsd: result.pnlUsd
             });
           }
@@ -1075,7 +1096,14 @@ function scheduleSimulation(input: {
   recommendation: Recommendation;
   interval: string;
   horizonMinutes: number;
-  onResult?: (result: { status: "SUCCESS" | "FAILURE"; pnlUsd?: number }) => void | Promise<void>;
+  onResult?: (result: {
+    status: "SUCCESS" | "FAILURE";
+    failureType: "NONE" | "WRONG_DIRECTION" | "STOP_TOO_TIGHT_REBOUND" | "TIMEOUT_LOSS" | "WHIPSAW_SL_TP";
+    directionalCorrect: boolean;
+    maxFavorableExcursionPct: number;
+    maxAdverseExcursionPct: number;
+    pnlUsd?: number;
+  }) => void | Promise<void>;
   onRendered?: (lines: string[]) => void;
   silent?: boolean;
   timerRegistry?: Set<NodeJS.Timeout>;
@@ -1132,7 +1160,14 @@ function scheduleSimulation(input: {
       } else {
         rendered.forEach((line) => console.log(line));
       }
-      await input.onResult?.({ status: outcome.status, pnlUsd });
+      await input.onResult?.({
+        status: outcome.status,
+        failureType: outcome.failureType,
+        directionalCorrect: outcome.directionalCorrect,
+        maxFavorableExcursionPct: outcome.maxFavorableExcursionPct,
+        maxAdverseExcursionPct: outcome.maxAdverseExcursionPct,
+        pnlUsd
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unhandled simulation error";
       const rendered = [`${ui.red}[sim] Failed to evaluate ${input.recommendation.pair}: ${message}${ui.reset}`];

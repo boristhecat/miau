@@ -21,6 +21,8 @@ describe("evaluatePaperTrade", () => {
     });
 
     expect(outcome.status).toBe("SUCCESS");
+    expect(outcome.failureType).toBe("NONE");
+    expect(outcome.directionalCorrect).toBe(true);
     expect(outcome.exitPrice).toBe(102);
     expect(outcome.pnlPct).toBeGreaterThan(0);
   });
@@ -39,6 +41,8 @@ describe("evaluatePaperTrade", () => {
     });
 
     expect(outcome.status).toBe("FAILURE");
+    expect(outcome.failureType).toBe("WRONG_DIRECTION");
+    expect(outcome.directionalCorrect).toBe(false);
     expect(outcome.exitPrice).toBe(101);
     expect(outcome.pnlPct).toBeLessThan(0);
   });
@@ -68,6 +72,31 @@ describe("evaluatePaperTrade", () => {
     });
 
     expect(win.status).toBe("SUCCESS");
+    expect(win.failureType).toBe("NONE");
     expect(loss.status).toBe("FAILURE");
+    expect(loss.failureType).toBe("TIMEOUT_LOSS");
+  });
+
+  it("classifies stop-hit then rebound as tight-stop rebound failure", () => {
+    const outcome = evaluatePaperTrade({
+      trade: {
+        signal: "LONG",
+        entry: 100,
+        stopLoss: 99,
+        takeProfit: 103,
+        openedAtMs: 1_000
+      },
+      candles: [
+        candle(61_000, 100, 100.4, 98.9, 99.2),
+        candle(121_000, 99.3, 101.4, 99.1, 101.2)
+      ],
+      horizonEndMs: 901_000
+    });
+
+    expect(outcome.status).toBe("FAILURE");
+    expect(outcome.failureType).toBe("STOP_TOO_TIGHT_REBOUND");
+    expect(outcome.directionalCorrect).toBe(true);
+    expect(outcome.maxFavorableExcursionPct).toBeGreaterThan(1);
+    expect(outcome.maxAdverseExcursionPct).toBeGreaterThan(1);
   });
 });
