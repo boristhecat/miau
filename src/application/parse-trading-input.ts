@@ -4,6 +4,7 @@ export interface TradingInput {
   symbol: string;
   requestedDirection?: "LONG" | "SHORT";
   expectedRangeHorizon?: string;
+  enableAi?: boolean;
   customValues: boolean;
   runSimulation: boolean;
   objectiveHorizon?: string;
@@ -26,6 +27,7 @@ export function parseTradingInput(raw: string): TradingInput {
   const symbol = parseTradingSymbol(parts[0] ?? "");
   let customValues = false;
   let runSimulation = false;
+  let enableAi = false;
   let objectiveHorizon: string | undefined;
   let expectedRangeHorizon: string | undefined;
   let requestedDirection: "LONG" | "SHORT" | undefined;
@@ -49,6 +51,10 @@ export function parseTradingInput(raw: string): TradingInput {
       runSimulation = true;
       continue;
     }
+    if (token === "--ai") {
+      enableAi = true;
+      continue;
+    }
 
     if (token === "--horizon") {
       const rawValue = parts[i + 1];
@@ -58,8 +64,18 @@ export function parseTradingInput(raw: string): TradingInput {
       if (!/^\d+$/i.test(rawValue)) {
         throw new Error("Invalid --horizon value. Use minutes as a positive integer (e.g. 15, 75, 90).");
       }
+      if (objectiveHorizon && objectiveHorizon !== rawValue) {
+        throw new Error("Horizon can only be set once. Use either positional minutes or --horizon.");
+      }
       objectiveHorizon = rawValue;
       i += 1;
+      continue;
+    }
+    if (/^\d+$/.test(token)) {
+      if (objectiveHorizon && objectiveHorizon !== token) {
+        throw new Error("Horizon can only be set once. Use either positional minutes or --horizon.");
+      }
+      objectiveHorizon = token;
       continue;
     }
     if (token === "--expected") {
@@ -76,7 +92,7 @@ export function parseTradingInput(raw: string): TradingInput {
     }
 
     throw new Error(
-      "Only [long|short], --custom, --simulate, --horizon <minutes>, and --expected <minutes> are supported after symbol."
+      "Only [long|short], [minutes], --custom, --simulate, --ai, --horizon <minutes>, and --expected <minutes> are supported after symbol."
     );
   }
 
@@ -84,6 +100,7 @@ export function parseTradingInput(raw: string): TradingInput {
     symbol,
     ...(requestedDirection ? { requestedDirection } : {}),
     ...(expectedRangeHorizon ? { expectedRangeHorizon } : {}),
+    ...(enableAi ? { enableAi: true } : {}),
     customValues,
     runSimulation,
     objectiveHorizon,

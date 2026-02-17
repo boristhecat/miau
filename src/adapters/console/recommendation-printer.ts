@@ -1,4 +1,5 @@
 import type { Recommendation } from "../../domain/types.js";
+import type { AiAdvice } from "../../ports/ai-advisor-port.js";
 
 const colors = {
   reset: "\u001b[0m",
@@ -222,14 +223,14 @@ function tradeDirection(rec: Recommendation): "LONG" | "SHORT" | "NO TRADE" {
 }
 
 export class RecommendationPrinter {
-  print(rec: Recommendation, options?: { showDetails?: boolean; showExpectedRange?: boolean; expectedOnly?: boolean }): void {
+  print(rec: Recommendation, options?: { showDetails?: boolean; showExpectedRange?: boolean; expectedOnly?: boolean; aiAdvice?: AiAdvice }): void {
     const lines = this.render(rec, options);
     for (const line of lines) {
       console.log(line);
     }
   }
 
-  render(rec: Recommendation, options?: { showDetails?: boolean; showExpectedRange?: boolean; expectedOnly?: boolean }): string[] {
+  render(rec: Recommendation, options?: { showDetails?: boolean; showExpectedRange?: boolean; expectedOnly?: boolean; aiAdvice?: AiAdvice }): string[] {
     const lines: string[] = [];
     const write = (line = "") => lines.push(line);
     const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
@@ -243,7 +244,7 @@ export class RecommendationPrinter {
     }
 
     if (!showDetails) {
-      this.printTradeLevels(rec, hasPosition, write, showExpectedRange);
+      this.printTradeLevels(rec, hasPosition, write, showExpectedRange, options?.aiAdvice);
       return lines;
     }
 
@@ -267,7 +268,7 @@ export class RecommendationPrinter {
     );
     write(divider());
 
-    this.printTradeLevels(rec, hasPosition, write, showExpectedRange);
+    this.printTradeLevels(rec, hasPosition, write, showExpectedRange, options?.aiAdvice);
 
     write(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
     write(
@@ -333,7 +334,13 @@ export class RecommendationPrinter {
     return lines;
   }
 
-  private printTradeLevels(rec: Recommendation, hasPosition: boolean, write: (line?: string) => void, showExpectedRange: boolean): void {
+  private printTradeLevels(
+    rec: Recommendation,
+    hasPosition: boolean,
+    write: (line?: string) => void,
+    showExpectedRange: boolean,
+    aiAdvice?: AiAdvice
+  ): void {
     const direction = tradeDirection(rec);
     const directionColor =
       direction === "LONG" ? colors.brightGreen : direction === "SHORT" ? colors.brightRed : colors.yellow;
@@ -393,6 +400,23 @@ export class RecommendationPrinter {
       keyReasons.slice(1).forEach((reason) => {
         write(`${reasonIndent()} ${colors.yellow}- ${reason}${colors.reset}`);
       });
+    }
+    if (aiAdvice) {
+      write(`${label("AI Bias")} ${colors.white}${aiAdvice.bias}${colors.reset} ${colors.brightBlack}(${aiAdvice.confidenceBand})${colors.reset}`);
+      if (aiAdvice.reasons.length > 0) {
+        write(`${label("AI Why")} ${colors.cyan}- ${aiAdvice.reasons[0]}${colors.reset}`);
+        aiAdvice.reasons.slice(1).forEach((reason) => {
+          write(`${reasonIndent()} ${colors.cyan}- ${reason}${colors.reset}`);
+        });
+      }
+      write(`${label("AI Invalid")} ${colors.cyan}${aiAdvice.invalidation}${colors.reset}`);
+      write(`${label("AI Risk")} ${colors.cyan}${aiAdvice.riskNote}${colors.reset}`);
+      if (aiAdvice.model || aiAdvice.latencyMs !== undefined) {
+        write(
+          `${label("AI Meta")} ${colors.brightBlack}${aiAdvice.model ?? "n/a"}${colors.reset}` +
+            (aiAdvice.latencyMs !== undefined ? ` ${colors.brightBlack}(${aiAdvice.latencyMs}ms)${colors.reset}` : "")
+        );
+      }
     }
     write(divider());
 

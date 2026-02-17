@@ -173,6 +173,13 @@
 - [x] Keep defaults limited to leverage/size/horizon
 - [x] Update help/readme text to reflect horizon-based timeframe selection
 
+## Task: Optional AI secondary opinion (phase 1) (2026-02-17)
+- [x] Add AI advisor port and application use-case for normalized recommendation snapshots
+- [x] Add OpenAI adapter with env-key config and strict JSON parsing
+- [x] Add `--ai` flag in single-symbol parser and CLI flow
+- [x] Render AI opinion block in single-symbol output as additional context only
+- [x] Add tests for AI use-case mapping and parser support
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

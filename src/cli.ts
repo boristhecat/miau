@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
+import { GenerateAiAdviceUseCase } from "./application/generate-ai-advice-use-case.js";
 import { AdaptiveLearningService } from "./application/adaptive-learning-service.js";
 import { getUsageText, parseCliInput } from "./application/parse-cli-input.js";
 import { parseTradingInput, type TradingInput } from "./application/parse-trading-input.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
+import { OpenAiAiAdvisor } from "./adapters/ai/openai-ai-advisor.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { RecommendationPrinter } from "./adapters/console/recommendation-printer.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
+import type { AiAdvice } from "./ports/ai-advisor-port.js";
 import { IndicatorService } from "./domain/indicator-service.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { evaluatePaperTrade } from "./domain/simulation-evaluator.js";
@@ -217,22 +220,29 @@ function resolveAdaptiveTimeframes(objectiveHorizon?: string): {
       source: "fallback"
     };
   }
-  if (minutes <= 15) {
+  if (minutes <= 10) {
     return {
       timeframe: "1m",
       biasTimeframe: "15m",
       source: "horizon-adaptive"
     };
   }
-  if (minutes <= 45) {
+  if (minutes <= 30) {
     return {
-      timeframe: "5m",
+      timeframe: "3m",
       biasTimeframe: "15m",
       source: "horizon-adaptive"
     };
   }
+  if (minutes <= 90) {
+    return {
+      timeframe: "5m",
+      biasTimeframe: "30m",
+      source: "horizon-adaptive"
+    };
+  }
   return {
-    timeframe: "5m",
+    timeframe: "15m",
     biasTimeframe: "1h",
     source: "horizon-adaptive"
   };
@@ -320,6 +330,9 @@ async function main(): Promise<void> {
   const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
   const learning = new AdaptiveLearningService(learningStore);
   const printer = new RecommendationPrinter();
+  const aiAdviceUseCase = new GenerateAiAdviceUseCase({
+    aiAdvisor: new OpenAiAiAdvisor()
+  });
   let tradeDefaults = await loadTradeDefaults();
 
   if (!cliInput) {
@@ -572,6 +585,7 @@ async function main(): Promise<void> {
               symbol: baseInput.symbol,
               requestedDirection: baseInput.requestedDirection,
               expectedRangeHorizon: baseInput.expectedRangeHorizon,
+              enableAi: baseInput.enableAi,
               customValues: false,
               runSimulation: baseInput.runSimulation,
               objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
@@ -620,11 +634,27 @@ async function main(): Promise<void> {
         if (cooldownAdvisory) {
           recommendation.rationale.unshift(cooldownAdvisory);
         }
+        let aiWarning: string | undefined;
+        let aiAdvice: AiAdvice | undefined;
+        if (tradeInput.enableAi && tradeInput.expectedRangeHorizon === undefined) {
+          try {
+            aiAdvice = await aiAdviceUseCase.execute({
+              recommendation
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "AI advisory unavailable";
+            aiWarning = `AI view unavailable: ${message}`;
+          }
+        }
         dashboard.latestQueryLines = printer.render(recommendation, {
           showDetails: tradeInput.showDetails,
           showExpectedRange: tradeInput.expectedRangeHorizon !== undefined,
-          expectedOnly: tradeInput.expectedRangeHorizon !== undefined
+          expectedOnly: tradeInput.expectedRangeHorizon !== undefined,
+          aiAdvice
         });
+        if (aiWarning) {
+          dashboard.latestQueryLines.push(`${ui.yellow}[ai] ${aiWarning}${ui.reset}`);
+        }
         if (cooldownAdvisory) {
           dashboard.latestQueryLines.push(`${ui.yellow}${cooldownAdvisory}${ui.reset}`);
         }
@@ -1024,6 +1054,7 @@ async function promptQuickTradeInput(
     symbol: base.symbol,
     requestedDirection: base.requestedDirection,
     expectedRangeHorizon: base.expectedRangeHorizon,
+    enableAi: base.enableAi,
     customValues: true,
     runSimulation: base.runSimulation,
     objectiveHorizon,
@@ -1191,10 +1222,12 @@ function getInteractiveHelpText(): string {
   return [
     "",
     "TRADING",
-    "- <SYMBOL> [long|short] [--custom] [--horizon <minutes>] [--simulate]",
+    "- <SYMBOL> [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--simulate] [--ai]",
     "  Run a single-symbol analysis (defaults mode by default; --custom prompts values).",
     "- <SYMBOL> --expected <minutes>",
     "  Show expected low/high range for the given window (example: BTC --expected 240).",
+    "- --ai",
+    "  Add optional AI secondary opinion (requires OPENAI_API_KEY).",
     "- defaults",
     "  Set default leverage, size, and horizon.",
     "",
@@ -1218,7 +1251,7 @@ function getInteractiveHelpText(): string {
     "",
     "Rules:",
     "- --horizon defaults to 15 when omitted in targeting mode.",
-    "- Base/bias timeframes are auto-selected from horizon: <=15m => 1m/15m, <=45m => 5m/15m, >45m => 5m/1h.",
+    "- Base/bias timeframes are auto-selected from horizon: <=10m => 1m/15m, <=30m => 3m/15m, <=90m => 5m/30m, >90m => 15m/1h.",
     ""
   ].join("\n");
 }
