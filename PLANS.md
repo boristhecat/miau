@@ -162,6 +162,17 @@
 - [x] Surface active adaptive timeframe in single-symbol output
 - [x] Update CLI help and README notes
 
+## Task: Optional expected-range query mode (2026-02-16)
+- [x] Add `--expected <minutes>` parser support for single-symbol commands
+- [x] Keep expected low/high hidden in default output
+- [x] Add dedicated expected-range output view for explicit expected queries
+- [x] Update help/readme and parser tests for expected mode
+
+## Task: Simplify defaults after adaptive timeframe rollout (2026-02-16)
+- [x] Remove manual timeframe/bias prompts from `defaults` command
+- [x] Keep defaults limited to leverage/size/horizon
+- [x] Update help/readme text to reflect horizon-based timeframe selection
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

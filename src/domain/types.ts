@@ -68,6 +68,10 @@ export interface Recommendation {
   regime: "TRADEABLE" | "CHOPPY";
   marketRegime: MarketRegime;
   entry: number;
+  expectedLow?: number;
+  expectedHigh?: number;
+  expectedRangeHorizonMinutes?: number;
+  expectedRangeCandles?: number;
   stopLoss: number;
   takeProfit: number;
   leverage?: number;

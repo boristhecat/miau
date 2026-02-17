@@ -26,6 +26,7 @@ interface BuildRecommendationInput {
   tpUsd?: number;
   objectiveUsdc?: number;
   objectiveHorizon?: string;
+  expectedRangeHorizon?: string;
   baseInterval?: string;
 }
 
@@ -66,6 +67,7 @@ export class RecommendationEngine {
       biasInterval,
       objectiveUsdc,
       objectiveHorizon,
+      expectedRangeHorizon,
       baseInterval
     } = input;
     const {
@@ -240,6 +242,14 @@ export class RecommendationEngine {
       estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtStopLoss,
       estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit
     });
+    const expectedRange = this.estimateExpectedRange({
+      entry,
+      atr,
+      marketRegime,
+      baseInterval: baseInterval ?? "1m",
+      objectiveHorizon: expectedRangeHorizon ?? objectiveHorizon,
+      objectiveHorizonMinutes: objectiveContext?.horizonMinutes
+    });
 
     return {
       pair,
@@ -251,6 +261,10 @@ export class RecommendationEngine {
       regime,
       marketRegime,
       entry: this.round(entry),
+      expectedLow: this.round(expectedRange.low),
+      expectedHigh: this.round(expectedRange.high),
+      expectedRangeHorizonMinutes: expectedRange.horizonMinutes,
+      expectedRangeCandles: expectedRange.candles,
       stopLoss: this.round(stopLoss),
       takeProfit: this.round(takeProfit),
       leverage,
@@ -951,6 +965,48 @@ export class RecommendationEngine {
       atStopLoss: this.round(notional * slReturn),
       atTakeProfit: this.round(notional * tpReturn)
     };
+  }
+
+  private estimateExpectedRange(input: {
+    entry: number;
+    atr: number;
+    marketRegime: MarketRegime;
+    baseInterval: string;
+    objectiveHorizon?: string;
+    objectiveHorizonMinutes?: number;
+  }): { low: number; high: number; horizonMinutes: number; candles: number } {
+    const horizonMinutes = this.resolveHorizonMinutes(input.objectiveHorizon, input.objectiveHorizonMinutes);
+    const intervalMinutes = this.parseIntervalToMinutes(input.baseInterval);
+    const candles = Math.max(1, Math.round(horizonMinutes / Math.max(intervalMinutes, 1)));
+    const regimeMultiplier =
+      input.marketRegime === "VOLATILE_SPIKE"
+        ? 1.35
+        : input.marketRegime === "TREND"
+          ? 1.2
+          : input.marketRegime === "LOW_LIQ_CHOP"
+            ? 0.85
+            : 1.0;
+    // Heuristic: ATR * sqrt(time) gives a practical expected move envelope.
+    const move = Math.max(input.atr * Math.sqrt(candles) * regimeMultiplier, input.entry * 0.0005);
+    return {
+      low: Math.max(0, input.entry - move),
+      high: input.entry + move,
+      horizonMinutes,
+      candles
+    };
+  }
+
+  private resolveHorizonMinutes(rawHorizon?: string, resolvedMinutes?: number): number {
+    if (resolvedMinutes !== undefined && Number.isFinite(resolvedMinutes) && resolvedMinutes > 0) {
+      return Math.round(resolvedMinutes);
+    }
+    if (rawHorizon && /^\d+$/.test(rawHorizon.trim())) {
+      const parsed = Number(rawHorizon);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return Math.round(parsed);
+      }
+    }
+    return 15;
   }
 
   private computeExecutionStats(input: {

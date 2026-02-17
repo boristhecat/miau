@@ -502,4 +502,50 @@ describe("RecommendationEngine", () => {
     expect(["A", "B", "C", "D"]).toContain(rec.setupGrade);
     expect(rec.rationale.some((line) => line.startsWith("Setup grade"))).toBe(true);
   });
+
+  it("estimates wider expected low/high range for longer horizon", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 58,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 10,
+      macdSignal: 8,
+      macdHistogram: 2,
+      atr14: 140,
+      adx14: 28,
+      bbUpper: 51000,
+      bbMiddle: 50000,
+      bbLower: 49000,
+      stochRsiK: 58,
+      stochRsiD: 50,
+      vwap: 50300
+    };
+
+    const shortHorizon = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      leverage: 20,
+      positionSizeUsd: 250,
+      objectiveHorizon: "15",
+      baseInterval: "1m"
+    });
+    const longHorizon = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      leverage: 20,
+      positionSizeUsd: 250,
+      objectiveHorizon: "60",
+      baseInterval: "1m"
+    });
+
+    const shortWidth = (shortHorizon.expectedHigh ?? shortHorizon.entry) - (shortHorizon.expectedLow ?? shortHorizon.entry);
+    const longWidth = (longHorizon.expectedHigh ?? longHorizon.entry) - (longHorizon.expectedLow ?? longHorizon.entry);
+    expect(longWidth).toBeGreaterThan(shortWidth);
+    expect(longHorizon.expectedRangeHorizonMinutes).toBe(60);
+    expect(shortHorizon.expectedRangeHorizonMinutes).toBe(15);
+  });
 });

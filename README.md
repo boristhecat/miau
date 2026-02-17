@@ -51,12 +51,8 @@ trade suggestions ordered by highest estimated probability of positive PnL to lo
 Before scanning, it prints the selected universe with each symbol's 24h volume and open interest.
 The ranked list prints symbol, side/action, probability, confidence, R/R, and entry/SL/TP.
 
-`rec` uses the same defaults as quick single-symbol mode:
-- Timeframe: `1m`
-- Bias timeframe: `15m`
-- Leverage: `20`
-- Position size: `250`
-- Horizon: `15` minutes
+`rec` uses your saved `defaults` values for leverage/size/horizon.
+Base and bias timeframes are derived automatically from that horizon.
 
 ```bash
 npm run dev -- rec
@@ -72,6 +68,7 @@ After starting the app, enter input at the `Command` prompt:
 - `BTC` -> run immediately with saved defaults
 - `BTC --custom` -> prompt quick values for this run
 - `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
+- `BTC --expected 240` -> expected low/high range output for the next 240 minutes
 - `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
 - `watch BTC --every 1` -> add symbol to live watch section (top panel)
 - `unwatch BTC` -> remove symbol from live watch section
@@ -96,13 +93,13 @@ Symbol-only mode runs with saved defaults (`defaults` command):
 - Leverage
 - Position size (USDC margin)
 - Horizon minutes
-- Timeframe + bias timeframe
 
 Custom prompt mode (`--custom`) prompts for core risk inputs:
 
 - Leverage
 - Position size (USDC margin)
 - Trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
+- Expected-range mode (`--expected <minutes>`, e.g. `240`) for standalone expected low/high output
 - Timeframes are selected automatically from horizon:
   - `<=15m`: base `1m`, bias `15m`
   - `<=45m`: base `5m`, bias `15m`
@@ -116,8 +113,7 @@ Defaults to:
 - Leverage: `20`
 - Position size: `250`
 - Horizon: `15m` (internally `15` minutes)
-- Timeframe: `1m`
-- Higher-timeframe bias: `15m`
+- Timeframes are auto-selected from horizon
 - Detailed output: disabled
 
 ## What the output includes

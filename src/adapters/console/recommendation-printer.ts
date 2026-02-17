@@ -222,21 +222,28 @@ function tradeDirection(rec: Recommendation): "LONG" | "SHORT" | "NO TRADE" {
 }
 
 export class RecommendationPrinter {
-  print(rec: Recommendation, options?: { showDetails?: boolean }): void {
+  print(rec: Recommendation, options?: { showDetails?: boolean; showExpectedRange?: boolean; expectedOnly?: boolean }): void {
     const lines = this.render(rec, options);
     for (const line of lines) {
       console.log(line);
     }
   }
 
-  render(rec: Recommendation, options?: { showDetails?: boolean }): string[] {
+  render(rec: Recommendation, options?: { showDetails?: boolean; showExpectedRange?: boolean; expectedOnly?: boolean }): string[] {
     const lines: string[] = [];
     const write = (line = "") => lines.push(line);
     const hasPosition = rec.leverage !== undefined && rec.positionSizeUsd !== undefined;
     const showDetails = options?.showDetails === true;
+    const showExpectedRange = options?.showExpectedRange === true;
+    const expectedOnly = options?.expectedOnly === true;
+
+    if (expectedOnly) {
+      this.printExpectedRangeOnly(rec, write);
+      return lines;
+    }
 
     if (!showDetails) {
-      this.printTradeLevels(rec, hasPosition, write);
+      this.printTradeLevels(rec, hasPosition, write, showExpectedRange);
       return lines;
     }
 
@@ -260,7 +267,7 @@ export class RecommendationPrinter {
     );
     write(divider());
 
-    this.printTradeLevels(rec, hasPosition, write);
+    this.printTradeLevels(rec, hasPosition, write, showExpectedRange);
 
     write(`${colors.bold}${colors.cyan}INDICATORS${colors.reset}`);
     write(
@@ -326,7 +333,7 @@ export class RecommendationPrinter {
     return lines;
   }
 
-  private printTradeLevels(rec: Recommendation, hasPosition: boolean, write: (line?: string) => void): void {
+  private printTradeLevels(rec: Recommendation, hasPosition: boolean, write: (line?: string) => void, showExpectedRange: boolean): void {
     const direction = tradeDirection(rec);
     const directionColor =
       direction === "LONG" ? colors.brightGreen : direction === "SHORT" ? colors.brightRed : colors.yellow;
@@ -341,6 +348,18 @@ export class RecommendationPrinter {
       }`
     );
     write(`${label("Entry")} ${colors.white}${fmt(rec.entry)}${colors.reset}`);
+    if (showExpectedRange && rec.expectedLow !== undefined && rec.expectedHigh !== undefined) {
+      const horizonLabel =
+        rec.expectedRangeHorizonMinutes !== undefined
+          ? `${rec.expectedRangeHorizonMinutes}m`
+          : rec.objectiveHorizon ?? "n/a";
+      const candlesLabel =
+        rec.expectedRangeCandles !== undefined ? `${rec.expectedRangeCandles}c` : "n/a";
+      write(
+        `${label("Expected Range")} ${colors.white}${fmt(rec.expectedLow)} - ${fmt(rec.expectedHigh)}${colors.reset}` +
+          ` ${colors.brightBlack}(${horizonLabel}, ${candlesLabel})${colors.reset}`
+      );
+    }
     write(
       `${label("Stop Loss")} ${colors.brightRed}${fmt(rec.stopLoss)}${colors.reset}` +
         (rec.estimatedPnLAtStopLoss !== undefined
@@ -447,6 +466,40 @@ export class RecommendationPrinter {
             ? ` ${colors.brightBlack}(model ${rec.modelSignal}${conflict ? ", conflict" : ", aligned"})${colors.reset}`
             : "")
       );
+    }
+    write(divider());
+  }
+
+  private printExpectedRangeOnly(rec: Recommendation, write: (line?: string) => void): void {
+    const hasCurrentPrice = Number.isFinite(rec.perp.markPrice) && rec.perp.markPrice > 0;
+    write(`${colors.bold}${colors.cyan}EXPECTED RANGE${colors.reset}`);
+    write(`${label("Pair")} ${colors.white}${rec.pair}${colors.reset}`);
+    write(
+      `${label("Current Price")} ${
+        hasCurrentPrice ? `${colors.white}${fmt(rec.perp.markPrice)}${colors.reset}` : `${colors.brightBlack}n/a${colors.reset}`
+      }`
+    );
+    if (rec.expectedLow !== undefined && rec.expectedHigh !== undefined) {
+      const horizonLabel =
+        rec.expectedRangeHorizonMinutes !== undefined
+          ? `${rec.expectedRangeHorizonMinutes}m`
+          : rec.objectiveHorizon ?? "n/a";
+      const candlesLabel =
+        rec.expectedRangeCandles !== undefined ? `${rec.expectedRangeCandles} candles` : "n/a candles";
+      write(
+        `${label("Expected Low")} ${colors.brightRed}${fmt(rec.expectedLow)}${colors.reset}`
+      );
+      write(
+        `${label("Expected High")} ${colors.brightGreen}${fmt(rec.expectedHigh)}${colors.reset}`
+      );
+      write(
+        `${label("Window")} ${colors.white}${horizonLabel}${colors.reset} ${colors.brightBlack}(${candlesLabel})${colors.reset}`
+      );
+      write(
+        `${label("Note")} ${colors.brightBlack}ATR-based estimate; not a guaranteed bounce/reversal.${colors.reset}`
+      );
+    } else {
+      write(`${label("Expected Range")} ${colors.brightBlack}n/a${colors.reset}`);
     }
     write(divider());
   }

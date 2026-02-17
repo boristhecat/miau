@@ -3,6 +3,7 @@ import { parseTradingSymbol } from "./parse-trading-symbol.js";
 export interface TradingInput {
   symbol: string;
   requestedDirection?: "LONG" | "SHORT";
+  expectedRangeHorizon?: string;
   customValues: boolean;
   runSimulation: boolean;
   objectiveHorizon?: string;
@@ -26,6 +27,7 @@ export function parseTradingInput(raw: string): TradingInput {
   let customValues = false;
   let runSimulation = false;
   let objectiveHorizon: string | undefined;
+  let expectedRangeHorizon: string | undefined;
   let requestedDirection: "LONG" | "SHORT" | undefined;
 
   for (let i = 1; i < parts.length; i += 1) {
@@ -60,15 +62,28 @@ export function parseTradingInput(raw: string): TradingInput {
       i += 1;
       continue;
     }
+    if (token === "--expected") {
+      const rawValue = parts[i + 1];
+      if (!rawValue) {
+        throw new Error("Missing value for --expected.");
+      }
+      if (!/^\d+$/i.test(rawValue)) {
+        throw new Error("Invalid --expected value. Use minutes as a positive integer (e.g. 60, 120, 240).");
+      }
+      expectedRangeHorizon = rawValue;
+      i += 1;
+      continue;
+    }
 
     throw new Error(
-      "Only [long|short], --custom, --simulate, and --horizon <minutes> are supported after symbol."
+      "Only [long|short], --custom, --simulate, --horizon <minutes>, and --expected <minutes> are supported after symbol."
     );
   }
 
   return {
     symbol,
     ...(requestedDirection ? { requestedDirection } : {}),
+    ...(expectedRangeHorizon ? { expectedRangeHorizon } : {}),
     customValues,
     runSimulation,
     objectiveHorizon,

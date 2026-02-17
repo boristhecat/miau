@@ -41,6 +41,17 @@ describe("parseTradingInput", () => {
     });
   });
 
+  it("parses expected range mode", () => {
+    expect(parseTradingInput("btc --expected 240")).toEqual({
+      symbol: "BTC",
+      expectedRangeHorizon: "240",
+      customValues: false,
+      runSimulation: false,
+      objectiveHorizon: undefined,
+      showDetails: false
+    });
+  });
+
   it("parses simulation flag", () => {
     expect(parseTradingInput("btc --simulate")).toEqual({
       symbol: "BTC",
@@ -56,10 +67,15 @@ describe("parseTradingInput", () => {
   });
 
   it("rejects unsupported flags", () => {
-    expect(() => parseTradingInput("BTC -i")).toThrowError("Only [long|short], --custom, --simulate, and --horizon <minutes>");
-    expect(() => parseTradingInput("ETH --interactive")).toThrowError("Only [long|short], --custom, --simulate, and --horizon <minutes>");
-    expect(() => parseTradingInput("BTC --manual-levels")).toThrowError("Only [long|short], --custom, --simulate, and --horizon <minutes>");
+    expect(() => parseTradingInput("BTC -i")).toThrowError("Only [long|short], --custom, --simulate, --horizon <minutes>, and --expected <minutes>");
+    expect(() => parseTradingInput("ETH --interactive")).toThrowError("Only [long|short], --custom, --simulate, --horizon <minutes>, and --expected <minutes>");
+    expect(() => parseTradingInput("BTC --manual-levels")).toThrowError("Only [long|short], --custom, --simulate, --horizon <minutes>, and --expected <minutes>");
     expect(() => parseTradingInput("BTC long short")).toThrowError("Direction can only be set once");
+  });
+
+  it("rejects invalid expected value", () => {
+    expect(() => parseTradingInput("BTC --expected 4h")).toThrowError("Invalid --expected value");
+    expect(() => parseTradingInput("BTC --expected")).toThrowError("Missing value for --expected");
   });
 
   it("rejects invalid targeting flag values", () => {

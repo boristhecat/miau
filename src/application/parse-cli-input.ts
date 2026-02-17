@@ -30,7 +30,7 @@ export function getUsageText(): string {
     "No args: interactive mode (type SYMBOL, defaults, help, rec, etc. at prompt).",
     "rec: scan a watchlist and print top 5 opportunities by positive-PnL probability.",
     "",
-    "Interactive query format: SYMBOL [long|short] [--custom] [--horizon <minutes>] [--simulate]",
+    "Interactive query format: SYMBOL [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate]",
     "Default (SYMBOL): run directly with saved defaults."
   ].join("\n");
 }

@@ -126,17 +126,13 @@ interface TradeDefaults {
   leverage: number;
   positionSizeUsd: number;
   objectiveHorizon: string;
-  timeframe: string;
-  biasTimeframe: string;
 }
 
 const DEFAULTS_FILE_PATH = path.join(process.cwd(), "data", "trade-defaults.json");
 const FALLBACK_TRADE_DEFAULTS: TradeDefaults = {
   leverage: 20,
   positionSizeUsd: 250,
-  objectiveHorizon: "15",
-  timeframe: "1m",
-  biasTimeframe: "15m"
+  objectiveHorizon: "15"
 };
 
 async function loadTradeDefaults(): Promise<TradeDefaults> {
@@ -149,15 +145,7 @@ async function loadTradeDefaults(): Promise<TradeDefaults> {
       objectiveHorizon:
         typeof parsed.objectiveHorizon === "string" && /^\d+$/.test(parsed.objectiveHorizon)
           ? parsed.objectiveHorizon
-          : FALLBACK_TRADE_DEFAULTS.objectiveHorizon,
-      timeframe:
-        typeof parsed.timeframe === "string" && /^\d+[mhd]$/.test(parsed.timeframe)
-          ? parsed.timeframe
-          : FALLBACK_TRADE_DEFAULTS.timeframe,
-      biasTimeframe:
-        typeof parsed.biasTimeframe === "string" && /^\d+[mhd]$/.test(parsed.biasTimeframe)
-          ? parsed.biasTimeframe
-          : FALLBACK_TRADE_DEFAULTS.biasTimeframe
+          : FALLBACK_TRADE_DEFAULTS.objectiveHorizon
     };
   } catch {
     return { ...FALLBACK_TRADE_DEFAULTS };
@@ -345,7 +333,8 @@ async function main(): Promise<void> {
       const lines = await runRecommendationRanking({
         logger,
         recommendationUseCase: useCase,
-        symbolUniverseProvider: marketData
+        symbolUniverseProvider: marketData,
+        defaults: tradeDefaults
       });
       lines.forEach((line) => console.log(line));
     } catch (error) {
@@ -415,7 +404,8 @@ async function main(): Promise<void> {
           dashboard.latestQueryLines = await runRecommendationRanking({
             logger,
             recommendationUseCase: useCase,
-            symbolUniverseProvider: marketData
+            symbolUniverseProvider: marketData,
+            defaults: tradeDefaults
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unhandled rec mode error";
@@ -435,8 +425,7 @@ async function main(): Promise<void> {
             `${ui.green}[defaults] saved.${ui.reset}`,
             `${ui.gray}leverage:${ui.reset} ${tradeDefaults.leverage}`,
             `${ui.gray}size:${ui.reset} ${tradeDefaults.positionSizeUsd}`,
-            `${ui.gray}horizon:${ui.reset} ${tradeDefaults.objectiveHorizon}m`,
-            `${ui.gray}tf:${ui.reset} ${tradeDefaults.timeframe} / ${tradeDefaults.biasTimeframe}`
+            `${ui.gray}horizon:${ui.reset} ${tradeDefaults.objectiveHorizon}m`
           ];
         } catch (error) {
           isPrompting = false;
@@ -582,11 +571,12 @@ async function main(): Promise<void> {
           : {
               symbol: baseInput.symbol,
               requestedDirection: baseInput.requestedDirection,
+              expectedRangeHorizon: baseInput.expectedRangeHorizon,
               customValues: false,
               runSimulation: baseInput.runSimulation,
               objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
-              timeframe: tradeDefaults.timeframe,
-              biasTimeframe: tradeDefaults.biasTimeframe,
+              timeframe: "1m",
+              biasTimeframe: "15m",
               leverage: tradeDefaults.leverage,
               positionSizeUsd: tradeDefaults.positionSizeUsd,
               slPct: undefined,
@@ -595,7 +585,7 @@ async function main(): Promise<void> {
               tpUsd: undefined,
               showDetails: false
             };
-        const adaptiveTimeframes = resolveAdaptiveTimeframes(tradeInput.objectiveHorizon);
+        const adaptiveTimeframes = resolveAdaptiveTimeframes(tradeInput.expectedRangeHorizon ?? tradeInput.objectiveHorizon);
         const interval = adaptiveTimeframes.timeframe;
         const biasInterval = adaptiveTimeframes.biasTimeframe;
         const pair = `${tradeInput.symbol}-USD`;
@@ -615,7 +605,8 @@ async function main(): Promise<void> {
           tpPct: tradeInput.tpPct,
           slUsd: tradeInput.slUsd,
           tpUsd: tradeInput.tpUsd,
-          objectiveHorizon: tradeInput.objectiveHorizon
+          objectiveHorizon: tradeInput.objectiveHorizon,
+          expectedRangeHorizon: tradeInput.expectedRangeHorizon
         });
         recommendation = await learning.applyPolicy({
           recommendation,
@@ -630,7 +621,9 @@ async function main(): Promise<void> {
           recommendation.rationale.unshift(cooldownAdvisory);
         }
         dashboard.latestQueryLines = printer.render(recommendation, {
-          showDetails: tradeInput.showDetails
+          showDetails: tradeInput.showDetails,
+          showExpectedRange: tradeInput.expectedRangeHorizon !== undefined,
+          expectedOnly: tradeInput.expectedRangeHorizon !== undefined
         });
         if (cooldownAdvisory) {
           dashboard.latestQueryLines.push(`${ui.yellow}${cooldownAdvisory}${ui.reset}`);
@@ -685,10 +678,12 @@ async function runRecommendationRanking(input: {
   logger: ConsoleLogger;
   recommendationUseCase: GenerateRecommendationUseCase;
   symbolUniverseProvider: BackpackMarketDataClient;
+  defaults: TradeDefaults;
 }): Promise<string[]> {
   const lines: string[] = [];
   const write = (line = "") => lines.push(line);
   const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase, input.symbolUniverseProvider);
+  const adaptiveTimeframes = resolveAdaptiveTimeframes(input.defaults.objectiveHorizon);
   write(`${ui.gray}[rec] Fetching top PERP symbols by 24h volume...${ui.reset}`);
 
   const selected = await input.symbolUniverseProvider.getTopPerpSymbolsByVolumeWithOpenInterest(15);
@@ -706,6 +701,11 @@ async function runRecommendationRanking(input: {
 
   const result = await rankUseCase.execute({
     symbols: selected.map((item) => item.symbol),
+    interval: adaptiveTimeframes.timeframe,
+    biasInterval: adaptiveTimeframes.biasTimeframe,
+    leverage: input.defaults.leverage,
+    positionSizeUsd: input.defaults.positionSizeUsd,
+    objectiveHorizon: input.defaults.objectiveHorizon,
     top: 5
   });
 
@@ -1003,15 +1003,11 @@ async function promptTradeDefaults(rl: readline.Interface, current: TradeDefault
   const leverageRaw = await promptWithDefault(rl, "Default leverage", current.leverage.toString());
   const sizeRaw = await promptWithDefault(rl, "Default position size USDC", current.positionSizeUsd.toString());
   const horizonRaw = await promptWithDefault(rl, "Default trade horizon minutes", current.objectiveHorizon);
-  const timeframeRaw = await promptWithDefault(rl, "Default timeframe", current.timeframe);
-  const biasRaw = await promptWithDefault(rl, "Default bias timeframe", current.biasTimeframe);
 
   return {
     leverage: parseRequiredNumberInput(leverageRaw, "default leverage"),
     positionSizeUsd: parseRequiredNumberInput(sizeRaw, "default position size"),
-    objectiveHorizon: parseOptionalHorizonInput(horizonRaw) ?? current.objectiveHorizon,
-    timeframe: parseIntervalInput(timeframeRaw, "default timeframe"),
-    biasTimeframe: parseIntervalInput(biasRaw, "default bias timeframe")
+    objectiveHorizon: parseOptionalHorizonInput(horizonRaw) ?? current.objectiveHorizon
   };
 }
 
@@ -1027,6 +1023,7 @@ async function promptQuickTradeInput(
   return {
     symbol: base.symbol,
     requestedDirection: base.requestedDirection,
+    expectedRangeHorizon: base.expectedRangeHorizon,
     customValues: true,
     runSimulation: base.runSimulation,
     objectiveHorizon,
@@ -1129,14 +1126,6 @@ async function promptWithDefault(rl: readline.Interface, label: string, defaultV
   return trimmed === "" ? defaultValue : trimmed;
 }
 
-function parseIntervalInput(value: string, label: string): string {
-  const normalized = value.trim().toLowerCase();
-  if (!/^\d+[mhd]$/.test(normalized)) {
-    throw new Error(`Invalid ${label}. Use format like 1m, 5m, 15m, 1h.`);
-  }
-  return normalized;
-}
-
 function parseOptionalHorizonInput(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -1204,8 +1193,10 @@ function getInteractiveHelpText(): string {
     "TRADING",
     "- <SYMBOL> [long|short] [--custom] [--horizon <minutes>] [--simulate]",
     "  Run a single-symbol analysis (defaults mode by default; --custom prompts values).",
+    "- <SYMBOL> --expected <minutes>",
+    "  Show expected low/high range for the given window (example: BTC --expected 240).",
     "- defaults",
-    "  Set default leverage, size, horizon, timeframe, and bias timeframe.",
+    "  Set default leverage, size, and horizon.",
     "",
     "SCANNING & WATCH",
     "- rec",

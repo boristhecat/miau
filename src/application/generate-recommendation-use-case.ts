@@ -15,6 +15,7 @@ export class GenerateRecommendationUseCase {
   async execute(input: {
     pair: string;
     forcedDirection?: "LONG" | "SHORT";
+    expectedRangeHorizon?: string;
     interval?: string;
     biasInterval?: string;
     limit?: number;
@@ -66,6 +67,7 @@ export class GenerateRecommendationUseCase {
       slUsd: input.slUsd,
       tpUsd: input.tpUsd,
       objectiveHorizon: input.objectiveHorizon,
+      expectedRangeHorizon: input.expectedRangeHorizon,
       forcedDirection: input.forcedDirection,
       baseInterval: interval,
       biasTrend,
