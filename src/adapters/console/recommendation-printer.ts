@@ -466,9 +466,8 @@ export class RecommendationPrinter {
       write(`${label("AI Veto")} ${yesNoColor(aiAdvice.veto)}${yesNo(aiAdvice.veto)}${colors.reset}`);
       const currentSignal = rec.signal;
       const nextSignal = aiAdvice.suggestedDirection ?? aiAdvice.bias;
-      const directionChangeEffective = aiAdvice.changeDirection && nextSignal !== currentSignal;
       write(
-        `${label("Change Direction")} ${yesNoColor(directionChangeEffective)}${yesNo(directionChangeEffective)}${colors.reset} ` +
+        `${label("Change Direction")} ${yesNoColor(aiAdvice.changeDirection)}${yesNo(aiAdvice.changeDirection)}${colors.reset} ` +
           `${colors.brightBlack}(${currentSignal} -> ${nextSignal}` +
           `)${colors.reset}`
       );

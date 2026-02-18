@@ -252,6 +252,12 @@
 ## Task: Keep watch timestamp aligned with latest poll (2026-02-18)
 - [x] Update watch row timestamp on every successful poll, not only on signature change
 
+## Task: Address architecture/SWE audit findings (2026-02-18)
+- [x] Keep AI transport adapter focused on transport/parsing; move AI consistency policy to application layer
+- [x] Replace verbose AI user-facing failure text with generic message and log-file pointer
+- [x] Harden OpenAI HTTP error logging (sanitize payload + simple file rotation)
+- [x] Extract watch command parser into console adapter and add cadence parser tests
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

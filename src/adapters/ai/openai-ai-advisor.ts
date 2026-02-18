@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AiAdvice, AiAdviceRequest, AiAdvisorPort } from "../../ports/ai-advisor-port.js";
 import type { HttpClient } from "../http/http-client.js";
@@ -62,7 +62,6 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     }
 
     const parsed = this.parseResponse(raw);
-    this.assertConsistency(parsed, input);
     return {
       ...parsed,
       model: response.model ?? this.model,
@@ -182,12 +181,13 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
         timeout?: unknown;
       };
     };
+    const sanitizedBody = this.sanitizeRequestBody(input.body);
     const entry = {
       timestamp: new Date().toISOString(),
       request: {
         url: input.url,
         headers: input.headers,
-        body: input.body
+        body: sanitizedBody
       },
       error: {
         name: typeof candidate.name === "string" ? candidate.name : undefined,
@@ -210,9 +210,58 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     };
     try {
       await mkdir(path.dirname(this.errorLogFilePath), { recursive: true });
+      await this.rotateErrorLogIfNeeded();
       await appendFile(this.errorLogFilePath, `${JSON.stringify(entry, null, 2)}\n\n`, "utf8");
     } catch {
       // Logging failures must never break runtime flow.
+    }
+  }
+
+  private sanitizeRequestBody(body: Record<string, unknown>): Record<string, unknown> {
+    const safe: Record<string, unknown> = {
+      model: body.model,
+      reasoning_effort: body.reasoning_effort,
+      max_completion_tokens: body.max_completion_tokens,
+      response_format: body.response_format
+    };
+    const messagesRaw = body.messages;
+    if (Array.isArray(messagesRaw)) {
+      safe.messages = messagesRaw.map((message) => {
+        if (!message || typeof message !== "object") {
+          return { role: "unknown" };
+        }
+        const asRecord = message as Record<string, unknown>;
+        const role = typeof asRecord.role === "string" ? asRecord.role : "unknown";
+        const content = typeof asRecord.content === "string" ? asRecord.content : JSON.stringify(asRecord.content ?? "");
+        return {
+          role,
+          contentChars: content.length,
+          contentPreview: content.slice(0, 240)
+        };
+      });
+    }
+    return safe;
+  }
+
+  private async rotateErrorLogIfNeeded(): Promise<void> {
+    const maxBytes = 2 * 1024 * 1024;
+    const keepBytes = 1 * 1024 * 1024;
+    let size = 0;
+    try {
+      const info = await stat(this.errorLogFilePath);
+      size = info.size;
+    } catch {
+      return;
+    }
+    if (size <= maxBytes) {
+      return;
+    }
+    try {
+      const current = await readFile(this.errorLogFilePath, "utf8");
+      const trimmed = current.slice(-keepBytes);
+      await writeFile(this.errorLogFilePath, trimmed, "utf8");
+    } catch {
+      // Ignore log rotation failures to keep runtime non-blocking.
     }
   }
 
@@ -409,47 +458,4 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     return numeric;
   }
 
-  private assertConsistency(parsed: Omit<AiAdvice, "model" | "latencyMs">, input: AiAdviceRequest): void {
-    if (!parsed.veto && parsed.bias === "NO_TRADE") {
-      throw new Error("AI response is inconsistent: veto=false requires bias LONG or SHORT.");
-    }
-    if (parsed.veto) {
-      if (parsed.bias !== "NO_TRADE") {
-        throw new Error("AI response is inconsistent: veto=true requires bias NO_TRADE.");
-      }
-      if (parsed.changeDirection || parsed.changeEntry || parsed.changeStopLoss || parsed.changeTakeProfit) {
-        throw new Error("AI response is inconsistent: veto=true requires all change flags to be false.");
-      }
-    }
-
-    if (parsed.changeDirection) {
-      if (!parsed.suggestedDirection) {
-        throw new Error("AI response is inconsistent: changeDirection=true requires suggestedDirection.");
-      }
-      if (parsed.suggestedDirection === input.signal) {
-        throw new Error("AI response is inconsistent: changeDirection=true but suggestedDirection equals current signal.");
-      }
-    } else if (parsed.suggestedDirection && parsed.suggestedDirection !== input.signal) {
-      throw new Error("AI response is inconsistent: changeDirection=false but suggestedDirection differs from current signal.");
-    }
-
-    this.assertLevelConsistency("Entry", parsed.changeEntry, parsed.suggestedEntry, input.entry);
-    this.assertLevelConsistency("StopLoss", parsed.changeStopLoss, parsed.suggestedStopLoss, input.stopLoss);
-    this.assertLevelConsistency("TakeProfit", parsed.changeTakeProfit, parsed.suggestedTakeProfit, input.takeProfit);
-  }
-
-  private assertLevelConsistency(
-    label: "Entry" | "StopLoss" | "TakeProfit",
-    changeFlag: boolean,
-    suggested: number | undefined,
-    current: number
-  ): void {
-    const sameValue = suggested !== undefined && Math.abs(suggested - current) <= 1e-9;
-    if (changeFlag && (suggested === undefined || sameValue)) {
-      throw new Error(`AI response is inconsistent: change${label}=true requires a different suggested${label} value.`);
-    }
-    if (!changeFlag && suggested !== undefined && !sameValue) {
-      throw new Error(`AI response is inconsistent: change${label}=false but suggested${label} differs from current level.`);
-    }
-  }
 }

@@ -185,7 +185,7 @@ describe("OpenAiAiAdvisor", () => {
     await expect(advisor.advise(baseRequest)).rejects.toThrow("AI response agreement is invalid.");
   });
 
-  it("rejects inconsistent changeDirection when target equals current signal", async () => {
+  it("keeps model values as returned even when direction target matches current signal", async () => {
     const httpClient = new FakeHttpClient();
     httpClient.postResponse = {
       model: "gpt-5-mini",
@@ -214,9 +214,9 @@ describe("OpenAiAiAdvisor", () => {
     };
     const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
 
-    await expect(advisor.advise(baseRequest)).rejects.toThrow(
-      "AI response is inconsistent: changeDirection=true but suggestedDirection equals current signal."
-    );
+    const advice = await advisor.advise(baseRequest);
+    expect(advice.changeDirection).toBe(true);
+    expect(advice.suggestedDirection).toBe("LONG");
   });
 
   it("requires suggested value when change flag is true", async () => {

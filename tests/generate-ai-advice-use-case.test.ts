@@ -53,10 +53,11 @@ const baseRecommendation: Recommendation = {
 
 class FakeAiAdvisor implements AiAdvisorPort {
   public lastInput?: AiAdviceRequest;
+  public nextAdvice?: AiAdvice;
 
   async advise(input: AiAdviceRequest): Promise<AiAdvice> {
     this.lastInput = input;
-    return {
+    return this.nextAdvice ?? {
       bias: "LONG",
       confidenceBand: "MEDIUM",
       veto: false,
@@ -96,5 +97,30 @@ describe("GenerateAiAdviceUseCase", () => {
     expect(advisor.lastInput?.analysisInterval).toBe("1m");
     expect(advisor.lastInput?.expectedLow).toBe(98);
     expect(advisor.lastInput?.indicators.atr14).toBe(0.9);
+  });
+
+  it("rejects inconsistent AI output in application layer", async () => {
+    const advisor = new FakeAiAdvisor();
+    advisor.nextAdvice = {
+      bias: "LONG",
+      confidenceBand: "MEDIUM",
+      veto: false,
+      changeDirection: true,
+      suggestedDirection: "LONG",
+      changeEntry: false,
+      changeStopLoss: false,
+      changeTakeProfit: false,
+      agreement: "PARTIAL",
+      regime: "RANGE",
+      overruledSignals: [],
+      reasons: ["no effective direction change"],
+      invalidation: "below VWAP",
+      riskNote: "choppy tape"
+    };
+    const useCase = new GenerateAiAdviceUseCase({ aiAdvisor: advisor });
+
+    await expect(useCase.execute({ recommendation: baseRecommendation })).rejects.toThrow(
+      "AI response is inconsistent: changeDirection=true but suggestedDirection equals current signal."
+    );
   });
 });

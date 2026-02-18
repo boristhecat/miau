@@ -14,6 +14,7 @@ import { getUsageText, parseCliInput } from "./adapters/console/cli-input-parser
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { RecommendationPrinter } from "./adapters/console/recommendation-printer.js";
 import { parseTradingInput, type TradingInput } from "./adapters/console/trading-input-parser.js";
+import { parseWatchCommand, type WatchConfig } from "./adapters/console/watch-command-parser.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
 import { TechnicalIndicatorService } from "./adapters/indicators/technical-indicator-service.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
@@ -88,12 +89,6 @@ class SessionPerformanceTracker {
     }
     return Math.max(0, until - Date.now());
   }
-}
-
-interface WatchConfig {
-  symbol: string;
-  everyMinutes: number;
-  input: TradingInput;
 }
 
 interface WatchRow {
@@ -561,9 +556,8 @@ async function main(): Promise<void> {
             aiAdvice = await aiAdviceUseCase.execute({
               recommendation
             });
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "AI advisory unavailable";
-            aiWarning = `AI view unavailable: ${message}`;
+          } catch {
+            aiWarning = "AI query failed. Details were written to data/openai-http-errors.log.";
           }
         }
         dashboard.latestQueryLines = printer.render(recommendation, {
@@ -755,54 +749,6 @@ function stopLearningRunner(runner: LearningRunnerState): void {
   }
   runner.pendingTimers.clear();
   runner.cycleRunning = false;
-}
-
-function parseWatchCommand(raw: string): WatchConfig {
-  const parts = raw.trim().split(/\s+/).filter(Boolean);
-  if (parts.length < 2 || parts[0]?.toLowerCase() !== "watch") {
-    throw new Error("Invalid watch command. Use: watch <SYMBOL> [--every <minutes>] [--horizon <minutes>]");
-  }
-  let everyMinutes = 0.5;
-  const queryTokens: string[] = [];
-  for (let i = 1; i < parts.length; i += 1) {
-    const token = parts[i]!;
-    if (token === "--every") {
-      const value = parts[i + 1];
-      if (!value || !/^\d+(\.\d+)?$/.test(value)) {
-        throw new Error("Invalid --every value. Use minutes as a positive number (decimals allowed, e.g. 0.5).");
-      }
-      everyMinutes = Number(value);
-      if (everyMinutes <= 0) {
-        throw new Error("Invalid --every value. Must be greater than 0.");
-      }
-      i += 1;
-      continue;
-    }
-    queryTokens.push(token);
-  }
-
-  const base = parseTradingInput(queryTokens.join(" "));
-
-  return {
-    symbol: base.symbol,
-    everyMinutes,
-    input: {
-      symbol: base.symbol,
-      customValues: false,
-      runSimulation: false,
-      objectiveHorizon: base.objectiveHorizon ?? "15",
-      requestedDirection: base.requestedDirection,
-      timeframe: "1m",
-      biasTimeframe: "15m",
-      leverage: 20,
-      positionSizeUsd: 250,
-      slPct: undefined,
-      tpPct: undefined,
-      slUsd: undefined,
-      tpUsd: undefined,
-      showDetails: false
-    }
-  };
 }
 
 async function runWatchIteration(input: {
