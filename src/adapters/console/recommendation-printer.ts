@@ -268,6 +268,9 @@ function objectiveAggressivenessColor(level: "LOW" | "MEDIUM" | "HIGH" | "VERY H
 }
 
 function tradeDirection(rec: Recommendation): "LONG" | "SHORT" | "NO TRADE" {
+  if (rec.signal === "NO_TRADE") {
+    return "NO TRADE";
+  }
   if (rec.signal === "LONG" || rec.signal === "SHORT") {
     return rec.signal;
   }
@@ -461,10 +464,12 @@ export class RecommendationPrinter {
       write(`${colors.brightBlack}${".".repeat(64)}${colors.reset}`);
       write(`${colors.bold}${colors.cyan}2A) AI SECONDARY VIEW${colors.reset}`);
       write(`${label("AI Veto")} ${yesNoColor(aiAdvice.veto)}${yesNo(aiAdvice.veto)}${colors.reset}`);
+      const currentSignal = rec.signal;
+      const nextSignal = aiAdvice.suggestedDirection ?? aiAdvice.bias;
+      const directionChangeEffective = aiAdvice.changeDirection && nextSignal !== currentSignal;
       write(
-        `${label("Change Direction")} ${yesNoColor(aiAdvice.changeDirection)}${yesNo(aiAdvice.changeDirection)}${colors.reset} ` +
-          `${colors.brightBlack}(bias ${aiAdvice.bias}` +
-          (aiAdvice.changeDirection && aiAdvice.suggestedDirection ? ` -> ${aiAdvice.suggestedDirection}` : "") +
+        `${label("Change Direction")} ${yesNoColor(directionChangeEffective)}${yesNo(directionChangeEffective)}${colors.reset} ` +
+          `${colors.brightBlack}(${currentSignal} -> ${nextSignal}` +
           `)${colors.reset}`
       );
       write(
@@ -486,9 +491,13 @@ export class RecommendationPrinter {
             : "")
       );
       if (aiAdvice.agreement !== "AGREE" || aiAdvice.overruledSignals.length > 0) {
-        const notes = aiAdvice.overruledSignals.length > 0
-          ? aiAdvice.overruledSignals.join("; ")
-          : `${aiAdvice.agreement} (${aiAdvice.regime})`;
+        const filteredSignals = aiAdvice.overruledSignals.filter((value) => {
+          const normalized = value.trim().toUpperCase();
+          return normalized !== "LONG" && normalized !== "SHORT" && normalized !== "NO_TRADE";
+        });
+        const notes = filteredSignals.length > 0
+          ? filteredSignals.join("; ")
+          : (aiAdvice.reasons[0] ?? `${aiAdvice.agreement} (${aiAdvice.regime})`);
         writeWrappedLabel(write, "AI Note", notes, colors.cyan);
       }
       if (aiAdvice.model || aiAdvice.latencyMs !== undefined) {

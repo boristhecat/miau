@@ -120,7 +120,7 @@ describe("OpenAiAiAdvisor", () => {
                 text: JSON.stringify({
                   bias: "SHORT",
                   confidenceBand: "LOW",
-                  veto: true,
+                  veto: false,
                   changeDirection: true,
                   changeEntry: true,
                   changeStopLoss: true,
@@ -183,6 +183,40 @@ describe("OpenAiAiAdvisor", () => {
     const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", httpClient });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow("AI response agreement is invalid.");
+  });
+
+  it("rejects inconsistent changeDirection when target equals current signal", async () => {
+    const httpClient = new FakeHttpClient();
+    httpClient.postResponse = {
+      model: "gpt-5-mini",
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              bias: "LONG",
+              confidenceBand: "MEDIUM",
+              veto: false,
+              changeDirection: true,
+              changeEntry: false,
+              changeStopLoss: false,
+              changeTakeProfit: false,
+              suggestedDirection: "LONG",
+              agreement: "PARTIAL",
+              regime: "RANGE",
+              overruledSignals: [],
+              reasons: ["no effective direction change"],
+              invalidation: "below VWAP",
+              riskNote: "choppy tape"
+            })
+          }
+        }
+      ]
+    };
+    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+
+    await expect(advisor.advise(baseRequest)).rejects.toThrow(
+      "AI response is inconsistent: changeDirection=true but suggestedDirection equals current signal."
+    );
   });
 
   it("requires suggested value when change flag is true", async () => {

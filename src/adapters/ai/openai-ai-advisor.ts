@@ -62,6 +62,7 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     }
 
     const parsed = this.parseResponse(raw);
+    this.assertConsistency(parsed, input);
     return {
       ...parsed,
       model: response.model ?? this.model,
@@ -267,6 +268,12 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       "- Compare your view with the model signal and state agreement clearly.",
       "- Set veto=true only when setup should be skipped.",
       "- If any change flag is true, provide the corresponding suggested value.",
+      "- Consistency rules:",
+      "  * veto=false => bias must be LONG or SHORT (not NO_TRADE).",
+      "  * veto=true => bias must be NO_TRADE and all change flags must be false.",
+      "  * changeDirection=true => suggestedDirection must differ from current signal.",
+      "  * changeDirection=false => suggestedDirection must be null or equal to current signal.",
+      "  * If changeEntry/StopLoss/TakeProfit=false, suggested value must be null or equal to current level.",
       "- Output only valid JSON.",
       "Schema:",
       '{ "bias":"LONG|SHORT|NO_TRADE", "confidenceBand":"LOW|MEDIUM|HIGH", "veto":true|false, "changeDirection":true|false, "changeEntry":true|false, "changeStopLoss":true|false, "changeTakeProfit":true|false, "suggestedDirection":"LONG|SHORT|NO_TRADE|null", "suggestedEntry":number|null, "suggestedStopLoss":number|null, "suggestedTakeProfit":number|null, "agreement":"AGREE|DISAGREE|PARTIAL", "regime":"TREND|RANGE|CHOPPY|VOLATILE", "overruledSignals":["..."], "reasons":["...","...","..."], "invalidation":"...", "riskNote":"..." }',
@@ -400,5 +407,49 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       return undefined;
     }
     return numeric;
+  }
+
+  private assertConsistency(parsed: Omit<AiAdvice, "model" | "latencyMs">, input: AiAdviceRequest): void {
+    if (!parsed.veto && parsed.bias === "NO_TRADE") {
+      throw new Error("AI response is inconsistent: veto=false requires bias LONG or SHORT.");
+    }
+    if (parsed.veto) {
+      if (parsed.bias !== "NO_TRADE") {
+        throw new Error("AI response is inconsistent: veto=true requires bias NO_TRADE.");
+      }
+      if (parsed.changeDirection || parsed.changeEntry || parsed.changeStopLoss || parsed.changeTakeProfit) {
+        throw new Error("AI response is inconsistent: veto=true requires all change flags to be false.");
+      }
+    }
+
+    if (parsed.changeDirection) {
+      if (!parsed.suggestedDirection) {
+        throw new Error("AI response is inconsistent: changeDirection=true requires suggestedDirection.");
+      }
+      if (parsed.suggestedDirection === input.signal) {
+        throw new Error("AI response is inconsistent: changeDirection=true but suggestedDirection equals current signal.");
+      }
+    } else if (parsed.suggestedDirection && parsed.suggestedDirection !== input.signal) {
+      throw new Error("AI response is inconsistent: changeDirection=false but suggestedDirection differs from current signal.");
+    }
+
+    this.assertLevelConsistency("Entry", parsed.changeEntry, parsed.suggestedEntry, input.entry);
+    this.assertLevelConsistency("StopLoss", parsed.changeStopLoss, parsed.suggestedStopLoss, input.stopLoss);
+    this.assertLevelConsistency("TakeProfit", parsed.changeTakeProfit, parsed.suggestedTakeProfit, input.takeProfit);
+  }
+
+  private assertLevelConsistency(
+    label: "Entry" | "StopLoss" | "TakeProfit",
+    changeFlag: boolean,
+    suggested: number | undefined,
+    current: number
+  ): void {
+    const sameValue = suggested !== undefined && Math.abs(suggested - current) <= 1e-9;
+    if (changeFlag && (suggested === undefined || sameValue)) {
+      throw new Error(`AI response is inconsistent: change${label}=true requires a different suggested${label} value.`);
+    }
+    if (!changeFlag && suggested !== undefined && !sameValue) {
+      throw new Error(`AI response is inconsistent: change${label}=false but suggested${label} differs from current level.`);
+    }
   }
 }
