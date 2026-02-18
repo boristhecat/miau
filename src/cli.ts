@@ -207,7 +207,7 @@ function renderDashboard(state: DashboardState): void {
   console.log(`${ui.gray}${"-".repeat(92)}${ui.reset}`);
   console.log(`${ui.bold}${ui.blue}WATCHED SYMBOLS${ui.reset} ${ui.gray}(live, in-place)${ui.reset}`);
   if (state.watchRows.size === 0) {
-    console.log(`${ui.gray}No active watches. Use: watch BTC --every 1${ui.reset}`);
+    console.log(`${ui.gray}No active watches. Use: watch BTC --every 0.5${ui.reset}`);
   } else {
     const rows = [...state.watchRows.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
     const longCount = rows.filter((row) => row.signal === "LONG").length;
@@ -762,14 +762,14 @@ function parseWatchCommand(raw: string): WatchConfig {
   if (parts.length < 2 || parts[0]?.toLowerCase() !== "watch") {
     throw new Error("Invalid watch command. Use: watch <SYMBOL> [--every <minutes>] [--horizon <minutes>]");
   }
-  let everyMinutes = 1;
+  let everyMinutes = 0.5;
   const queryTokens: string[] = [];
   for (let i = 1; i < parts.length; i += 1) {
     const token = parts[i]!;
     if (token === "--every") {
       const value = parts[i + 1];
-      if (!value || !/^\d+$/.test(value)) {
-        throw new Error("Invalid --every value. Use minutes as a positive integer.");
+      if (!value || !/^\d+(\.\d+)?$/.test(value)) {
+        throw new Error("Invalid --every value. Use minutes as a positive number (decimals allowed, e.g. 0.5).");
       }
       everyMinutes = Number(value);
       if (everyMinutes <= 0) {
@@ -836,6 +836,14 @@ async function runWatchIteration(input: {
     });
 
     if (input.watchSignatures.get(input.key) === evaluated.signature) {
+      const current = input.watchRows.get(input.key);
+      if (current) {
+        input.watchRows.set(input.key, {
+          ...current,
+          updatedAtMs: Date.now()
+        });
+        input.requestRender();
+      }
       return;
     }
     input.watchSignatures.set(input.key, evaluated.signature);
@@ -1040,7 +1048,7 @@ function getInteractiveHelpText(): string {
     "- rec",
     "  Scan top symbols and show ranked recommendations.",
     "- watch <SYMBOL> [--every N]",
-    "  Track a symbol and refresh status every N minutes.",
+    "  Track a symbol and refresh status every N minutes (default 0.5 = 30 seconds).",
     "- unwatch <SYMBOL>",
     "  Remove one watched symbol.",
     "",

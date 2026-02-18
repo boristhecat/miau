@@ -68,7 +68,7 @@ After starting the app, enter input at the `Command` prompt:
 - `BTC --expected 240` -> expected low/high range output for the next 240 minutes
 - `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
 - AI secondary opinion is included by default when `OPENAI_API_KEY` is configured
-- `watch BTC --every 1` -> add symbol to live watch section (top panel)
+- `watch BTC --every 0.5` -> add symbol to live watch section (top panel); `0.5` means 30 seconds
 - `unwatch BTC` -> remove symbol from live watch section
 - `learn --start` -> start background learning runner
 - `learn --stop` -> stop background learning runner

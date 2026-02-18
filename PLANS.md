@@ -244,6 +244,14 @@
 - [x] Replace verbose AI section in setup block with concise veto/change summary
 - [x] Include concrete suggested values when a change flag is true
 
+## Task: Increase watch polling cadence to 30 seconds (2026-02-18)
+- [x] Change watch default interval from 1 minute to 30 seconds
+- [x] Allow fractional minute values for `watch --every` (e.g. `0.5`)
+- [x] Update interactive help and README examples for new cadence
+
+## Task: Keep watch timestamp aligned with latest poll (2026-02-18)
+- [x] Update watch row timestamp on every successful poll, not only on signature change
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
