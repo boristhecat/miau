@@ -99,10 +99,10 @@ Concrete implementations:
    - trading queries (`SYMBOL [minutes] [long|short] [flags]`)
    - `rec`, `defaults`, `watch`, `unwatch`
    - `learn --start|--stop|--stats`
-3. Parser normalizes symbol input and supported flags (`--custom`, `--horizon`, `--expected`, `--simulate`, `--ai`).
+3. Parser normalizes symbol input and supported flags (`--custom`, `--horizon`, `--expected`, `--simulate`).
 4. Use-case fetches candles/perp context and computes recommendation.
 5. Learning policy may calibrate confidence/quality gates.
-6. Console adapter renders dashboard + latest single-symbol output.
+6. Console adapter renders dashboard + latest single-symbol output (including AI secondary opinion when API key is configured).
 7. Optional simulation runs asynchronously and feeds learning persistence.
 
 ### `rec` flow

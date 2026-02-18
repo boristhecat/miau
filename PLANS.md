@@ -211,6 +211,12 @@
 - [x] Route OpenAI adapter through shared HTTP abstraction instead of direct axios calls
 - [x] Update tests/docs and verify build + test after refactor
 
+## Task: Make AI opinion default (2026-02-18)
+- [x] Remove `--ai` flag requirement from parser/help/docs
+- [x] Run AI secondary opinion by default for normal symbol analysis
+- [x] Keep expected-range-only mode free of AI blocks
+- [x] Update tests and docs to reflect default AI behavior
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

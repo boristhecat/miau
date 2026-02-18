@@ -17,7 +17,7 @@ export function getUsageText(): string {
     "",
     "Start with no arguments and use commands inside the interactive prompt.",
     "",
-    "Interactive query format: SYMBOL [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate] [--ai]",
+    "Interactive query format: SYMBOL [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate]",
     "Default (SYMBOL): run directly with saved defaults."
   ].join("\n");
 }

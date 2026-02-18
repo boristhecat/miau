@@ -67,7 +67,7 @@ After starting the app, enter input at the `Command` prompt:
 - `BTC 30 long` -> shorthand for horizon + direction in one command
 - `BTC --expected 240` -> expected low/high range output for the next 240 minutes
 - `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
-- `BTC --ai` -> add optional AI secondary opinion (requires `OPENAI_API_KEY`)
+- AI secondary opinion is included by default when `OPENAI_API_KEY` is configured
 - `watch BTC --every 1` -> add symbol to live watch section (top panel)
 - `unwatch BTC` -> remove symbol from live watch section
 - `learn --start` -> start background learning runner
@@ -98,7 +98,7 @@ Custom prompt mode (`--custom`) prompts for core risk inputs:
 - Position size (USDC margin)
 - Trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
 - Expected-range mode (`--expected <minutes>`, e.g. `240`) for standalone expected low/high output
-- AI opinion mode (`--ai`) for optional secondary commentary (non-blocking)
+- AI secondary commentary is automatic (non-blocking) when `OPENAI_API_KEY` is configured
 - Timeframes are selected automatically from horizon:
   - `<=10m`: base `1m`, bias `15m`
   - `<=30m`: base `3m`, bias `15m`
@@ -154,4 +154,4 @@ Defaults to:
 - The app maps symbol input to `<SYMBOL>-USD` internally and resolves Backpack PERP markets.
 - Uses Backpack **public** endpoints only.
 - Learning outcomes are stored locally in `data/learning.sqlite` (SQLite is required at startup).
-- Optional AI view requires `OPENAI_API_KEY` in environment.
+- AI secondary opinion requires `OPENAI_API_KEY` in environment.

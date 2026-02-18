@@ -18,8 +18,8 @@ Last updated: 2026-02-18
   - `SYMBOL <minutes> long|short`
   - `SYMBOL --expected <minutes>`
   - `SYMBOL --simulate`
-  - `SYMBOL --ai`
   - `rec`, `defaults`, `watch`, `unwatch`, `learn --start|--stop|--stats`, `help`, `exit`
+- AI secondary opinion is included by default for normal trade output when `OPENAI_API_KEY` is configured.
 - `rec` fetches top 15 PERP symbols by 24h volume from Backpack and prints top 5 ranked opportunities.
 
 ## Data Sources (Backpack public API)

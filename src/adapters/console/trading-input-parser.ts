@@ -4,7 +4,6 @@ export interface TradingInput {
   symbol: string;
   requestedDirection?: "LONG" | "SHORT";
   expectedRangeHorizon?: string;
-  enableAi?: boolean;
   customValues: boolean;
   runSimulation: boolean;
   objectiveHorizon?: string;
@@ -27,7 +26,6 @@ export function parseTradingInput(raw: string): TradingInput {
   const symbol = parseTradingSymbol(parts[0] ?? "");
   let customValues = false;
   let runSimulation = false;
-  let enableAi = false;
   let objectiveHorizon: string | undefined;
   let expectedRangeHorizon: string | undefined;
   let requestedDirection: "LONG" | "SHORT" | undefined;
@@ -51,11 +49,6 @@ export function parseTradingInput(raw: string): TradingInput {
       runSimulation = true;
       continue;
     }
-    if (token === "--ai") {
-      enableAi = true;
-      continue;
-    }
-
     if (token === "--horizon") {
       const rawValue = parts[i + 1];
       if (!rawValue) {
@@ -92,7 +85,7 @@ export function parseTradingInput(raw: string): TradingInput {
     }
 
     throw new Error(
-      "Only [long|short], [minutes], --custom, --simulate, --ai, --horizon <minutes>, and --expected <minutes> are supported after symbol."
+      "Only [long|short], [minutes], --custom, --simulate, --horizon <minutes>, and --expected <minutes> are supported after symbol."
     );
   }
 
@@ -100,7 +93,6 @@ export function parseTradingInput(raw: string): TradingInput {
     symbol,
     ...(requestedDirection ? { requestedDirection } : {}),
     ...(expectedRangeHorizon ? { expectedRangeHorizon } : {}),
-    ...(enableAi ? { enableAi: true } : {}),
     customValues,
     runSimulation,
     objectiveHorizon,

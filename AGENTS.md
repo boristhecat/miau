@@ -28,11 +28,11 @@ Rules:
 - Start app with: `miau-trader` (interactive mode).
 - Interactive single-symbol input uses base symbol (e.g. `BTC`), not pair format.
 - Supported interactive query format:
-  - `SYMBOL [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate] [--ai]`
+  - `SYMBOL [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate]`
 - Ranking mode is triggered in-app via `rec`.
 - Output: recommendation levels, signal/action, rationale, and **confidence %**.
 - Console output should be **colored and structured**.
-- Default output is compact trade levels; expected-range and AI blocks are opt-in via flags.
+- Default output is compact trade levels; AI secondary opinion is included by default when `OPENAI_API_KEY` is configured.
 
 ### Indicators
 Use established indicator library (prefer `technicalindicators` unless there’s a strong reason).

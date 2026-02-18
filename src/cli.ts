@@ -274,6 +274,7 @@ async function main(): Promise<void> {
   const aiAdviceUseCase = new GenerateAiAdviceUseCase({
     aiAdvisor: new OpenAiAiAdvisor({ httpClient: new AxiosHttpClient("https://api.openai.com") })
   });
+  const aiEnabledByDefault = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
   const rankingUseCase = new RunRecommendationRankingUseCase(useCase, learning, marketData);
   const learningCycleUseCase = new RunLearningCycleUseCase(logger, useCase, marketData, learning);
   const watchSymbolUseCase = new EvaluateWatchSymbolUseCase(useCase, learning);
@@ -505,7 +506,6 @@ async function main(): Promise<void> {
               symbol: baseInput.symbol,
               requestedDirection: baseInput.requestedDirection,
               expectedRangeHorizon: baseInput.expectedRangeHorizon,
-              enableAi: baseInput.enableAi,
               customValues: false,
               runSimulation: baseInput.runSimulation,
               objectiveHorizon: baseInput.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
@@ -556,7 +556,7 @@ async function main(): Promise<void> {
         }
         let aiWarning: string | undefined;
         let aiAdvice: AiAdvice | undefined;
-        if (tradeInput.enableAi && tradeInput.expectedRangeHorizon === undefined) {
+        if (aiEnabledByDefault && tradeInput.expectedRangeHorizon === undefined) {
           try {
             aiAdvice = await aiAdviceUseCase.execute({
               recommendation
@@ -907,7 +907,6 @@ async function promptQuickTradeInput(
     symbol: base.symbol,
     requestedDirection: base.requestedDirection,
     expectedRangeHorizon: base.expectedRangeHorizon,
-    enableAi: base.enableAi,
     customValues: true,
     runSimulation: base.runSimulation,
     objectiveHorizon,
@@ -1030,12 +1029,10 @@ function getInteractiveHelpText(): string {
   return [
     "",
     "TRADING",
-    "- <SYMBOL> [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--simulate] [--ai]",
+    "- <SYMBOL> [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--simulate]",
     "  Run a single-symbol analysis (defaults mode by default; --custom prompts values).",
     "- <SYMBOL> --expected <minutes>",
     "  Show expected low/high range for the given window (example: BTC --expected 240).",
-    "- --ai",
-    "  Add optional AI secondary opinion (requires OPENAI_API_KEY).",
     "- defaults",
     "  Set default leverage, size, and horizon.",
     "",
@@ -1059,6 +1056,7 @@ function getInteractiveHelpText(): string {
     "",
     "Rules:",
     "- --horizon defaults to 15 when omitted in targeting mode.",
+    "- AI secondary opinion is included by default when OPENAI_API_KEY is configured.",
     "- Base/bias timeframes are auto-selected from horizon: <=10m => 1m/15m, <=30m => 3m/15m, <=90m => 5m/30m, >90m => 15m/1h.",
     ""
   ].join("\n");
