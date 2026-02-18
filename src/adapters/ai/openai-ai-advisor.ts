@@ -18,7 +18,7 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
 
   constructor(input?: { apiKey?: string; model?: string; httpClient?: HttpClient }) {
     this.apiKey = input?.apiKey ?? process.env.OPENAI_API_KEY ?? "";
-    this.model = input?.model ?? process.env.MIAU_AI_MODEL ?? "gpt-4o-mini";
+    this.model = input?.model ?? process.env.MIAU_AI_MODEL ?? "gpt-5-mini";
     this.httpClient = input?.httpClient ?? new AxiosHttpClient("https://api.openai.com");
   }
 
