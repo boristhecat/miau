@@ -183,6 +183,10 @@ function ageLabel(updatedAtMs: number): string {
   return `${hr}h`;
 }
 
+function formatTimestamp(updatedAtMs: number): string {
+  return new Date(updatedAtMs).toLocaleTimeString();
+}
+
 function signalColor(signal: WatchRow["signal"]): string {
   if (signal === "LONG") return ui.green;
   if (signal === "SHORT") return ui.red;
@@ -274,7 +278,7 @@ function renderDashboard(state: DashboardState): void {
       `${ui.red}short:${shortCount}${ui.reset}  ` +
       `${ui.yellow}no-trade:${noTradeCount}${ui.reset}`
     );
-    console.log(`${ui.gray}signal / regime / confidence / setup / age${ui.reset}`);
+    console.log(`${ui.gray}signal / regime / confidence / setup / age / last queried${ui.reset}`);
     for (const row of rows) {
       const conf = formatPct(row.confidence);
       const setup = formatPct(row.setupQuality);
@@ -285,7 +289,8 @@ function renderDashboard(state: DashboardState): void {
           `${ui.gray}${row.regime ?? "-"}${ui.reset}  ` +
           `${scoreColor(row.confidence)}conf ${conf}${ui.reset}  ` +
           `${scoreColor(row.setupQuality)}setup ${setup}${ui.reset}  ` +
-          `${ui.gray}${ageLabel(row.updatedAtMs)}${ui.reset}`
+          `${ui.gray}${ageLabel(row.updatedAtMs)}${ui.reset}  ` +
+          `${ui.gray}${formatTimestamp(row.updatedAtMs)}${ui.reset}`
       );
       console.log(`${ui.gray}  note:${ui.reset} ${note}`);
     }
