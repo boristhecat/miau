@@ -1,4 +1,4 @@
-export type CliMode = "interactive" | "rec";
+export type CliMode = "interactive";
 
 export interface CliInput {
   mode: CliMode;
@@ -7,28 +7,18 @@ export interface CliInput {
 export function parseCliInput(argv: string[]): CliInput {
   const args = argv.slice(2);
 
-  if (args.includes("--help") || args.includes("-h")) {
-    throw new Error("USAGE");
-  }
-
   if (args.length === 0) {
     return { mode: "interactive" };
   }
 
-  if (args.length === 1 && args[0]?.toLowerCase() === "rec") {
-    return { mode: "rec" };
-  }
-
-  const invalid = args[0] ?? "";
-  throw new Error(`Unknown argument '${invalid}'. Supported: 'rec' or no argument.`);
+  throw new Error("Startup arguments are not supported. Run `npm run dev` and use commands inside the app.");
 }
 
 export function getUsageText(): string {
   return [
-    "Usage: miau-trader [rec]",
+    "Usage: miau-trader",
     "",
-    "No args: interactive mode (type SYMBOL, defaults, help, rec, etc. at prompt).",
-    "rec: scan a watchlist and print top 5 opportunities by positive-PnL probability.",
+    "Start with no arguments and use commands inside the interactive prompt.",
     "",
     "Interactive query format: SYMBOL [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate] [--ai]",
     "Default (SYMBOL): run directly with saved defaults."

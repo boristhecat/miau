@@ -193,6 +193,16 @@
 - [x] Add regression tests for "looks long/short" directional alignment cases
 - [x] Refresh `docs/CURRENT_STATE.md` to match current runtime behavior and latest signal logic
 
+## Task: Reconcile stale docs/spec with current runtime (2026-02-18)
+- [x] Update `AGENTS.md` requirements/commands to match current interactive-first CLI and persistence model
+- [x] Rewrite stale `docs/ARCHITECTURE.md` sections (runtime flows, ports, constraints, paths) to current implementation
+- [x] Verify docs no longer reference removed flags/modes (`-i`, `--objective`, `--manual-levels`) or stateless behavior
+
+## Task: Enforce single startup entry (`npm run dev`) (2026-02-18)
+- [x] Remove startup `rec`/flag handling from CLI argument parser
+- [x] Keep `rec`/help behavior available only inside interactive prompt
+- [x] Update tests and docs to reflect "no startup args" rule
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

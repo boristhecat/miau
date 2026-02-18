@@ -6,23 +6,24 @@ describe("parseCliInput", () => {
     expect(parseCliInput(["node", "cli"])).toEqual({ mode: "interactive" });
   });
 
-  it("accepts rec mode argument", () => {
-    expect(parseCliInput(["node", "cli", "rec"])).toEqual({ mode: "rec" });
+  it("rejects startup rec argument", () => {
+    expect(() => parseCliInput(["node", "cli", "rec"]))
+      .toThrowError("Startup arguments are not supported");
   });
 
-  it("throws usage sentinel on --help", () => {
+  it("rejects startup help flag", () => {
     expect(() => parseCliInput(["node", "cli", "--help"]))
-      .toThrowError("USAGE");
+      .toThrowError("Startup arguments are not supported");
   });
 
-  it("throws for unknown argument", () => {
+  it("rejects unknown startup argument", () => {
     expect(() => parseCliInput(["node", "cli", "BTC"]))
-      .toThrowError("Unknown argument");
+      .toThrowError("Startup arguments are not supported");
   });
 
-  it("throws when too many arguments are provided", () => {
+  it("rejects multiple startup arguments", () => {
     expect(() => parseCliInput(["node", "cli", "rec", "extra"]))
-      .toThrowError("Unknown argument");
+      .toThrowError("Startup arguments are not supported");
   });
 });
 

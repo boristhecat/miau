@@ -314,12 +314,6 @@ async function main(): Promise<void> {
     cliInput = parseCliInput(process.argv);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown CLI parsing error.";
-    if (message === "USAGE") {
-      console.log(getUsageText());
-      process.exitCode = 1;
-      return;
-    }
-
     logger.error(message);
     console.log(getUsageText());
     process.exitCode = 1;
@@ -344,24 +338,6 @@ async function main(): Promise<void> {
   if (!cliInput) {
     logger.error("CLI input parsing failed unexpectedly.");
     process.exitCode = 1;
-    return;
-  }
-
-  if (cliInput.mode === "rec") {
-    try {
-      const lines = await runRecommendationRanking({
-        logger,
-        recommendationUseCase: useCase,
-        learning,
-        symbolUniverseProvider: marketData,
-        defaults: tradeDefaults
-      });
-      lines.forEach((line) => console.log(line));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unhandled rec mode error";
-      logger.error(`Failed to run rec mode: ${message}`);
-      process.exitCode = 1;
-    }
     return;
   }
 

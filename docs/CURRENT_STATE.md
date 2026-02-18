@@ -20,11 +20,7 @@ Last updated: 2026-02-18
   - `SYMBOL --simulate`
   - `SYMBOL --ai`
   - `rec`, `defaults`, `watch`, `unwatch`, `learn --start|--stop|--stats`, `help`, `exit`
-
-### 2) Recommendation ranking mode (`rec`)
-- Start command: `npm run dev -- rec`
-- Fetches top 15 PERP symbols by 24h volume from Backpack.
-- Ranks actionable opportunities and prints top 5 by estimated positive-PnL probability.
+- `rec` fetches top 15 PERP symbols by 24h volume from Backpack and prints top 5 ranked opportunities.
 
 ## Data Sources (Backpack public API)
 - `/api/v1/markets`

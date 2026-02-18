@@ -38,12 +38,6 @@ npm run build
 node dist/cli.js
 ```
 
-### Help
-
-```bash
-npm run dev -- --help
-```
-
 ### Top recommendations mode (`rec`)
 
 Fetches the top 15 PERP symbols by 24h volume from Backpack and prints the top 5
@@ -54,8 +48,10 @@ The ranked list prints symbol, side/action, probability, confidence, R/R, and en
 `rec` uses your saved `defaults` values for leverage/size/horizon.
 Base and bias timeframes are derived automatically from that horizon.
 
-```bash
-npm run dev -- rec
+Run it from inside the interactive prompt:
+
+```text
+rec
 ```
 
 ## Interactive usage

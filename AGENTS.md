@@ -6,7 +6,7 @@ Build a TypeScript **console application** that suggests **Entry / Stop Loss / T
 - **No trade execution**, no order placement, no account endpoints.
 
 ## Non-goals (important)
-- No database / no local persistence (except temp files if absolutely needed).
+- No trade execution (order placement) and no private/account endpoints.
 - No Docker, no CI (for now).
 - No “tests” that only re-test external libraries’ correctness.
 
@@ -25,10 +25,14 @@ Rules:
 
 ## Requirements
 ### CLI usage
-- User runs: `miau-trader <PAIR>` (e.g. `BTC-USD`)
-- Output: recommendation + list of indicators + a **confidence %**.
+- Start app with: `miau-trader` (interactive mode).
+- Interactive single-symbol input uses base symbol (e.g. `BTC`), not pair format.
+- Supported interactive query format:
+  - `SYMBOL [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate] [--ai]`
+- Ranking mode is triggered in-app via `rec`.
+- Output: recommendation levels, signal/action, rationale, and **confidence %**.
 - Console output should be **colored and structured**.
-- Logging of indicator details must be togglable via CLI flag (e.g. `--logIndicators`), default off.
+- Default output is compact trade levels; expected-range and AI blocks are opt-in via flags.
 
 ### Indicators
 Use established indicator library (prefer `technicalindicators` unless there’s a strong reason).
@@ -49,9 +53,13 @@ Also output short rationale bullets explaining the score.
 
 ## Commands (keep up to date)
 - Install: `npm i`
-- Run dev: `npm run dev -- BTC-USD`
+- Run dev (interactive): `npm run dev`
 - Build: `npm run build`
 - Test: `npm test`
+
+## Persistence (current)
+- Learning outcomes are persisted locally in SQLite: `data/learning.sqlite`.
+- User defaults are persisted locally in JSON: `data/trade-defaults.json`.
 
 ## Working style for Codex
 - Always start by creating/updating `PLANS.md` for tasks that touch multiple files.
