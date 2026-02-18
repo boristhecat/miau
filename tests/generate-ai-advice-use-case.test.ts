@@ -60,7 +60,7 @@ class FakeAiAdvisor implements AiAdvisorPort {
     return this.nextAdvice ?? {
       bias: "LONG",
       confidenceBand: "MEDIUM",
-      veto: false,
+      aiAction: "KEEP",
       changeDirection: false,
       changeEntry: false,
       changeStopLoss: false,
@@ -99,12 +99,12 @@ describe("GenerateAiAdviceUseCase", () => {
     expect(advisor.lastInput?.indicators.atr14).toBe(0.9);
   });
 
-  it("rejects inconsistent AI output in application layer", async () => {
+  it("returns AI output unchanged even when direction suggestion matches current signal", async () => {
     const advisor = new FakeAiAdvisor();
     advisor.nextAdvice = {
       bias: "LONG",
       confidenceBand: "MEDIUM",
-      veto: false,
+      aiAction: "ADJUST",
       changeDirection: true,
       suggestedDirection: "LONG",
       changeEntry: false,
@@ -119,8 +119,8 @@ describe("GenerateAiAdviceUseCase", () => {
     };
     const useCase = new GenerateAiAdviceUseCase({ aiAdvisor: advisor });
 
-    await expect(useCase.execute({ recommendation: baseRecommendation })).rejects.toThrow(
-      "AI response is inconsistent: changeDirection=true but suggestedDirection equals current signal."
-    );
+    const result = await useCase.execute({ recommendation: baseRecommendation });
+    expect(result.changeDirection).toBe(true);
+    expect(result.suggestedDirection).toBe("LONG");
   });
 });

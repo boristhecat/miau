@@ -1,5 +1,6 @@
 {
   "leverage": 20,
   "positionSizeUsd": 250,
-  "objectiveHorizon": "30"
+  "objectiveHorizon": "30",
+  "aiModel": "gpt-5.2"
 }

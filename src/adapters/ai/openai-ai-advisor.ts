@@ -82,7 +82,7 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
         {
           role: "system",
           content:
-            "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, veto, changeDirection, changeEntry, changeStopLoss, changeTakeProfit, suggestedDirection, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+            "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, aiAction, changeDirection, changeEntry, changeStopLoss, changeTakeProfit, suggestedDirection, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
         },
         {
           role: "user",
@@ -315,17 +315,11 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       "- Keep reasons simple for average crypto traders.",
       "- Be conservative when setup quality is weak.",
       "- Compare your view with the model signal and state agreement clearly.",
-      "- Set veto=true only when setup should be skipped.",
+      "- aiAction must be one of: KEEP, REJECT, ADJUST.",
       "- If any change flag is true, provide the corresponding suggested value.",
-      "- Consistency rules:",
-      "  * veto=false => bias must be LONG or SHORT (not NO_TRADE).",
-      "  * veto=true => bias must be NO_TRADE and all change flags must be false.",
-      "  * changeDirection=true => suggestedDirection must differ from current signal.",
-      "  * changeDirection=false => suggestedDirection must be null or equal to current signal.",
-      "  * If changeEntry/StopLoss/TakeProfit=false, suggested value must be null or equal to current level.",
       "- Output only valid JSON.",
       "Schema:",
-      '{ "bias":"LONG|SHORT|NO_TRADE", "confidenceBand":"LOW|MEDIUM|HIGH", "veto":true|false, "changeDirection":true|false, "changeEntry":true|false, "changeStopLoss":true|false, "changeTakeProfit":true|false, "suggestedDirection":"LONG|SHORT|NO_TRADE|null", "suggestedEntry":number|null, "suggestedStopLoss":number|null, "suggestedTakeProfit":number|null, "agreement":"AGREE|DISAGREE|PARTIAL", "regime":"TREND|RANGE|CHOPPY|VOLATILE", "overruledSignals":["..."], "reasons":["...","...","..."], "invalidation":"...", "riskNote":"..." }',
+      '{ "bias":"LONG|SHORT|NO_TRADE", "confidenceBand":"LOW|MEDIUM|HIGH", "aiAction":"KEEP|REJECT|ADJUST", "changeDirection":true|false, "changeEntry":true|false, "changeStopLoss":true|false, "changeTakeProfit":true|false, "suggestedDirection":"LONG|SHORT|NO_TRADE|null", "suggestedEntry":number|null, "suggestedStopLoss":number|null, "suggestedTakeProfit":number|null, "agreement":"AGREE|DISAGREE|PARTIAL", "regime":"TREND|RANGE|CHOPPY|VOLATILE", "overruledSignals":["..."], "reasons":["...","...","..."], "invalidation":"...", "riskNote":"..." }',
       "Snapshot:",
       JSON.stringify(compact)
     ].join("\n");
@@ -351,9 +345,9 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     if (confidenceBand !== "LOW" && confidenceBand !== "MEDIUM" && confidenceBand !== "HIGH") {
       throw new Error("AI response confidence band is invalid.");
     }
-    const veto = candidate.veto;
-    if (typeof veto !== "boolean") {
-      throw new Error("AI response veto is invalid.");
+    const aiAction = String(candidate.aiAction ?? "").toUpperCase();
+    if (aiAction !== "KEEP" && aiAction !== "REJECT" && aiAction !== "ADJUST") {
+      throw new Error("AI response aiAction is invalid.");
     }
     const changeDirection = candidate.changeDirection;
     if (typeof changeDirection !== "boolean") {
@@ -429,7 +423,7 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     return {
       bias,
       confidenceBand,
-      veto,
+      aiAction,
       changeDirection,
       changeEntry,
       changeStopLoss,

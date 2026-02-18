@@ -20,6 +20,7 @@ Last updated: 2026-02-18
   - `SYMBOL --simulate`
   - `rec`, `defaults`, `watch`, `unwatch`, `learn --start|--stop|--stats`, `help`, `exit`
 - AI secondary opinion is included by default for normal trade output when `OPENAI_API_KEY` is configured.
+- AI model selection is persisted in `data/trade-defaults.json` and configurable via `defaults`.
 - AI block now includes structured `agreement` (`AGREE`/`DISAGREE`/`PARTIAL`), `regime` (`TREND`/`RANGE`/`CHOPPY`/`VOLATILE`), and `overruledSignals`.
 - `rec` fetches top 15 PERP symbols by 24h volume from Backpack and prints top 5 ranked opportunities.
 

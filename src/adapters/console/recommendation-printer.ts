@@ -63,6 +63,12 @@ function yesNoColor(value: boolean): string {
   return value ? colors.brightRed : colors.brightGreen;
 }
 
+function aiActionColor(action: AiAdvice["aiAction"]): string {
+  if (action === "REJECT") return colors.brightRed;
+  if (action === "ADJUST") return colors.brightYellow;
+  return colors.brightGreen;
+}
+
 function stripReasonPrefix(line: string): string {
   return line
     .replace(/^No-trade guard:\s*/i, "")
@@ -463,7 +469,7 @@ export class RecommendationPrinter {
     if (aiAdvice) {
       write(`${colors.brightBlack}${".".repeat(64)}${colors.reset}`);
       write(`${colors.bold}${colors.cyan}2A) AI SECONDARY VIEW${colors.reset}`);
-      write(`${label("AI Veto")} ${yesNoColor(aiAdvice.veto)}${yesNo(aiAdvice.veto)}${colors.reset}`);
+      write(`${label("AI Action")} ${aiActionColor(aiAdvice.aiAction)}${aiAdvice.aiAction}${colors.reset}`);
       const currentSignal = rec.signal;
       const nextSignal = aiAdvice.suggestedDirection ?? aiAdvice.bias;
       write(

@@ -21,7 +21,7 @@ import { createLearningStore } from "./adapters/persistence/sqlite-learning-stor
 import type { AiAdvice } from "./ports/ai-advisor-port.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import type { Recommendation } from "./domain/types.js";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -127,14 +127,37 @@ interface TradeDefaults {
   leverage: number;
   positionSizeUsd: number;
   objectiveHorizon: string;
+  aiModel: string;
 }
 
 const DEFAULTS_FILE_PATH = path.join(process.cwd(), "data", "trade-defaults.json");
+const OPENAI_ERROR_LOG_PATH = path.join(process.cwd(), "data", "openai-http-errors.log");
 const FALLBACK_TRADE_DEFAULTS: TradeDefaults = {
   leverage: 20,
   positionSizeUsd: 250,
-  objectiveHorizon: "15"
+  objectiveHorizon: "15",
+  aiModel: "gpt-5.2"
 };
+
+async function appendAiFailureLog(error: unknown): Promise<void> {
+  const asError = error instanceof Error ? error : new Error(String(error ?? "Unknown error"));
+  const entry = {
+    timestamp: new Date().toISOString(),
+    source: "cli",
+    stage: "ai-query",
+    error: {
+      name: asError.name,
+      message: asError.message,
+      stack: asError.stack
+    }
+  };
+  try {
+    await mkdir(path.dirname(OPENAI_ERROR_LOG_PATH), { recursive: true });
+    await appendFile(OPENAI_ERROR_LOG_PATH, `${JSON.stringify(entry, null, 2)}\n\n`, "utf8");
+  } catch {
+    // Logging failures must not impact runtime.
+  }
+}
 
 async function loadTradeDefaults(): Promise<TradeDefaults> {
   try {
@@ -146,7 +169,11 @@ async function loadTradeDefaults(): Promise<TradeDefaults> {
       objectiveHorizon:
         typeof parsed.objectiveHorizon === "string" && /^\d+$/.test(parsed.objectiveHorizon)
           ? parsed.objectiveHorizon
-          : FALLBACK_TRADE_DEFAULTS.objectiveHorizon
+          : FALLBACK_TRADE_DEFAULTS.objectiveHorizon,
+      aiModel:
+        typeof parsed.aiModel === "string" && parsed.aiModel.trim().length > 0
+          ? parsed.aiModel.trim()
+          : FALLBACK_TRADE_DEFAULTS.aiModel
     };
   } catch {
     return { ...FALLBACK_TRADE_DEFAULTS };
@@ -266,15 +293,20 @@ async function main(): Promise<void> {
   const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
   const learning = new AdaptiveLearningService(learningStore);
   const printer = new RecommendationPrinter();
-  const aiAdviceUseCase = new GenerateAiAdviceUseCase({
-    aiAdvisor: new OpenAiAiAdvisor({ httpClient: new AxiosHttpClient("https://api.openai.com", undefined, { timeoutMs: 45_000 }) })
-  });
+  let tradeDefaults = await loadTradeDefaults();
+  const createAiAdviceUseCase = (defaults: TradeDefaults): GenerateAiAdviceUseCase =>
+    new GenerateAiAdviceUseCase({
+      aiAdvisor: new OpenAiAiAdvisor({
+        model: defaults.aiModel,
+        httpClient: new AxiosHttpClient("https://api.openai.com", undefined, { timeoutMs: 45_000 })
+      })
+    });
+  let aiAdviceUseCase = createAiAdviceUseCase(tradeDefaults);
   const aiEnabledByDefault = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
   const rankingUseCase = new RunRecommendationRankingUseCase(useCase, learning, marketData);
   const learningCycleUseCase = new RunLearningCycleUseCase(logger, useCase, marketData, learning);
   const watchSymbolUseCase = new EvaluateWatchSymbolUseCase(useCase, learning);
   const simulationUseCase = new EvaluateSimulationUseCase(marketData);
-  let tradeDefaults = await loadTradeDefaults();
 
   if (!cliInput) {
     logger.error("CLI input parsing failed unexpectedly.");
@@ -356,11 +388,13 @@ async function main(): Promise<void> {
           isPrompting = false;
           tradeDefaults = updatedDefaults;
           await saveTradeDefaults(tradeDefaults);
+          aiAdviceUseCase = createAiAdviceUseCase(tradeDefaults);
           dashboard.latestQueryLines = [
             `${ui.green}[defaults] saved.${ui.reset}`,
             `${ui.gray}leverage:${ui.reset} ${tradeDefaults.leverage}`,
             `${ui.gray}size:${ui.reset} ${tradeDefaults.positionSizeUsd}`,
-            `${ui.gray}horizon:${ui.reset} ${tradeDefaults.objectiveHorizon}m`
+            `${ui.gray}horizon:${ui.reset} ${tradeDefaults.objectiveHorizon}m`,
+            `${ui.gray}ai model:${ui.reset} ${tradeDefaults.aiModel}`
           ];
         } catch (error) {
           isPrompting = false;
@@ -556,7 +590,8 @@ async function main(): Promise<void> {
             aiAdvice = await aiAdviceUseCase.execute({
               recommendation
             });
-          } catch {
+          } catch (error) {
+            await appendAiFailureLog(error);
             aiWarning = "AI query failed. Details were written to data/openai-http-errors.log.";
           }
         }
@@ -840,11 +875,17 @@ async function promptTradeDefaults(rl: readline.Interface, current: TradeDefault
   const leverageRaw = await promptWithDefault(rl, "Default leverage", current.leverage.toString());
   const sizeRaw = await promptWithDefault(rl, "Default position size USDC", current.positionSizeUsd.toString());
   const horizonRaw = await promptWithDefault(rl, "Default trade horizon minutes", current.objectiveHorizon);
+  const aiModelRaw = await promptWithDefault(rl, "Default AI model", current.aiModel);
+  const aiModel = (aiModelRaw ?? "").trim();
+  if (!aiModel) {
+    throw new Error("Invalid default AI model. Use a non-empty model id (e.g. gpt-5.2).");
+  }
 
   return {
     leverage: parseRequiredNumberInput(leverageRaw, "default leverage"),
     positionSizeUsd: parseRequiredNumberInput(sizeRaw, "default position size"),
-    objectiveHorizon: parseOptionalHorizonInput(horizonRaw) ?? current.objectiveHorizon
+    objectiveHorizon: parseOptionalHorizonInput(horizonRaw) ?? current.objectiveHorizon,
+    aiModel
   };
 }
 
@@ -988,7 +1029,7 @@ function getInteractiveHelpText(): string {
     "- <SYMBOL> --expected <minutes>",
     "  Show expected low/high range for the given window (example: BTC --expected 240).",
     "- defaults",
-    "  Set default leverage, size, and horizon.",
+    "  Set default leverage, size, horizon, and AI model.",
     "",
     "SCANNING & WATCH",
     "- rec",

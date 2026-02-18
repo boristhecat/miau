@@ -45,7 +45,7 @@ trade suggestions ordered by highest estimated probability of positive PnL to lo
 Before scanning, it prints the selected universe with each symbol's 24h volume and open interest.
 The ranked list prints symbol, side/action, probability, confidence, R/R, and entry/SL/TP.
 
-`rec` uses your saved `defaults` values for leverage/size/horizon.
+`rec` uses your saved `defaults` values for leverage/size/horizon/AI model.
 Base and bias timeframes are derived automatically from that horizon.
 
 Run it from inside the interactive prompt:
@@ -60,7 +60,7 @@ After starting the app, enter input at the `Command` prompt:
 
 - `help` or `?` -> show interactive commands + flags
 - `rec` -> run top recommendations scan in-app
-- `defaults` -> set saved defaults for symbol-only runs
+- `defaults` -> set saved defaults for symbol-only runs (including AI model)
 - `BTC` -> run immediately with saved defaults
 - `BTC --custom` -> prompt quick values for this run
 - `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
@@ -91,6 +91,7 @@ Symbol-only mode runs with saved defaults (`defaults` command):
 - Leverage
 - Position size (USDC margin)
 - Horizon minutes
+- AI model (default: `gpt-5.2`)
 
 Custom prompt mode (`--custom`) prompts for core risk inputs:
 
@@ -113,6 +114,7 @@ Defaults to:
 - Leverage: `20`
 - Position size: `250`
 - Horizon: `15m` (internally `15` minutes)
+- AI model: `gpt-5.2`
 - Timeframes are auto-selected from horizon
 - Detailed output: disabled
 

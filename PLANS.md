@@ -258,6 +258,23 @@
 - [x] Harden OpenAI HTTP error logging (sanitize payload + simple file rotation)
 - [x] Extract watch command parser into console adapter and add cadence parser tests
 
+## Task: Replace AI veto flag with explicit AI action semantics (2026-02-18)
+- [x] Replace `veto` with `aiAction` (`KEEP|REJECT|ADJUST`) across AI port, prompt schema, parser, and console rendering
+- [x] Enforce application-level consistency rules for `aiAction` vs change flags and suggested values
+- [x] Update AI adapter/use-case tests to the new contract
+- [x] Verify with full test suite and build
+
+## Task: Keep non-technical AI responses visible (2026-02-18)
+- [x] Stop treating AI contract inconsistencies as runtime errors in application layer
+- [x] Continue showing parseable AI output in UI without fallback warning
+- [x] Keep warning + error-log behavior for technical AI failures only
+
+## Task: Persist AI model in defaults JSON (2026-02-18)
+- [x] Extend trade defaults schema/storage with `aiModel` and fallback to `gpt-5.2`
+- [x] Use persisted default model when constructing OpenAI advisor
+- [x] Update `defaults` command to edit and display model, applying changes immediately
+- [x] Refresh docs/defaults file to reflect AI model persistence
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

@@ -1,7 +1,7 @@
 export interface AiAdvice {
   bias: "LONG" | "SHORT" | "NO_TRADE";
   confidenceBand: "LOW" | "MEDIUM" | "HIGH";
-  veto: boolean;
+  aiAction: "KEEP" | "REJECT" | "ADJUST";
   changeDirection: boolean;
   changeEntry: boolean;
   changeStopLoss: boolean;

@@ -77,7 +77,7 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "MEDIUM",
-              veto: false,
+              aiAction: "KEEP",
               changeDirection: false,
               changeEntry: false,
               changeStopLoss: false,
@@ -120,7 +120,7 @@ describe("OpenAiAiAdvisor", () => {
                 text: JSON.stringify({
                   bias: "SHORT",
                   confidenceBand: "LOW",
-                  veto: false,
+                  aiAction: "ADJUST",
                   changeDirection: true,
                   changeEntry: true,
                   changeStopLoss: true,
@@ -164,7 +164,7 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "LOW",
-              veto: false,
+              aiAction: "KEEP",
               changeDirection: false,
               changeEntry: false,
               changeStopLoss: false,
@@ -195,7 +195,7 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "MEDIUM",
-              veto: false,
+              aiAction: "ADJUST",
               changeDirection: true,
               changeEntry: false,
               changeStopLoss: false,
@@ -229,7 +229,7 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "MEDIUM",
-              veto: false,
+              aiAction: "ADJUST",
               changeDirection: false,
               changeEntry: true,
               changeStopLoss: false,
