@@ -198,6 +198,56 @@ function reasonIndent(): string {
   return `${colors.brightBlack}${" ".repeat(18)}${colors.reset}`;
 }
 
+function wrapText(input: string, width: number): string[] {
+  const text = input.trim();
+  if (!text) return [""];
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if ((current.length + 1 + word.length) <= width) {
+      current += ` ${word}`;
+      continue;
+    }
+    lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function writeWrappedLabel(
+  write: (line?: string) => void,
+  name: string,
+  text: string,
+  valueColor: string = colors.white
+): void {
+  const valueWidth = 62;
+  const trimmed = text.trim();
+  const bulletMatch = trimmed.match(/^([-*]\s+)/);
+  let lines: string[];
+  if (bulletMatch) {
+    const bulletPrefix = bulletMatch[1];
+    const bulletBody = trimmed.slice(bulletPrefix.length).trim();
+    const wrappedBody = wrapText(bulletBody, Math.max(8, valueWidth - bulletPrefix.length));
+    lines = [
+      `${bulletPrefix}${wrappedBody[0] ?? ""}`,
+      ...wrappedBody.slice(1).map((line) => `${" ".repeat(bulletPrefix.length)}${line}`)
+    ];
+  } else {
+    lines = wrapText(trimmed, valueWidth);
+  }
+  if (lines.length === 0) return;
+  write(`${label(name)} ${valueColor}${lines[0]}${colors.reset}`);
+  for (const line of lines.slice(1)) {
+    write(`${reasonIndent()} ${valueColor}${line}${colors.reset}`);
+  }
+}
+
 function objectiveAggressiveness(rec: Recommendation): "LOW" | "MEDIUM" | "HIGH" | "VERY HIGH" {
   if (rec.objectivePlausibilityWarning) {
     return "VERY HIGH";
@@ -402,31 +452,27 @@ export class RecommendationPrinter {
     }
     write(`${label("Confidence")} ${confidenceColor(rec.confidence)}${rec.confidence}%${colors.reset}`);
     if (keyReasons.length > 0) {
-      write(`${label("Why")} ${colors.yellow}- ${keyReasons[0]}${colors.reset}`);
-      keyReasons.slice(1).forEach((reason) => {
-        write(`${reasonIndent()} ${colors.yellow}- ${reason}${colors.reset}`);
-      });
+      writeWrappedLabel(write, "Why", `- ${keyReasons[0]}`, colors.yellow);
+      keyReasons.slice(1).forEach((reason) => writeWrappedLabel(write, "", `- ${reason}`, colors.yellow));
     }
     if (aiAdvice) {
+      write(`${colors.brightBlack}${".".repeat(64)}${colors.reset}`);
+      write(`${colors.bold}${colors.cyan}2A) AI SECONDARY VIEW${colors.reset}`);
       write(`${label("AI Bias")} ${colors.white}${aiAdvice.bias}${colors.reset} ${colors.brightBlack}(${aiAdvice.confidenceBand})${colors.reset}`);
       write(
         `${label("AI Align")} ${aiAgreementColor(aiAdvice.agreement)}${aiAdvice.agreement}${colors.reset} ` +
           `${colors.brightBlack}(regime ${aiAdvice.regime})${colors.reset}`
       );
       if (aiAdvice.overruledSignals.length > 0) {
-        write(`${label("AI Override")} ${colors.cyan}- ${aiAdvice.overruledSignals[0]}${colors.reset}`);
-        aiAdvice.overruledSignals.slice(1).forEach((signal) => {
-          write(`${reasonIndent()} ${colors.cyan}- ${signal}${colors.reset}`);
-        });
+        writeWrappedLabel(write, "AI Override", `- ${aiAdvice.overruledSignals[0]}`, colors.cyan);
+        aiAdvice.overruledSignals.slice(1).forEach((signal) => writeWrappedLabel(write, "", `- ${signal}`, colors.cyan));
       }
       if (aiAdvice.reasons.length > 0) {
-        write(`${label("AI Why")} ${colors.cyan}- ${aiAdvice.reasons[0]}${colors.reset}`);
-        aiAdvice.reasons.slice(1).forEach((reason) => {
-          write(`${reasonIndent()} ${colors.cyan}- ${reason}${colors.reset}`);
-        });
+        writeWrappedLabel(write, "AI Why", `- ${aiAdvice.reasons[0]}`, colors.cyan);
+        aiAdvice.reasons.slice(1).forEach((reason) => writeWrappedLabel(write, "", `- ${reason}`, colors.cyan));
       }
-      write(`${label("AI Invalid")} ${colors.cyan}${aiAdvice.invalidation}${colors.reset}`);
-      write(`${label("AI Risk")} ${colors.cyan}${aiAdvice.riskNote}${colors.reset}`);
+      writeWrappedLabel(write, "AI Invalid", aiAdvice.invalidation, colors.cyan);
+      writeWrappedLabel(write, "AI Risk", aiAdvice.riskNote, colors.cyan);
       if (aiAdvice.model || aiAdvice.latencyMs !== undefined) {
         write(
           `${label("AI Meta")} ${colors.brightBlack}${aiAdvice.model ?? "n/a"}${colors.reset}` +

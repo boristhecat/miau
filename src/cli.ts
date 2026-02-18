@@ -272,7 +272,7 @@ async function main(): Promise<void> {
   const learning = new AdaptiveLearningService(learningStore);
   const printer = new RecommendationPrinter();
   const aiAdviceUseCase = new GenerateAiAdviceUseCase({
-    aiAdvisor: new OpenAiAiAdvisor({ httpClient: new AxiosHttpClient("https://api.openai.com") })
+    aiAdvisor: new OpenAiAiAdvisor({ httpClient: new AxiosHttpClient("https://api.openai.com", undefined, { timeoutMs: 45_000 }) })
   });
   const aiEnabledByDefault = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
   const rankingUseCase = new RunRecommendationRankingUseCase(useCase, learning, marketData);

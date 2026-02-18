@@ -4,12 +4,12 @@ import type { HttpClient } from "./http-client.js";
 export class AxiosHttpClient implements HttpClient {
   private readonly client: AxiosInstance;
 
-  constructor(baseURL: string, client?: AxiosInstance) {
+  constructor(baseURL: string, client?: AxiosInstance, options?: { timeoutMs?: number }) {
     this.client =
       client ??
       axios.create({
         baseURL,
-        timeout: 10_000
+        timeout: options?.timeoutMs ?? 10_000
       });
   }
 

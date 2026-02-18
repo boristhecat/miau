@@ -223,6 +223,21 @@
 - [x] Render the new fields in console AI output
 - [x] Add/update tests for mapping and parsing expectations
 
+## Task: Harden OpenAI request compatibility fallback (2026-02-18)
+- [x] Add retry strategy for Chat Completions token-limit parameter compatibility
+- [x] Keep retries on the configured model only (no cross-model fallback)
+- [x] Add adapter tests for retry path and error behavior
+
+## Task: Enforce single-shot OpenAI request with raw error passthrough (2026-02-18)
+- [x] Remove OpenAI request retries/parameter switching
+- [x] Remove unsupported temperature override for model-default-only endpoints
+- [x] Keep detailed API error messages surfaced in CLI and adapter tests
+
+## Task: Persist OpenAI HTTP error diagnostics to logfile (2026-02-18)
+- [x] Remove terminal dump of full OpenAI response payload
+- [x] Log failed OpenAI HTTP calls with request/response diagnostics to local file
+- [x] Keep runtime behavior non-blocking if logging itself fails
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

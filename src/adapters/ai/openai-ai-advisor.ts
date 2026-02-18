@@ -1,3 +1,5 @@
+import { appendFile, mkdir } from "node:fs/promises";
+import path from "node:path";
 import type { AiAdvice, AiAdviceRequest, AiAdvisorPort } from "../../ports/ai-advisor-port.js";
 import type { HttpClient } from "../http/http-client.js";
 import { AxiosHttpClient } from "../http/axios-http-client.js";
@@ -5,8 +7,16 @@ import { AxiosHttpClient } from "../http/axios-http-client.js";
 interface OpenAiChatCompletionResponse {
   model?: string;
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
-      content?: string | null;
+      content?:
+        | string
+        | Array<{
+            type?: string;
+            text?: string;
+          }>
+        | null;
+      refusal?: string | null;
     };
   }>;
 }
@@ -15,11 +25,13 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly httpClient: HttpClient;
+  private readonly errorLogFilePath: string;
 
   constructor(input?: { apiKey?: string; model?: string; httpClient?: HttpClient }) {
     this.apiKey = input?.apiKey ?? process.env.OPENAI_API_KEY ?? "";
     this.model = input?.model ?? process.env.MIAU_AI_MODEL ?? "gpt-5-mini";
     this.httpClient = input?.httpClient ?? new AxiosHttpClient("https://api.openai.com");
+    this.errorLogFilePath = path.join(process.cwd(), "data", "openai-http-errors.log");
   }
 
   async advise(input: AiAdviceRequest): Promise<AiAdvice> {
@@ -29,34 +41,24 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
 
     const startedAt = Date.now();
     const prompt = this.buildPrompt(input);
-    const response = await this.httpClient.post<OpenAiChatCompletionResponse>({
-      url: "/v1/chat/completions",
-      body: {
+    let response: OpenAiChatCompletionResponse;
+    try {
+      response = await this.requestChatCompletion({
         model: this.model,
-        temperature: 0.1,
-        max_completion_tokens: 160,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
-      },
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`
-      }
-    });
+        prompt
+      });
+    } catch (error) {
+      throw this.toOpenAiError(error);
+    }
 
-    const raw = response.choices?.[0]?.message?.content;
+    const raw = this.extractMessageText(response);
     if (!raw) {
-      throw new Error("AI response was empty.");
+      const choice = response.choices?.[0];
+      const refusal = choice?.message?.refusal;
+      const finishReason = choice?.finish_reason ?? "unknown";
+      throw new Error(
+        `AI response was empty. finish_reason=${finishReason}` + (refusal ? ` refusal=${refusal}` : "")
+      );
     }
 
     const parsed = this.parseResponse(raw);
@@ -65,6 +67,171 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       model: response.model ?? this.model,
       latencyMs: Date.now() - startedAt
     };
+  }
+
+  private async requestChatCompletion(input: {
+    model: string;
+    prompt: string;
+  }): Promise<OpenAiChatCompletionResponse> {
+    const body: Record<string, unknown> = {
+      model: input.model,
+      reasoning_effort: "low",
+      max_completion_tokens: 1024,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          role: "user",
+          content: input.prompt
+        }
+      ]
+    };
+
+    return this.httpClient.post<OpenAiChatCompletionResponse>({
+      url: "/v1/chat/completions",
+      body,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`
+      }
+    }).catch(async (error: unknown) => {
+      await this.logHttpError({
+        url: "/v1/chat/completions",
+        body,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer ***redacted***"
+        },
+        error
+      });
+      throw error;
+    });
+  }
+
+  private toOpenAiError(error: unknown): Error {
+    if (!error || typeof error !== "object") {
+      return new Error("OpenAI request failed.");
+    }
+    const candidate = error as {
+      message?: unknown;
+      response?: {
+        status?: unknown;
+        data?: unknown;
+      };
+    };
+    const status = typeof candidate.response?.status === "number" ? candidate.response.status : undefined;
+    const detail = this.extractErrorDetail(candidate.response?.data);
+    if (status !== undefined && detail) {
+      return new Error(`OpenAI API ${status}: ${detail}`);
+    }
+    if (status !== undefined) {
+      const fallbackMessage = typeof candidate.message === "string" ? candidate.message : "Request failed.";
+      return new Error(`OpenAI API ${status}: ${fallbackMessage}`);
+    }
+    if (typeof candidate.message === "string" && candidate.message.trim().length > 0) {
+      return new Error(candidate.message);
+    }
+    return new Error("OpenAI request failed.");
+  }
+
+  private extractErrorDetail(data: unknown): string | undefined {
+    if (!data || typeof data !== "object") {
+      return undefined;
+    }
+    const asRecord = data as Record<string, unknown>;
+    const errorNode = asRecord.error;
+    if (errorNode && typeof errorNode === "object") {
+      const message = (errorNode as Record<string, unknown>).message;
+      if (typeof message === "string" && message.trim().length > 0) {
+        return message.trim();
+      }
+    }
+    const message = asRecord.message;
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message.trim();
+    }
+    return undefined;
+  }
+
+  private async logHttpError(input: {
+    url: string;
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+    error: unknown;
+  }): Promise<void> {
+    const candidate = (input.error ?? {}) as {
+      message?: unknown;
+      name?: unknown;
+      stack?: unknown;
+      code?: unknown;
+      response?: {
+        status?: unknown;
+        statusText?: unknown;
+        data?: unknown;
+        headers?: unknown;
+      };
+      config?: {
+        baseURL?: unknown;
+        url?: unknown;
+        method?: unknown;
+        timeout?: unknown;
+      };
+    };
+    const entry = {
+      timestamp: new Date().toISOString(),
+      request: {
+        url: input.url,
+        headers: input.headers,
+        body: input.body
+      },
+      error: {
+        name: typeof candidate.name === "string" ? candidate.name : undefined,
+        message: typeof candidate.message === "string" ? candidate.message : String(candidate.message ?? "Unknown error"),
+        code: typeof candidate.code === "string" ? candidate.code : undefined,
+        stack: typeof candidate.stack === "string" ? candidate.stack : undefined,
+        response: {
+          status: typeof candidate.response?.status === "number" ? candidate.response.status : undefined,
+          statusText: typeof candidate.response?.statusText === "string" ? candidate.response.statusText : undefined,
+          headers: candidate.response?.headers,
+          data: candidate.response?.data
+        },
+        axiosConfig: {
+          baseURL: typeof candidate.config?.baseURL === "string" ? candidate.config.baseURL : undefined,
+          url: typeof candidate.config?.url === "string" ? candidate.config.url : undefined,
+          method: typeof candidate.config?.method === "string" ? candidate.config.method : undefined,
+          timeout: typeof candidate.config?.timeout === "number" ? candidate.config.timeout : undefined
+        }
+      }
+    };
+    try {
+      await mkdir(path.dirname(this.errorLogFilePath), { recursive: true });
+      await appendFile(this.errorLogFilePath, `${JSON.stringify(entry, null, 2)}\n\n`, "utf8");
+    } catch {
+      // Logging failures must never break runtime flow.
+    }
+  }
+
+  private extractMessageText(response: OpenAiChatCompletionResponse): string | undefined {
+    const message = response.choices?.[0]?.message;
+    const content = message?.content;
+    if (typeof content === "string") {
+      const trimmed = content.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (Array.isArray(content)) {
+      const text = content
+        .filter((part) => part && typeof part === "object")
+        .map((part) => (typeof part.text === "string" ? part.text.trim() : ""))
+        .filter((part) => part.length > 0)
+        .join("\n")
+        .trim();
+      return text.length > 0 ? text : undefined;
+    }
+    return undefined;
   }
 
   private buildPrompt(input: AiAdviceRequest): string {
