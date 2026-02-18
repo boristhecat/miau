@@ -55,10 +55,12 @@ function qualityVerdictColor(verdict?: Recommendation["qualityVerdict"]): string
   return colors.white;
 }
 
-function aiAgreementColor(agreement: AiAdvice["agreement"]): string {
-  if (agreement === "AGREE") return colors.brightGreen;
-  if (agreement === "PARTIAL") return colors.brightYellow;
-  return colors.brightRed;
+function yesNo(value: boolean): string {
+  return value ? "YES" : "NO";
+}
+
+function yesNoColor(value: boolean): string {
+  return value ? colors.brightRed : colors.brightGreen;
 }
 
 function stripReasonPrefix(line: string): string {
@@ -458,21 +460,37 @@ export class RecommendationPrinter {
     if (aiAdvice) {
       write(`${colors.brightBlack}${".".repeat(64)}${colors.reset}`);
       write(`${colors.bold}${colors.cyan}2A) AI SECONDARY VIEW${colors.reset}`);
-      write(`${label("AI Bias")} ${colors.white}${aiAdvice.bias}${colors.reset} ${colors.brightBlack}(${aiAdvice.confidenceBand})${colors.reset}`);
+      write(`${label("AI Veto")} ${yesNoColor(aiAdvice.veto)}${yesNo(aiAdvice.veto)}${colors.reset}`);
       write(
-        `${label("AI Align")} ${aiAgreementColor(aiAdvice.agreement)}${aiAdvice.agreement}${colors.reset} ` +
-          `${colors.brightBlack}(regime ${aiAdvice.regime})${colors.reset}`
+        `${label("Change Direction")} ${yesNoColor(aiAdvice.changeDirection)}${yesNo(aiAdvice.changeDirection)}${colors.reset} ` +
+          `${colors.brightBlack}(bias ${aiAdvice.bias}` +
+          (aiAdvice.changeDirection && aiAdvice.suggestedDirection ? ` -> ${aiAdvice.suggestedDirection}` : "") +
+          `)${colors.reset}`
       );
-      if (aiAdvice.overruledSignals.length > 0) {
-        writeWrappedLabel(write, "AI Override", `- ${aiAdvice.overruledSignals[0]}`, colors.cyan);
-        aiAdvice.overruledSignals.slice(1).forEach((signal) => writeWrappedLabel(write, "", `- ${signal}`, colors.cyan));
+      write(
+        `${label("Change Entry")} ${yesNoColor(aiAdvice.changeEntry)}${yesNo(aiAdvice.changeEntry)}${colors.reset}` +
+          (aiAdvice.changeEntry && aiAdvice.suggestedEntry !== undefined
+            ? ` ${colors.brightBlack}(-> ${fmt(aiAdvice.suggestedEntry)})${colors.reset}`
+            : "")
+      );
+      write(
+        `${label("Change Stop Loss")} ${yesNoColor(aiAdvice.changeStopLoss)}${yesNo(aiAdvice.changeStopLoss)}${colors.reset}` +
+          (aiAdvice.changeStopLoss && aiAdvice.suggestedStopLoss !== undefined
+            ? ` ${colors.brightBlack}(-> ${fmt(aiAdvice.suggestedStopLoss)})${colors.reset}`
+            : "")
+      );
+      write(
+        `${label("Change Take Profit")} ${yesNoColor(aiAdvice.changeTakeProfit)}${yesNo(aiAdvice.changeTakeProfit)}${colors.reset}` +
+          (aiAdvice.changeTakeProfit && aiAdvice.suggestedTakeProfit !== undefined
+            ? ` ${colors.brightBlack}(-> ${fmt(aiAdvice.suggestedTakeProfit)})${colors.reset}`
+            : "")
+      );
+      if (aiAdvice.agreement !== "AGREE" || aiAdvice.overruledSignals.length > 0) {
+        const notes = aiAdvice.overruledSignals.length > 0
+          ? aiAdvice.overruledSignals.join("; ")
+          : `${aiAdvice.agreement} (${aiAdvice.regime})`;
+        writeWrappedLabel(write, "AI Note", notes, colors.cyan);
       }
-      if (aiAdvice.reasons.length > 0) {
-        writeWrappedLabel(write, "AI Why", `- ${aiAdvice.reasons[0]}`, colors.cyan);
-        aiAdvice.reasons.slice(1).forEach((reason) => writeWrappedLabel(write, "", `- ${reason}`, colors.cyan));
-      }
-      writeWrappedLabel(write, "AI Invalid", aiAdvice.invalidation, colors.cyan);
-      writeWrappedLabel(write, "AI Risk", aiAdvice.riskNote, colors.cyan);
       if (aiAdvice.model || aiAdvice.latencyMs !== undefined) {
         write(
           `${label("AI Meta")} ${colors.brightBlack}${aiAdvice.model ?? "n/a"}${colors.reset}` +

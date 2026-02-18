@@ -1,6 +1,15 @@
 export interface AiAdvice {
   bias: "LONG" | "SHORT" | "NO_TRADE";
   confidenceBand: "LOW" | "MEDIUM" | "HIGH";
+  veto: boolean;
+  changeDirection: boolean;
+  changeEntry: boolean;
+  changeStopLoss: boolean;
+  changeTakeProfit: boolean;
+  suggestedDirection?: "LONG" | "SHORT" | "NO_TRADE";
+  suggestedEntry?: number;
+  suggestedStopLoss?: number;
+  suggestedTakeProfit?: number;
   agreement: "AGREE" | "DISAGREE" | "PARTIAL";
   regime: "TREND" | "RANGE" | "CHOPPY" | "VOLATILE";
   overruledSignals: string[];

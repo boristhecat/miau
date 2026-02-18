@@ -238,6 +238,12 @@
 - [x] Log failed OpenAI HTTP calls with request/response diagnostics to local file
 - [x] Keep runtime behavior non-blocking if logging itself fails
 
+## Task: Simplify AI output to actionable veto/change signals (2026-02-18)
+- [x] Extend AI response schema with veto/change booleans
+- [x] Parse and validate new booleans in OpenAI adapter
+- [x] Replace verbose AI section in setup block with concise veto/change summary
+- [x] Include concrete suggested values when a change flag is true
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

@@ -77,6 +77,11 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "MEDIUM",
+              veto: false,
+              changeDirection: false,
+              changeEntry: false,
+              changeStopLoss: false,
+              changeTakeProfit: false,
               agreement: "AGREE",
               regime: "TREND",
               overruledSignals: [],
@@ -115,6 +120,15 @@ describe("OpenAiAiAdvisor", () => {
                 text: JSON.stringify({
                   bias: "SHORT",
                   confidenceBand: "LOW",
+                  veto: true,
+                  changeDirection: true,
+                  changeEntry: true,
+                  changeStopLoss: true,
+                  changeTakeProfit: true,
+                  suggestedDirection: "SHORT",
+                  suggestedEntry: 100.5,
+                  suggestedStopLoss: 101.2,
+                  suggestedTakeProfit: 98.8,
                   agreement: "DISAGREE",
                   regime: "VOLATILE",
                   overruledSignals: ["Breakout continuation"],
@@ -134,6 +148,10 @@ describe("OpenAiAiAdvisor", () => {
 
     expect(advice.bias).toBe("SHORT");
     expect(advice.regime).toBe("VOLATILE");
+    expect(advice.suggestedDirection).toBe("SHORT");
+    expect(advice.suggestedEntry).toBe(100.5);
+    expect(advice.suggestedStopLoss).toBe(101.2);
+    expect(advice.suggestedTakeProfit).toBe(98.8);
   });
 
   it("rejects invalid agreement field", async () => {
@@ -146,6 +164,11 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "LOW",
+              veto: false,
+              changeDirection: false,
+              changeEntry: false,
+              changeStopLoss: false,
+              changeTakeProfit: false,
               agreement: "MAYBE",
               regime: "TREND",
               overruledSignals: ["EMA cross"],
@@ -160,6 +183,39 @@ describe("OpenAiAiAdvisor", () => {
     const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", httpClient });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow("AI response agreement is invalid.");
+  });
+
+  it("requires suggested value when change flag is true", async () => {
+    const httpClient = new FakeHttpClient();
+    httpClient.postResponse = {
+      model: "gpt-5-mini",
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              bias: "LONG",
+              confidenceBand: "MEDIUM",
+              veto: false,
+              changeDirection: false,
+              changeEntry: true,
+              changeStopLoss: false,
+              changeTakeProfit: false,
+              agreement: "PARTIAL",
+              regime: "RANGE",
+              overruledSignals: [],
+              reasons: ["entry should be improved"],
+              invalidation: "below VWAP",
+              riskNote: "choppy tape"
+            })
+          }
+        }
+      ]
+    };
+    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+
+    await expect(advisor.advise(baseRequest)).rejects.toThrow(
+      "AI response suggestedEntry is required when changeEntry=true."
+    );
   });
 
   it("surfaces OpenAI response error details in thrown message", async () => {

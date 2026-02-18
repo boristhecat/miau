@@ -59,6 +59,11 @@ class FakeAiAdvisor implements AiAdvisorPort {
     return {
       bias: "LONG",
       confidenceBand: "MEDIUM",
+      veto: false,
+      changeDirection: false,
+      changeEntry: false,
+      changeStopLoss: false,
+      changeTakeProfit: false,
       agreement: "AGREE",
       regime: "TREND",
       overruledSignals: [],
