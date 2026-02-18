@@ -55,6 +55,12 @@ function qualityVerdictColor(verdict?: Recommendation["qualityVerdict"]): string
   return colors.white;
 }
 
+function aiAgreementColor(agreement: AiAdvice["agreement"]): string {
+  if (agreement === "AGREE") return colors.brightGreen;
+  if (agreement === "PARTIAL") return colors.brightYellow;
+  return colors.brightRed;
+}
+
 function stripReasonPrefix(line: string): string {
   return line
     .replace(/^No-trade guard:\s*/i, "")
@@ -403,6 +409,16 @@ export class RecommendationPrinter {
     }
     if (aiAdvice) {
       write(`${label("AI Bias")} ${colors.white}${aiAdvice.bias}${colors.reset} ${colors.brightBlack}(${aiAdvice.confidenceBand})${colors.reset}`);
+      write(
+        `${label("AI Align")} ${aiAgreementColor(aiAdvice.agreement)}${aiAdvice.agreement}${colors.reset} ` +
+          `${colors.brightBlack}(regime ${aiAdvice.regime})${colors.reset}`
+      );
+      if (aiAdvice.overruledSignals.length > 0) {
+        write(`${label("AI Override")} ${colors.cyan}- ${aiAdvice.overruledSignals[0]}${colors.reset}`);
+        aiAdvice.overruledSignals.slice(1).forEach((signal) => {
+          write(`${reasonIndent()} ${colors.cyan}- ${signal}${colors.reset}`);
+        });
+      }
       if (aiAdvice.reasons.length > 0) {
         write(`${label("AI Why")} ${colors.cyan}- ${aiAdvice.reasons[0]}${colors.reset}`);
         aiAdvice.reasons.slice(1).forEach((reason) => {

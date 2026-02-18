@@ -59,6 +59,9 @@ class FakeAiAdvisor implements AiAdvisorPort {
     return {
       bias: "LONG",
       confidenceBand: "MEDIUM",
+      agreement: "AGREE",
+      regime: "TREND",
+      overruledSignals: [],
       reasons: ["trend aligned"],
       invalidation: "break below 99",
       riskNote: "volatile session"

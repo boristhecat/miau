@@ -34,13 +34,13 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       body: {
         model: this.model,
         temperature: 0.1,
-        max_tokens: 240,
+        max_completion_tokens: 160,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
             content:
-              "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, reasons, invalidation, riskNote."
+              "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
           },
           {
             role: "user",
@@ -97,9 +97,10 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       "Rules:",
       "- Keep reasons simple for average crypto traders.",
       "- Be conservative when setup quality is weak.",
+      "- Compare your view with the model signal and state agreement clearly.",
       "- Output only valid JSON.",
       "Schema:",
-      '{ "bias":"LONG|SHORT|NO_TRADE", "confidenceBand":"LOW|MEDIUM|HIGH", "reasons":["...","...","..."], "invalidation":"...", "riskNote":"..." }',
+      '{ "bias":"LONG|SHORT|NO_TRADE", "confidenceBand":"LOW|MEDIUM|HIGH", "agreement":"AGREE|DISAGREE|PARTIAL", "regime":"TREND|RANGE|CHOPPY|VOLATILE", "overruledSignals":["..."], "reasons":["...","...","..."], "invalidation":"...", "riskNote":"..." }',
       "Snapshot:",
       JSON.stringify(compact)
     ].join("\n");
@@ -125,6 +126,19 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     if (confidenceBand !== "LOW" && confidenceBand !== "MEDIUM" && confidenceBand !== "HIGH") {
       throw new Error("AI response confidence band is invalid.");
     }
+    const agreement = String(candidate.agreement ?? "").toUpperCase();
+    if (agreement !== "AGREE" && agreement !== "DISAGREE" && agreement !== "PARTIAL") {
+      throw new Error("AI response agreement is invalid.");
+    }
+    const regime = String(candidate.regime ?? "").toUpperCase();
+    if (regime !== "TREND" && regime !== "RANGE" && regime !== "CHOPPY" && regime !== "VOLATILE") {
+      throw new Error("AI response regime is invalid.");
+    }
+    const overruledSignalsRaw = Array.isArray(candidate.overruledSignals) ? candidate.overruledSignals : [];
+    const overruledSignals = overruledSignalsRaw
+      .map((item) => String(item ?? "").trim())
+      .filter((item) => item.length > 0)
+      .slice(0, 4);
     const reasonsRaw = Array.isArray(candidate.reasons) ? candidate.reasons : [];
     const reasons = reasonsRaw
       .map((item) => String(item ?? "").trim())
@@ -142,6 +156,9 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     return {
       bias,
       confidenceBand,
+      agreement,
+      regime,
+      overruledSignals,
       reasons,
       invalidation,
       riskNote

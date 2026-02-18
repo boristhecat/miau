@@ -1,6 +1,9 @@
 export interface AiAdvice {
   bias: "LONG" | "SHORT" | "NO_TRADE";
   confidenceBand: "LOW" | "MEDIUM" | "HIGH";
+  agreement: "AGREE" | "DISAGREE" | "PARTIAL";
+  regime: "TREND" | "RANGE" | "CHOPPY" | "VOLATILE";
+  overruledSignals: string[];
   reasons: string[];
   invalidation: string;
   riskNote: string;

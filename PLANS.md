@@ -217,6 +217,12 @@
 - [x] Keep expected-range-only mode free of AI blocks
 - [x] Update tests and docs to reflect default AI behavior
 
+## Task: Enrich AI secondary opinion with agreement/regime context (2026-02-18)
+- [x] Extend AI response schema with `agreement`, `overruledSignals`, and `regime`
+- [x] Update OpenAI prompt/parsing and type contracts for the new fields
+- [x] Render the new fields in console AI output
+- [x] Add/update tests for mapping and parsing expectations
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
