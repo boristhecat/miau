@@ -79,6 +79,7 @@ export class RecommendationEngine {
       impulseBias,
       pullbackExtended,
       breakoutValidationFailed,
+      breakoutFailureDirection,
       confidenceBreakdown
     } = this.evaluate(
       indicators,
@@ -226,6 +227,7 @@ export class RecommendationEngine {
       impulseBias,
       pullbackExtended,
       breakoutValidationFailed,
+      breakoutFailureDirection,
       interval: baseInterval ?? "1m",
       setupGrade: setupAssessment.setupGrade,
       setupQuality: confidenceBreakdown.setupQuality,
@@ -315,6 +317,7 @@ export class RecommendationEngine {
     impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
     pullbackExtended: boolean;
     breakoutValidationFailed: boolean;
+    breakoutFailureDirection: "UP" | "DOWN" | "NONE";
     regime: "TRADEABLE" | "CHOPPY";
   } {
     let longScore = 0;
@@ -329,6 +332,7 @@ export class RecommendationEngine {
     let impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE" = "NONE";
     let pullbackExtended = false;
     let breakoutValidationFailed = false;
+    let breakoutFailureDirection: "UP" | "DOWN" | "NONE" = "NONE";
 
     const emaTrendWeight = shortHorizon ? 17 : 28;
     if (indicators.ema20 > indicators.ema50) {
@@ -369,11 +373,31 @@ export class RecommendationEngine {
       shortScore += 4;
       rationale.push("RSI supports continuation to the downside.");
     } else if (indicators.rsi14 >= 70) {
-      shortScore += 5;
-      rationale.push("RSI is overbought; upside may be exhausted.");
+      const confirmedBullTrend =
+        marketRegime === "TREND" &&
+        indicators.ema20 >= indicators.ema50 &&
+        lastPrice >= indicators.vwap &&
+        indicators.macdHistogram > 0;
+      if (confirmedBullTrend) {
+        longScore += 2;
+        rationale.push("RSI is overbought but trend structure is bullish; continuation is favored over reversal.");
+      } else {
+        shortScore += 5;
+        rationale.push("RSI is overbought; upside may be exhausted.");
+      }
     } else if (indicators.rsi14 <= 30) {
-      longScore += 5;
-      rationale.push("RSI is oversold; rebound risk is elevated.");
+      const confirmedBearTrend =
+        marketRegime === "TREND" &&
+        indicators.ema20 <= indicators.ema50 &&
+        lastPrice <= indicators.vwap &&
+        indicators.macdHistogram < 0;
+      if (confirmedBearTrend) {
+        shortScore += 2;
+        rationale.push("RSI is oversold but trend structure is bearish; continuation is favored over reversal.");
+      } else {
+        longScore += 5;
+        rationale.push("RSI is oversold; rebound risk is elevated.");
+      }
     } else {
       rationale.push("RSI is neutral.");
     }
@@ -472,6 +496,7 @@ export class RecommendationEngine {
         } else {
           shortScore += 4;
           breakoutValidationFailed = true;
+          breakoutFailureDirection = "UP";
           rationale.push("Breakout check: upside breakout lacks follow-through; fade risk increased.");
         }
       } else if (recent.breakoutDirection === "DOWN") {
@@ -482,9 +507,34 @@ export class RecommendationEngine {
         } else {
           longScore += 4;
           breakoutValidationFailed = true;
+          breakoutFailureDirection = "DOWN";
           rationale.push("Breakout check: downside breakout lacks follow-through; fade risk increased.");
         }
       }
+    }
+
+    const bullishStructureSignals = [
+      indicators.ema20 >= indicators.ema50,
+      lastPrice >= indicators.vwap,
+      indicators.macdHistogram > 0 && indicators.macd >= indicators.macdSignal,
+      (recent?.momentumPct3 ?? 0) > 0,
+      recent?.breakoutDirection === "UP"
+    ].filter(Boolean).length;
+    const bearishStructureSignals = [
+      indicators.ema20 <= indicators.ema50,
+      lastPrice <= indicators.vwap,
+      indicators.macdHistogram < 0 && indicators.macd <= indicators.macdSignal,
+      (recent?.momentumPct3 ?? 0) < 0,
+      recent?.breakoutDirection === "DOWN"
+    ].filter(Boolean).length;
+    if (shortHorizon && bullishStructureSignals >= 4 && bearishStructureSignals <= 1) {
+      longScore += 10;
+      shortScore -= 14;
+      rationale.push("Directional consensus: bullish structure dominates trend, momentum, and flow inputs.");
+    } else if (shortHorizon && bearishStructureSignals >= 4 && bullishStructureSignals <= 1) {
+      shortScore += 10;
+      longScore -= 14;
+      rationale.push("Directional consensus: bearish structure dominates trend, momentum, and flow inputs.");
     }
 
     if (atrPct < 0.8) {
@@ -611,7 +661,8 @@ export class RecommendationEngine {
       marketRegime,
       impulseBias,
       pullbackExtended,
-      breakoutValidationFailed
+      breakoutValidationFailed,
+      breakoutFailureDirection
     };
   }
 
@@ -1116,6 +1167,7 @@ export class RecommendationEngine {
     impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
     pullbackExtended: boolean;
     breakoutValidationFailed: boolean;
+    breakoutFailureDirection: "UP" | "DOWN" | "NONE";
     setupQuality: number;
     confidence: number;
     riskRewardRatio: number;
@@ -1138,10 +1190,20 @@ export class RecommendationEngine {
       return block("avoid fading a strong recent bearish impulse.");
     }
     if (input.pullbackExtended) {
-      return block("trend entry is extended; wait for pullback.");
+      const strictExtensionBlock = intervalMinutes <= 10 && input.setupGrade !== "A";
+      if (strictExtensionBlock) {
+        return block("trend entry is extended; wait for pullback.");
+      }
+      input.rationale.push("Guard advisory: trend entry is extended; continuation allowed only due to strong setup.");
     }
     if (input.breakoutValidationFailed) {
-      return block("breakout failed follow-through validation.");
+      const breakoutFailureAgainstSignal =
+        (input.breakoutFailureDirection === "UP" && input.signal === "LONG") ||
+        (input.breakoutFailureDirection === "DOWN" && input.signal === "SHORT");
+      if (breakoutFailureAgainstSignal) {
+        return block("breakout failed follow-through validation in trade direction.");
+      }
+      input.rationale.push("Guard advisory: breakout follow-through warning detected, but directional edge still dominates.");
     }
     if (input.marketRegime === "LOW_LIQ_CHOP") {
       return block("low-liquidity chop regime.");

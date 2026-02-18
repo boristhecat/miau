@@ -186,6 +186,13 @@
 - [x] Use decomposed failures in adaptive learning policy (reduced penalty for tight-stop rebounds)
 - [x] Add/adjust tests for simulation classification and adaptive-policy behavior
 
+## Task: Reduce false contrarian calls in clear trend structure (2026-02-18)
+- [x] Audit recommendation scoring/guard paths that flip obvious trend continuations
+- [x] Add direction-consensus biasing to avoid shorting strong bullish structure (and vice versa)
+- [x] Relax/target guards so continuation setups are not blocked without true opposition evidence
+- [x] Add regression tests for "looks long/short" directional alignment cases
+- [x] Refresh `docs/CURRENT_STATE.md` to match current runtime behavior and latest signal logic
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

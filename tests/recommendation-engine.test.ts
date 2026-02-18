@@ -578,4 +578,83 @@ describe("RecommendationEngine", () => {
     expect(rec.rationale.some((line) => line.includes("EMA spread is tight"))).toBe(true);
     expect(rec.rationale.some((line) => line.includes("needs at least one fast confirmation"))).toBe(true);
   });
+
+  it("keeps obvious bullish structure as LONG instead of flipping contrarian short", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 74,
+      ema20: 50080,
+      ema50: 49750,
+      macd: 16,
+      macdSignal: 10,
+      macdHistogram: 6,
+      atr14: 120,
+      adx14: 29,
+      bbUpper: 50450,
+      bbMiddle: 50000,
+      bbLower: 49550,
+      stochRsiK: 72,
+      stochRsiD: 68,
+      vwap: 50020,
+      recentCandleContext: {
+        momentumPct3: 0.38,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.32,
+        breakoutDirection: "UP"
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50120,
+      indicators,
+      perp: {
+        ...basePerp,
+        fundingRate: 0.00012,
+        fundingRateAvg: 0.00008,
+        premiumPct: 0.2
+      },
+      baseInterval: "1m"
+    });
+
+    expect(rec.signal).toBe("LONG");
+    expect(rec.rationale.some((line) => line.includes("Directional consensus: bullish structure"))).toBe(true);
+  });
+
+  it("does not auto-block bearish continuation when failed breakout was against the trade direction", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 42,
+      ema20: 49800,
+      ema50: 50200,
+      macd: -14,
+      macdSignal: -9,
+      macdHistogram: -5,
+      atr14: 160,
+      adx14: 27,
+      bbUpper: 50700,
+      bbMiddle: 50000,
+      bbLower: 49300,
+      stochRsiK: 35,
+      stochRsiD: 45,
+      vwap: 50000,
+      recentCandleContext: {
+        momentumPct3: -0.18,
+        bullishCloseRatio5: 0.2,
+        bearishCloseRatio5: 0.6,
+        rangeExpansionRatio: 1.05,
+        breakoutDirection: "UP"
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 49900,
+      indicators,
+      perp: basePerp,
+      baseInterval: "15m"
+    });
+
+    expect(rec.signal).toBe("SHORT");
+    expect(rec.rationale.some((line) => line.includes("breakout follow-through warning"))).toBe(true);
+  });
 });
