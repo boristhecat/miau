@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTradingSymbol } from "../src/application/parse-trading-symbol.js";
+import { parseTradingSymbol } from "../src/adapters/console/trading-symbol-parser.js";
 
 describe("parseTradingSymbol", () => {
   it("normalizes valid symbols to uppercase", () => {

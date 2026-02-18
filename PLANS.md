@@ -203,6 +203,14 @@
 - [x] Keep `rec`/help behavior available only inside interactive prompt
 - [x] Update tests and docs to reflect "no startup args" rule
 
+## Task: Clean Architecture compliance refactor (2026-02-18)
+- [x] Invert use-case dependencies to ports (indicator/recommendation policies, richer market-data contracts)
+- [x] Remove framework/library coupling from domain by moving technical-indicator implementation to adapters
+- [x] Move input parsing from application layer into console adapter layer
+- [x] Extract learning/watch/simulation/rec orchestration out of `cli.ts` into application use-cases/services
+- [x] Route OpenAI adapter through shared HTTP abstraction instead of direct axios calls
+- [x] Update tests/docs and verify build + test after refactor
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

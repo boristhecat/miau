@@ -1,12 +1,9 @@
-export type CliMode = "interactive";
-
 export interface CliInput {
-  mode: CliMode;
+  mode: "interactive";
 }
 
 export function parseCliInput(argv: string[]): CliInput {
   const args = argv.slice(2);
-
   if (args.length === 0) {
     return { mode: "interactive" };
   }

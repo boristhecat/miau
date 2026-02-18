@@ -1,12 +1,12 @@
-import { IndicatorService } from "../domain/indicator-service.js";
-import { RecommendationEngine } from "../domain/recommendation-engine.js";
 import type { Recommendation } from "../domain/types.js";
+import type { IndicatorCalculatorPort } from "../ports/indicator-calculator-port.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
+import type { RecommendationPolicyPort } from "../ports/recommendation-policy-port.js";
 
 interface UseCaseDeps {
   marketData: MarketDataPort;
-  indicatorService: IndicatorService;
-  recommendationEngine: RecommendationEngine;
+  indicatorService: IndicatorCalculatorPort;
+  recommendationEngine: RecommendationPolicyPort;
 }
 
 export class GenerateRecommendationUseCase {

@@ -1,5 +1,6 @@
-import axios from "axios";
 import type { AiAdvice, AiAdviceRequest, AiAdvisorPort } from "../../ports/ai-advisor-port.js";
+import type { HttpClient } from "../http/http-client.js";
+import { AxiosHttpClient } from "../http/axios-http-client.js";
 
 interface OpenAiChatCompletionResponse {
   model?: string;
@@ -13,12 +14,12 @@ interface OpenAiChatCompletionResponse {
 export class OpenAiAiAdvisor implements AiAdvisorPort {
   private readonly apiKey: string;
   private readonly model: string;
-  private readonly timeoutMs: number;
+  private readonly httpClient: HttpClient;
 
-  constructor(input?: { apiKey?: string; model?: string; timeoutMs?: number }) {
+  constructor(input?: { apiKey?: string; model?: string; httpClient?: HttpClient }) {
     this.apiKey = input?.apiKey ?? process.env.OPENAI_API_KEY ?? "";
     this.model = input?.model ?? process.env.MIAU_AI_MODEL ?? "gpt-4o-mini";
-    this.timeoutMs = input?.timeoutMs ?? 3000;
+    this.httpClient = input?.httpClient ?? new AxiosHttpClient("https://api.openai.com");
   }
 
   async advise(input: AiAdviceRequest): Promise<AiAdvice> {
@@ -28,9 +29,9 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
 
     const startedAt = Date.now();
     const prompt = this.buildPrompt(input);
-    const response = await axios.post<OpenAiChatCompletionResponse>(
-      "https://api.openai.com/v1/chat/completions",
-      {
+    const response = await this.httpClient.post<OpenAiChatCompletionResponse>({
+      url: "/v1/chat/completions",
+      body: {
         model: this.model,
         temperature: 0.1,
         max_tokens: 240,
@@ -47,16 +48,13 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
           }
         ]
       },
-      {
-        timeout: this.timeoutMs,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`
-        }
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`
       }
-    );
+    });
 
-    const raw = response.data.choices?.[0]?.message?.content;
+    const raw = response.choices?.[0]?.message?.content;
     if (!raw) {
       throw new Error("AI response was empty.");
     }
@@ -64,7 +62,7 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     const parsed = this.parseResponse(raw);
     return {
       ...parsed,
-      model: response.data.model ?? this.model,
+      model: response.model ?? this.model,
       latencyMs: Date.now() - startedAt
     };
   }

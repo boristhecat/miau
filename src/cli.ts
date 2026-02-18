@@ -3,20 +3,22 @@
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
 import { GenerateAiAdviceUseCase } from "./application/generate-ai-advice-use-case.js";
 import { AdaptiveLearningService } from "./application/adaptive-learning-service.js";
-import { getUsageText, parseCliInput } from "./application/parse-cli-input.js";
-import { parseTradingInput, type TradingInput } from "./application/parse-trading-input.js";
-import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
-import type { RecommendationGenerator } from "./application/rank-top-opportunities-use-case.js";
+import { EvaluateSimulationUseCase } from "./application/evaluate-simulation-use-case.js";
+import { EvaluateWatchSymbolUseCase } from "./application/evaluate-watch-symbol-use-case.js";
+import { RunLearningCycleUseCase } from "./application/run-learning-cycle-use-case.js";
+import { RunRecommendationRankingUseCase } from "./application/run-recommendation-ranking-use-case.js";
+import { intervalToMs, resolveAdaptiveTimeframes, resolveSimulationHorizonMinutes } from "./application/timeframe-policy.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { OpenAiAiAdvisor } from "./adapters/ai/openai-ai-advisor.js";
+import { getUsageText, parseCliInput } from "./adapters/console/cli-input-parser.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { RecommendationPrinter } from "./adapters/console/recommendation-printer.js";
+import { parseTradingInput, type TradingInput } from "./adapters/console/trading-input-parser.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
+import { TechnicalIndicatorService } from "./adapters/indicators/technical-indicator-service.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
 import type { AiAdvice } from "./ports/ai-advisor-port.js";
-import { IndicatorService } from "./domain/indicator-service.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
-import { evaluatePaperTrade } from "./domain/simulation-evaluator.js";
 import type { Recommendation } from "./domain/types.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -161,19 +163,6 @@ async function saveTradeDefaults(defaults: TradeDefaults): Promise<void> {
   await writeFile(DEFAULTS_FILE_PATH, JSON.stringify(defaults, null, 2), "utf8");
 }
 
-function getLearningGates(horizonMinutes: number): { minSetupQuality: number; minConfidence: number } {
-  if (horizonMinutes <= 5) {
-    return { minSetupQuality: 68, minConfidence: 62 };
-  }
-  if (horizonMinutes <= 10) {
-    return { minSetupQuality: 64, minConfidence: 58 };
-  }
-  if (horizonMinutes <= 15) {
-    return { minSetupQuality: 58, minConfidence: 52 };
-  }
-  return { minSetupQuality: 54, minConfidence: 48 };
-}
-
 function ageLabel(updatedAtMs: number): string {
   const sec = Math.max(0, Math.floor((Date.now() - updatedAtMs) / 1000));
   if (sec < 60) return `${sec}s`;
@@ -203,54 +192,6 @@ function scoreColor(value?: number): string {
 function formatPct(value?: number): string {
   if (value === undefined) return "-";
   return `${value.toFixed(2)}%`;
-}
-
-function resolveAdaptiveTimeframes(objectiveHorizon?: string): {
-  timeframe: string;
-  biasTimeframe: string;
-  source: "horizon-adaptive" | "fallback";
-} {
-  if (!objectiveHorizon || !/^\d+$/.test(objectiveHorizon.trim())) {
-    return {
-      timeframe: "1m",
-      biasTimeframe: "15m",
-      source: "fallback"
-    };
-  }
-  const minutes = Number(objectiveHorizon);
-  if (Number.isNaN(minutes) || minutes <= 0) {
-    return {
-      timeframe: "1m",
-      biasTimeframe: "15m",
-      source: "fallback"
-    };
-  }
-  if (minutes <= 10) {
-    return {
-      timeframe: "1m",
-      biasTimeframe: "15m",
-      source: "horizon-adaptive"
-    };
-  }
-  if (minutes <= 30) {
-    return {
-      timeframe: "3m",
-      biasTimeframe: "15m",
-      source: "horizon-adaptive"
-    };
-  }
-  if (minutes <= 90) {
-    return {
-      timeframe: "5m",
-      biasTimeframe: "30m",
-      source: "horizon-adaptive"
-    };
-  }
-  return {
-    timeframe: "15m",
-    biasTimeframe: "1h",
-    source: "horizon-adaptive"
-  };
 }
 
 function renderDashboard(state: DashboardState): void {
@@ -324,15 +265,19 @@ async function main(): Promise<void> {
   const marketData = new BackpackMarketDataClient(httpClient);
   const useCase = new GenerateRecommendationUseCase({
     marketData,
-    indicatorService: new IndicatorService(),
+    indicatorService: new TechnicalIndicatorService(),
     recommendationEngine: new RecommendationEngine()
   });
   const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
   const learning = new AdaptiveLearningService(learningStore);
   const printer = new RecommendationPrinter();
   const aiAdviceUseCase = new GenerateAiAdviceUseCase({
-    aiAdvisor: new OpenAiAiAdvisor()
+    aiAdvisor: new OpenAiAiAdvisor({ httpClient: new AxiosHttpClient("https://api.openai.com") })
   });
+  const rankingUseCase = new RunRecommendationRankingUseCase(useCase, learning, marketData);
+  const learningCycleUseCase = new RunLearningCycleUseCase(logger, useCase, marketData, learning);
+  const watchSymbolUseCase = new EvaluateWatchSymbolUseCase(useCase, learning);
+  const simulationUseCase = new EvaluateSimulationUseCase(marketData);
   let tradeDefaults = await loadTradeDefaults();
 
   if (!cliInput) {
@@ -398,10 +343,7 @@ async function main(): Promise<void> {
       if (normalized === "rec") {
         try {
           dashboard.latestQueryLines = await runRecommendationRanking({
-            logger,
-            recommendationUseCase: useCase,
-            learning,
-            symbolUniverseProvider: marketData,
+            rankingUseCase,
             defaults: tradeDefaults
           });
         } catch (error) {
@@ -452,13 +394,11 @@ async function main(): Promise<void> {
         requestRender();
         learningRunner.intervalId = setInterval(() => {
           void runLearningCycle({
-            logger,
-            runner: learningRunner,
-            recommendationUseCase: useCase,
-            symbolUniverseProvider: marketData,
-            marketData,
+            learningCycleUseCase,
             learning,
+            runner: learningRunner,
             tracker,
+            simulationUseCase,
             onStateChanged: () => {
               syncLearningIndicator();
               requestRender();
@@ -466,13 +406,11 @@ async function main(): Promise<void> {
           });
         }, LEARN_CYCLE_INTERVAL_MINUTES * 60_000);
         void runLearningCycle({
-          logger,
-          runner: learningRunner,
-          recommendationUseCase: useCase,
-          symbolUniverseProvider: marketData,
-          marketData,
+          learningCycleUseCase,
           learning,
+          runner: learningRunner,
           tracker,
+          simulationUseCase,
           onStateChanged: () => {
             syncLearningIndicator();
             requestRender();
@@ -526,8 +464,7 @@ async function main(): Promise<void> {
           const timer = setInterval(() => {
             void runWatchIteration({
               key,
-              useCase,
-              learning,
+              watchSymbolUseCase,
               tracker,
               watchConfig,
               watchSignatures,
@@ -539,8 +476,7 @@ async function main(): Promise<void> {
           watchIntervals.set(key, timer);
           await runWatchIteration({
             key,
-            useCase,
-            learning,
+            watchSymbolUseCase,
             tracker,
             watchConfig,
             watchSignatures,
@@ -647,7 +583,7 @@ async function main(): Promise<void> {
         if (tradeInput.runSimulation) {
           const simulationHorizonMinutes = resolveSimulationHorizonMinutes(tradeInput.objectiveHorizon);
           scheduleSimulation({
-            marketData,
+            simulationUseCase,
             recommendation,
             interval,
             horizonMinutes: simulationHorizonMinutes,
@@ -693,31 +629,20 @@ async function main(): Promise<void> {
 }
 
 async function runRecommendationRanking(input: {
-  logger: ConsoleLogger;
-  recommendationUseCase: GenerateRecommendationUseCase;
-  learning: AdaptiveLearningService;
-  symbolUniverseProvider: BackpackMarketDataClient;
+  rankingUseCase: RunRecommendationRankingUseCase;
   defaults: TradeDefaults;
 }): Promise<string[]> {
   const lines: string[] = [];
   const write = (line = "") => lines.push(line);
-  const adaptiveTimeframes = resolveAdaptiveTimeframes(input.defaults.objectiveHorizon);
-  const learningAwareGenerator: RecommendationGenerator = {
-    execute: async (request) => {
-      const recommendation = await input.recommendationUseCase.execute(request);
-      return input.learning.applyPolicy({
-        recommendation,
-        timeframe: request.interval ?? adaptiveTimeframes.timeframe
-      });
-    }
-  };
-  const rankUseCase = new RankTopOpportunitiesUseCase(learningAwareGenerator, input.symbolUniverseProvider);
+  const result = await input.rankingUseCase.execute({
+    defaults: input.defaults,
+    top: 5,
+    universeLimit: 15
+  });
   write(`${ui.gray}[rec] Fetching top PERP symbols by 24h volume...${ui.reset}`);
-
-  const selected = await input.symbolUniverseProvider.getTopPerpSymbolsByVolumeWithOpenInterest(15);
   write("");
   write(`${ui.bold}${ui.blue}REC UNIVERSE${ui.reset} ${ui.gray}(top 15 by 24h volume)${ui.reset}`);
-  selected.forEach((item, index) => {
+  result.universe.forEach((item, index) => {
     write(
       `${ui.bold}${index + 1}.${ui.reset} ${ui.cyan}${item.symbol}${ui.reset}  ` +
         `${ui.gray}vol24h:${ui.reset} ${item.quoteVolume24h.toFixed(2)}  ` +
@@ -727,23 +652,13 @@ async function runRecommendationRanking(input: {
   write("");
   write(`${ui.gray}[rec] Scanning selected symbols for top recommendations...${ui.reset}`);
 
-  const result = await rankUseCase.execute({
-    symbols: selected.map((item) => item.symbol),
-    interval: adaptiveTimeframes.timeframe,
-    biasInterval: adaptiveTimeframes.biasTimeframe,
-    leverage: input.defaults.leverage,
-    positionSizeUsd: input.defaults.positionSizeUsd,
-    objectiveHorizon: input.defaults.objectiveHorizon,
-    top: 5
-  });
-
-  if (result.ranked.length === 0) {
+  if (result.opportunities.ranked.length === 0) {
     throw new Error("No opportunities found in rec mode.");
   }
 
   write("");
   write(`${ui.bold}${ui.blue}TOP RECOMMENDATIONS${ui.reset} ${ui.gray}(highest -> lowest)${ui.reset}`);
-  result.ranked.forEach((item, index) => {
+  result.opportunities.ranked.forEach((item, index) => {
     const rec = item.recommendation;
     const signalColor = rec.signal === "LONG" ? ui.green : rec.signal === "SHORT" ? ui.red : ui.yellow;
     const probabilityColor =
@@ -763,8 +678,8 @@ async function runRecommendationRanking(input: {
     );
   });
 
-  if (result.skipped.length > 0) {
-    const sample = result.skipped
+  if (result.opportunities.skipped.length > 0) {
+    const sample = result.opportunities.skipped
       .slice(0, 3)
       .map((item) => `${item.symbol}: ${item.reason}`)
       .join(" | ");
@@ -774,30 +689,11 @@ async function runRecommendationRanking(input: {
   return lines;
 }
 
-async function getLearningSymbols(input: {
-  recommendationUseCase: GenerateRecommendationUseCase;
-  symbolUniverseProvider: BackpackMarketDataClient;
-}): Promise<string[]> {
-  const rankUseCase = new RankTopOpportunitiesUseCase(input.recommendationUseCase, input.symbolUniverseProvider);
-  const selected = await input.symbolUniverseProvider.getTopPerpSymbolsByVolumeWithOpenInterest(15);
-  const result = await rankUseCase.execute({
-    symbols: selected.map((item) => item.symbol),
-    top: 5
-  });
-  const ranked = result.ranked.map((row) => row.symbol);
-  if (ranked.length > 0) {
-    return ranked;
-  }
-  return selected.slice(0, 5).map((item) => item.symbol);
-}
-
 async function runLearningCycle(input: {
-  logger: ConsoleLogger;
-  runner: LearningRunnerState;
-  recommendationUseCase: GenerateRecommendationUseCase;
-  symbolUniverseProvider: BackpackMarketDataClient;
-  marketData: BackpackMarketDataClient;
+  learningCycleUseCase: RunLearningCycleUseCase;
   learning: AdaptiveLearningService;
+  runner: LearningRunnerState;
+  simulationUseCase: EvaluateSimulationUseCase;
   tracker: SessionPerformanceTracker;
   onStateChanged?: () => void;
 }): Promise<void> {
@@ -807,68 +703,41 @@ async function runLearningCycle(input: {
   input.runner.cycleRunning = true;
   input.onStateChanged?.();
   try {
-    const symbols = await getLearningSymbols({
-      recommendationUseCase: input.recommendationUseCase,
-      symbolUniverseProvider: input.symbolUniverseProvider
+    const cycle = await input.learningCycleUseCase.execute({
+      horizonsMinutes: LEARN_HORIZONS_MINUTES,
+      active: () => input.runner.active
     });
-    input.runner.symbols = symbols;
+    input.runner.symbols = cycle.symbols;
     input.onStateChanged?.();
 
-    for (const symbol of symbols) {
-      const pair = `${symbol}-USD`;
-      for (const horizonMinutes of LEARN_HORIZONS_MINUTES) {
-        if (!input.runner.active) {
-          return;
-        }
-        let recommendation = await input.recommendationUseCase.execute({
-          pair,
-          interval: "1m",
-          biasInterval: "15m",
-          leverage: 20,
-          positionSizeUsd: 250,
-          objectiveHorizon: String(horizonMinutes)
-        });
-        recommendation = await input.learning.applyPolicy({
-          recommendation,
-          timeframe: "1m"
-        });
-        const gates = getLearningGates(horizonMinutes);
-        if (
-          recommendation.signal === "NO_TRADE" ||
-          recommendation.marketRegime === "LOW_LIQ_CHOP" ||
-          recommendation.confidence < gates.minConfidence ||
-          recommendation.confidenceBreakdown.setupQuality < gates.minSetupQuality
-        ) {
-          continue;
-        }
-        scheduleSimulation({
-          marketData: input.marketData,
-          recommendation,
-          interval: "1m",
-          horizonMinutes,
-          silent: true,
-          timerRegistry: input.runner.pendingTimers,
-          onResult: async (result) => {
-            input.tracker.recordSimulation(pair, result.status, "1m");
-            await input.learning.recordSimulationOutcome({
-              recommendation,
-              timeframe: "1m",
-              horizonMinutes,
-              status: result.status,
-              failureType: result.failureType,
-              directionalCorrect: result.directionalCorrect,
-              maxFavorableExcursionPct: result.maxFavorableExcursionPct,
-              maxAdverseExcursionPct: result.maxAdverseExcursionPct,
-              pnlUsd: result.pnlUsd
-            });
-          }
-        });
-        input.onStateChanged?.();
+    for (const candidate of cycle.candidates) {
+      if (!input.runner.active) {
+        return;
       }
+      scheduleSimulation({
+        simulationUseCase: input.simulationUseCase,
+        recommendation: candidate.recommendation,
+        interval: candidate.interval,
+        horizonMinutes: candidate.horizonMinutes,
+        silent: true,
+        timerRegistry: input.runner.pendingTimers,
+        onResult: async (result) => {
+          input.tracker.recordSimulation(candidate.pair, result.status, candidate.interval);
+          await input.learning.recordSimulationOutcome({
+            recommendation: candidate.recommendation,
+            timeframe: candidate.interval,
+            horizonMinutes: candidate.horizonMinutes,
+            status: result.status,
+            failureType: result.failureType,
+            directionalCorrect: result.directionalCorrect,
+            maxFavorableExcursionPct: result.maxFavorableExcursionPct,
+            maxAdverseExcursionPct: result.maxAdverseExcursionPct,
+            pnlUsd: result.pnlUsd
+          });
+        }
+      });
+      input.onStateChanged?.();
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Learning cycle failed";
-    input.logger.error(`[learn] ${message}`);
   } finally {
     input.runner.cycleRunning = false;
     input.onStateChanged?.();
@@ -938,8 +807,7 @@ function parseWatchCommand(raw: string): WatchConfig {
 
 async function runWatchIteration(input: {
   key: string;
-  useCase: GenerateRecommendationUseCase;
-  learning: AdaptiveLearningService;
+  watchSymbolUseCase: EvaluateWatchSymbolUseCase;
   tracker: SessionPerformanceTracker;
   watchConfig: WatchConfig;
   watchSignatures: Map<string, string>;
@@ -953,48 +821,31 @@ async function runWatchIteration(input: {
   input.watchRunning.add(input.key);
   try {
     const pair = `${input.watchConfig.symbol}-USD`;
-    const adaptiveTimeframes = resolveAdaptiveTimeframes(input.watchConfig.input.objectiveHorizon);
     const cooldownRemainingMs = input.tracker.getCooldownRemainingMs(pair);
     const cooldownAdvisory =
       cooldownRemainingMs > 0 ? `Cooldown advisory ${Math.ceil(cooldownRemainingMs / 60_000)}m` : undefined;
 
-    let recommendation = await input.useCase.execute({
-      pair,
-      forcedDirection: input.watchConfig.input.requestedDirection,
-      interval: adaptiveTimeframes.timeframe,
-      biasInterval: adaptiveTimeframes.biasTimeframe,
-      leverage: input.watchConfig.input.leverage,
-      positionSizeUsd: input.watchConfig.input.positionSizeUsd,
-      objectiveHorizon: input.watchConfig.input.objectiveHorizon
+    const evaluated = await input.watchSymbolUseCase.execute({
+      symbol: input.watchConfig.symbol,
+      objectiveHorizon: input.watchConfig.input.objectiveHorizon ?? "15",
+      requestedDirection: input.watchConfig.input.requestedDirection,
+      leverage: input.watchConfig.input.leverage ?? 20,
+      positionSizeUsd: input.watchConfig.input.positionSizeUsd ?? 250,
+      cooldownAdvisory,
+      calibration: (pairKey, confidence) => input.tracker.applyConfidenceCalibration(pairKey, confidence).confidence
     });
-    recommendation = await input.learning.applyPolicy({
-      recommendation,
-      timeframe: adaptiveTimeframes.timeframe
-    });
-    const calibration = input.tracker.applyConfidenceCalibration(pair, recommendation.confidence);
-    recommendation.confidence = calibration.confidence;
-    const guardSignatureReason = recommendation.rationale.find((line) => line.startsWith("No-trade guard:")) ?? "";
-    const cooldownSignature = cooldownAdvisory ?? "";
-    const signature =
-      `${recommendation.signal}|${recommendation.marketRegime}|${Math.round(recommendation.confidence / 5) * 5}|` +
-      `${guardSignatureReason}|${cooldownSignature}`;
 
-    if (input.watchSignatures.get(input.key) === signature) {
+    if (input.watchSignatures.get(input.key) === evaluated.signature) {
       return;
     }
-    input.watchSignatures.set(input.key, signature);
-    const guardReason =
-      recommendation.signal === "NO_TRADE"
-        ? recommendation.rationale.find((line) => line.startsWith("No-trade guard:"))?.replace("No-trade guard: ", "")
-        : "OK";
-    const reason = cooldownAdvisory ? `${guardReason ? `${guardReason}; ` : ""}${cooldownAdvisory}` : guardReason;
+    input.watchSignatures.set(input.key, evaluated.signature);
     input.watchRows.set(input.key, {
       symbol: input.key,
-      signal: recommendation.signal,
-      regime: recommendation.marketRegime,
-      confidence: recommendation.confidence,
-      setupQuality: recommendation.confidenceBreakdown.setupQuality,
-      reason,
+      signal: evaluated.signal,
+      regime: evaluated.regime,
+      confidence: evaluated.confidence,
+      setupQuality: evaluated.setupQuality,
+      reason: evaluated.reason,
       updatedAtMs: Date.now()
     });
     input.requestRender();
@@ -1073,7 +924,7 @@ async function promptQuickTradeInput(
 }
 
 function scheduleSimulation(input: {
-  marketData: BackpackMarketDataClient;
+  simulationUseCase: EvaluateSimulationUseCase;
   recommendation: Recommendation;
   interval: string;
   horizonMinutes: number;
@@ -1089,77 +940,57 @@ function scheduleSimulation(input: {
   silent?: boolean;
   timerRegistry?: Set<NodeJS.Timeout>;
 }): void {
-  const signal = resolveSimulationSignal(input.recommendation);
-
-  const openedAtMs = Date.now();
   const horizonMs = input.horizonMinutes * 60 * 1000;
-  const timeframeMs = intervalToMs(input.interval);
-  const minLimit = Math.max(120, Math.ceil(horizonMs / Math.max(timeframeMs, 60_000)) + 40);
 
   const timeout = setTimeout(() => {
     void (async () => {
       input.timerRegistry?.delete(timeout);
-    try {
-      const candles = await input.marketData.getCandles({
-        pair: input.recommendation.pair,
-        interval: input.interval,
-        limit: minLimit
-      });
-
-      const outcome = evaluatePaperTrade({
-        trade: {
-          signal,
-          entry: input.recommendation.entry,
-          stopLoss: input.recommendation.stopLoss,
-          takeProfit: input.recommendation.takeProfit,
-          openedAtMs
-        },
-        candles,
-        horizonEndMs: openedAtMs + horizonMs
-      });
-
-      const pnlUsd =
-        input.recommendation.leverage !== undefined && input.recommendation.positionSizeUsd !== undefined
-          ? ((outcome.pnlPct / 100) * input.recommendation.positionSizeUsd * input.recommendation.leverage)
-          : undefined;
-      const outcomeColor = outcome.status === "SUCCESS" ? ui.green : ui.red;
-      const pnlColor = outcome.pnlPct >= 0 ? ui.green : ui.red;
-      const rendered = [
-        `${ui.bold}${ui.blue}SIM RESULT${ui.reset} ${ui.gray}${input.recommendation.pair}${ui.reset}`,
-        `${ui.gray}status:${ui.reset} ${outcomeColor}${ui.bold}${outcome.status}${ui.reset}   ` +
-          `${ui.gray}pnl:${ui.reset} ${pnlColor}${outcome.pnlPct.toFixed(2)}%${ui.reset}` +
-          (pnlUsd !== undefined ? ` ${ui.gray}(${pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)} USDC)${ui.reset}` : ""),
-        `${ui.gray}entry:${ui.reset} ${input.recommendation.entry.toFixed(4)}   ` +
-          `${ui.gray}exit:${ui.reset} ${outcome.exitPrice.toFixed(4)}   ` +
-          `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`,
-        `${ui.gray}reason:${ui.reset} ${outcome.reason}`
-      ];
-      if (input.silent) {
-        // Keep learn-mode background simulations non-intrusive for the interactive dashboard.
-      } else if (input.onRendered) {
-        input.onRendered(rendered);
-      } else {
-        rendered.forEach((line) => console.log(line));
+      try {
+        const outcome = await input.simulationUseCase.execute({
+          recommendation: input.recommendation,
+          interval: input.interval,
+          horizonMinutes: input.horizonMinutes
+        });
+        const outcomeColor = outcome.status === "SUCCESS" ? ui.green : ui.red;
+        const pnlColor = outcome.pnlPct >= 0 ? ui.green : ui.red;
+        const rendered = [
+          `${ui.bold}${ui.blue}SIM RESULT${ui.reset} ${ui.gray}${input.recommendation.pair}${ui.reset}`,
+          `${ui.gray}status:${ui.reset} ${outcomeColor}${ui.bold}${outcome.status}${ui.reset}   ` +
+            `${ui.gray}pnl:${ui.reset} ${pnlColor}${outcome.pnlPct.toFixed(2)}%${ui.reset}` +
+            (outcome.pnlUsd !== undefined
+              ? ` ${ui.gray}(${outcome.pnlUsd >= 0 ? "+" : ""}${outcome.pnlUsd.toFixed(2)} USDC)${ui.reset}`
+              : ""),
+          `${ui.gray}entry:${ui.reset} ${input.recommendation.entry.toFixed(4)}   ` +
+            `${ui.gray}exit:${ui.reset} ${outcome.exitPrice.toFixed(4)}   ` +
+            `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`,
+          `${ui.gray}reason:${ui.reset} ${outcome.reason}`
+        ];
+        if (input.silent) {
+          // Keep learn-mode background simulations non-intrusive for the interactive dashboard.
+        } else if (input.onRendered) {
+          input.onRendered(rendered);
+        } else {
+          rendered.forEach((line) => console.log(line));
+        }
+        await input.onResult?.({
+          status: outcome.status,
+          failureType: outcome.failureType,
+          directionalCorrect: outcome.directionalCorrect,
+          maxFavorableExcursionPct: outcome.maxFavorableExcursionPct,
+          maxAdverseExcursionPct: outcome.maxAdverseExcursionPct,
+          pnlUsd: outcome.pnlUsd
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unhandled simulation error";
+        const rendered = [`${ui.red}[sim] Failed to evaluate ${input.recommendation.pair}: ${message}${ui.reset}`];
+        if (input.silent) {
+          // noop
+        } else if (input.onRendered) {
+          input.onRendered(rendered);
+        } else {
+          rendered.forEach((line) => console.log(line));
+        }
       }
-      await input.onResult?.({
-        status: outcome.status,
-        failureType: outcome.failureType,
-        directionalCorrect: outcome.directionalCorrect,
-        maxFavorableExcursionPct: outcome.maxFavorableExcursionPct,
-        maxAdverseExcursionPct: outcome.maxAdverseExcursionPct,
-        pnlUsd
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unhandled simulation error";
-      const rendered = [`${ui.red}[sim] Failed to evaluate ${input.recommendation.pair}: ${message}${ui.reset}`];
-      if (input.silent) {
-        // noop
-      } else if (input.onRendered) {
-        input.onRendered(rendered);
-      } else {
-        rendered.forEach((line) => console.log(line));
-      }
-    }
     })();
   }, horizonMs);
   input.timerRegistry?.add(timeout);
@@ -1193,45 +1024,6 @@ function parseRequiredNumberInput(value: string | undefined, label: string): num
     throw new Error(`Invalid ${label}. Use a positive number.`);
   }
   return parsed;
-}
-
-function intervalToMs(interval: string): number {
-  const normalized = interval.trim().toLowerCase();
-  const match = normalized.match(/^(\d+)([mhd])$/);
-  if (!match) {
-    return 60_000;
-  }
-
-  const amount = Number(match[1]);
-  const unit = match[2];
-  if (Number.isNaN(amount) || amount <= 0) {
-    return 60_000;
-  }
-  if (unit === "m") return amount * 60_000;
-  if (unit === "h") return amount * 60 * 60_000;
-  return amount * 24 * 60 * 60_000;
-}
-
-function resolveSimulationHorizonMinutes(objectiveHorizon?: string): number {
-  if (!objectiveHorizon) {
-    return 15;
-  }
-  const parsed = Number(objectiveHorizon);
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    return 15;
-  }
-  return parsed;
-}
-
-function resolveSimulationSignal(recommendation: Recommendation): "LONG" | "SHORT" {
-  if (recommendation.signal === "LONG" || recommendation.signal === "SHORT") {
-    return recommendation.signal;
-  }
-  // If recommendation is NO_TRADE, run simulation anyway and infer direction from target levels.
-  if (recommendation.takeProfit < recommendation.entry) {
-    return "SHORT";
-  }
-  return "LONG";
 }
 
 function getInteractiveHelpText(): string {

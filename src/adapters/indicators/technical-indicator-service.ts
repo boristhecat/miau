@@ -1,7 +1,7 @@
 import { ADX, ATR, BollingerBands, EMA, MACD, RSI, StochasticRSI, VWAP } from "technicalindicators";
-import type { Candle, IndicatorSnapshot } from "./types.js";
+import type { Candle, IndicatorSnapshot } from "../../domain/types.js";
 
-export class IndicatorService {
+export class TechnicalIndicatorService {
   calculate(candles: Candle[]): IndicatorSnapshot {
     if (candles.length < 60) {
       throw new Error("At least 60 candles are required to compute indicators reliably.");

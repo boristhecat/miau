@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getUsageText, parseCliInput } from "../src/application/parse-cli-input.js";
+import { getUsageText, parseCliInput } from "../src/adapters/console/cli-input-parser.js";
 
 describe("parseCliInput", () => {
   it("defaults to interactive mode with no args", () => {

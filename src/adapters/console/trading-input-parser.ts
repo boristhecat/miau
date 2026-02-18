@@ -1,4 +1,4 @@
-import { parseTradingSymbol } from "./parse-trading-symbol.js";
+import { parseTradingSymbol } from "./trading-symbol-parser.js";
 
 export interface TradingInput {
   symbol: string;

@@ -28,7 +28,6 @@ Core rules:
 
 Primary responsibilities:
 
-- indicator calculation (`indicator-service.ts`)
 - recommendation scoring, confidence, and guard logic (`recommendation-engine.ts`)
 - targeting policy (`targeting-policy.ts`)
 - simulation outcome evaluation (`simulation-evaluator.ts`)
@@ -44,12 +43,14 @@ Characteristics:
 
 Primary responsibilities:
 
-- parse global CLI mode (`parse-cli-input.ts`)
-- parse interactive trading input (`parse-trading-input.ts`, `parse-trading-symbol.ts`)
 - generate a recommendation (`generate-recommendation-use-case.ts`)
 - generate optional AI advisory (`generate-ai-advice-use-case.ts`)
 - rank top opportunities (`rank-top-opportunities-use-case.ts`)
 - adaptive learning policy orchestration (`adaptive-learning-service.ts`)
+- recommendation ranking orchestration (`run-recommendation-ranking-use-case.ts`)
+- learning cycle orchestration (`run-learning-cycle-use-case.ts`)
+- watch/simulation orchestration (`evaluate-watch-symbol-use-case.ts`, `evaluate-simulation-use-case.ts`)
+- shared timeframe/learning policy helpers (`timeframe-policy.ts`, `learning-gates-policy.ts`)
 
 ### Ports (`src/ports`)
 
@@ -59,6 +60,8 @@ Defined contracts:
 - logging (`logger-port.ts`)
 - AI advisory (`ai-advisor-port.ts`)
 - learning persistence (`learning-store-port.ts`)
+- indicator calculation (`indicator-calculator-port.ts`)
+- recommendation policy (`recommendation-policy-port.ts`)
 
 ### Adapters (`src/adapters`)
 
@@ -66,7 +69,8 @@ Concrete implementations:
 
 - Backpack market data (`backpack/backpack-market-data-client.ts`)
 - HTTP adapter (`http/axios-http-client.ts`)
-- console rendering/logging (`console/*`)
+- console parsing/rendering/logging (`console/*`)
+- technical indicator implementation (`indicators/technical-indicator-service.ts`)
 - SQLite learning store (`persistence/sqlite-learning-store.ts`)
 - OpenAI AI advisor (`ai/openai-ai-advisor.ts`)
 
@@ -78,7 +82,7 @@ Concrete implementations:
 2. Instantiate adapters and services:
    - `AxiosHttpClient`
    - `BackpackMarketDataClient`
-   - `IndicatorService`
+   - `TechnicalIndicatorService`
    - `RecommendationEngine`
    - `GenerateRecommendationUseCase`
    - `AdaptiveLearningService` (with SQLite store)

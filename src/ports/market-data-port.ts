@@ -10,4 +10,8 @@ export interface MarketDataPort {
   getPerpSnapshot(params: { pair: string }): Promise<PerpMarketSnapshot>;
 
   getTopPerpSymbolsByVolume(limit: number): Promise<string[]>;
+
+  getTopPerpSymbolsByVolumeWithOpenInterest(limit: number): Promise<
+    Array<{ symbol: string; quoteVolume24h: number; openInterest: number }>
+  >;
 }

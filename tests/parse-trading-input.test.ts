@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTradingInput } from "../src/application/parse-trading-input.js";
+import { parseTradingInput } from "../src/adapters/console/trading-input-parser.js";
 
 describe("parseTradingInput", () => {
   it("parses symbol only", () => {

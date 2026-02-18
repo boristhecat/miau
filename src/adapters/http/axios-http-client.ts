@@ -17,4 +17,17 @@ export class AxiosHttpClient implements HttpClient {
     const response = await this.client.get<T>(url, { params });
     return response.data;
   }
+
+  async post<T>(input: {
+    url: string;
+    body?: unknown;
+    params?: Record<string, string | number>;
+    headers?: Record<string, string>;
+  }): Promise<T> {
+    const response = await this.client.post<T>(input.url, input.body, {
+      params: input.params,
+      headers: input.headers
+    });
+    return response.data;
+  }
 }
