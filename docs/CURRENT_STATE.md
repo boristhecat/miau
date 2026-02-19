@@ -57,6 +57,7 @@ Last updated: 2026-02-19
 - Learning policy/stats calculations still use only evaluated `SUCCESS`/`FAILURE` outcomes (pending snapshots are excluded from win/loss math).
 - Background learning cycles mirror runtime recommendation configuration (horizon-adaptive base/bias timeframes and active leverage/size defaults).
 - Background learning currently evaluates horizons: `15m`, `30m`, `60m`, `90m`.
+- Learning policy uses hierarchical fallback with shrinkage: specific `(pair,timeframe,regime)` stats blend with `(pair,timeframe)`, `(timeframe,regime)`, and global buckets to avoid unstable sparse-sample behavior.
 - Each learning row persists both policy-friendly scalar fields and a full recommendation snapshot JSON (indicators, market context, confidence breakdown, rationale, and trade levels) for future offline analysis tasks.
 - AI advisory is excluded from learning generation/evaluation; learning uses deterministic engine + simulation outcomes only.
 

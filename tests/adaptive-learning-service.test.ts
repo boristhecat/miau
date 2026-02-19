@@ -65,7 +65,15 @@ function baseRecommendation(): Recommendation {
 }
 
 class FakeLearningStore implements LearningStorePort {
-  constructor(private readonly stats: LearningStatsResult, private readonly overview?: LearningOverview) {}
+  constructor(
+    private readonly stats: {
+      specific: LearningStatsResult;
+      pairTimeframe?: LearningStatsResult;
+      timeframeRegime?: LearningStatsResult;
+      global?: LearningStatsResult;
+    },
+    private readonly overview?: LearningOverview
+  ) {}
 
   public lastRecord?: LearningOutcomeRecord;
 
@@ -73,18 +81,27 @@ class FakeLearningStore implements LearningStorePort {
     this.lastRecord = input;
   }
 
-  async getStats(_input: LearningStatsQuery): Promise<LearningStatsResult> {
-    return this.stats;
+  async getStats(input: LearningStatsQuery): Promise<LearningStatsResult> {
+    if (input.pair && input.timeframe && input.marketRegime) {
+      return this.stats.specific;
+    }
+    if (input.pair && input.timeframe) {
+      return this.stats.pairTimeframe ?? this.stats.specific;
+    }
+    if (input.timeframe && input.marketRegime) {
+      return this.stats.timeframeRegime ?? this.stats.specific;
+    }
+    return this.stats.global ?? this.stats.specific;
   }
 
   async getOverview(_input: { lookbackDays: number }): Promise<LearningOverview> {
     return (
       this.overview ?? {
-        totalSamples: this.stats.samples,
-        wins: Math.round(this.stats.winRate * this.stats.samples),
-        losses: Math.max(0, this.stats.samples - Math.round(this.stats.winRate * this.stats.samples)),
-        winRate: this.stats.winRate,
-        avgPnlUsd: this.stats.avgPnlUsd
+        totalSamples: this.stats.specific.samples,
+        wins: Math.round(this.stats.specific.winRate * this.stats.specific.samples),
+        losses: Math.max(0, this.stats.specific.samples - Math.round(this.stats.specific.winRate * this.stats.specific.samples)),
+        winRate: this.stats.specific.winRate,
+        avgPnlUsd: this.stats.specific.avgPnlUsd
       }
     );
   }
@@ -95,19 +112,28 @@ class FakeLearningStore implements LearningStorePort {
 }
 
 describe("AdaptiveLearningService", () => {
+  const emptyStats: LearningStatsResult = {
+    samples: 0,
+    winRate: 0,
+    avgPnlUsd: 0,
+    recentOutcomes: []
+  };
+
   it("raises confidence and relaxes gates for strong historical performance", async () => {
     const service = new AdaptiveLearningService(
       new FakeLearningStore({
-        samples: 40,
-        winRate: 0.66,
-        avgPnlUsd: 7.5,
-        recentOutcomes: [
-          { status: "SUCCESS", failureType: "NONE" },
-          { status: "SUCCESS", failureType: "NONE" },
-          { status: "SUCCESS", failureType: "NONE" },
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "SUCCESS", failureType: "NONE" }
-        ]
+        specific: {
+          samples: 40,
+          winRate: 0.66,
+          avgPnlUsd: 7.5,
+          recentOutcomes: [
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+            { status: "SUCCESS", failureType: "NONE" }
+          ]
+        }
       })
     );
 
@@ -124,16 +150,18 @@ describe("AdaptiveLearningService", () => {
   it("blocks trade when learned floors are not met", async () => {
     const service = new AdaptiveLearningService(
       new FakeLearningStore({
-        samples: 35,
-        winRate: 0.33,
-        avgPnlUsd: -8.5,
-        recentOutcomes: [
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "FAILURE", failureType: "TIMEOUT_LOSS" },
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "SUCCESS", failureType: "NONE" }
-        ]
+        specific: {
+          samples: 35,
+          winRate: 0.33,
+          avgPnlUsd: -8.5,
+          recentOutcomes: [
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+            { status: "FAILURE", failureType: "TIMEOUT_LOSS" },
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+            { status: "SUCCESS", failureType: "NONE" }
+          ]
+        }
       })
     );
 
@@ -149,10 +177,7 @@ describe("AdaptiveLearningService", () => {
 
   it("records simulation outcomes for persistence", async () => {
     const store = new FakeLearningStore({
-      samples: 0,
-      winRate: 0,
-      avgPnlUsd: 0,
-      recentOutcomes: []
+      specific: emptyStats
     });
     const service = new AdaptiveLearningService(store);
     const rec = baseRecommendation();
@@ -184,10 +209,7 @@ describe("AdaptiveLearningService", () => {
 
   it("records single-query observations as pending samples", async () => {
     const store = new FakeLearningStore({
-      samples: 0,
-      winRate: 0,
-      avgPnlUsd: 0,
-      recentOutcomes: []
+      specific: emptyStats
     });
     const service = new AdaptiveLearningService(store);
     const rec = baseRecommendation();
@@ -205,19 +227,21 @@ describe("AdaptiveLearningService", () => {
     expect(store.lastRecord?.recommendationSnapshot?.entry).toBe(100);
   });
 
-  it("does not apply learning adjustments below activation sample size", async () => {
+  it("does not apply learning adjustments when effective sample size is too low", async () => {
     const service = new AdaptiveLearningService(
       new FakeLearningStore({
-        samples: 20,
-        winRate: 0.2,
-        avgPnlUsd: -10,
-        recentOutcomes: [
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" },
-          { status: "FAILURE", failureType: "WRONG_DIRECTION" }
-        ]
+        specific: {
+          samples: 5,
+          winRate: 0.2,
+          avgPnlUsd: -10,
+          recentOutcomes: [
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" }
+          ]
+        },
+        pairTimeframe: emptyStats,
+        timeframeRegime: emptyStats,
+        global: emptyStats
       })
     );
     const rec = baseRecommendation();
@@ -235,16 +259,18 @@ describe("AdaptiveLearningService", () => {
   it("does not over-penalize tight-stop rebound failures", async () => {
     const service = new AdaptiveLearningService(
       new FakeLearningStore({
-        samples: 36,
-        winRate: 0.4,
-        avgPnlUsd: -1.2,
-        recentOutcomes: [
-          { status: "FAILURE", failureType: "STOP_TOO_TIGHT_REBOUND" },
-          { status: "FAILURE", failureType: "STOP_TOO_TIGHT_REBOUND" },
-          { status: "SUCCESS", failureType: "NONE" },
-          { status: "SUCCESS", failureType: "NONE" },
-          { status: "SUCCESS", failureType: "NONE" }
-        ]
+        specific: {
+          samples: 36,
+          winRate: 0.4,
+          avgPnlUsd: -1.2,
+          recentOutcomes: [
+            { status: "FAILURE", failureType: "STOP_TOO_TIGHT_REBOUND" },
+            { status: "FAILURE", failureType: "STOP_TOO_TIGHT_REBOUND" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" }
+          ]
+        }
       })
     );
 
@@ -255,5 +281,62 @@ describe("AdaptiveLearningService", () => {
 
     expect(rec.signal).toBe("LONG");
     expect(rec.rationale.some((line) => line.includes("tight-stop"))).toBe(true);
+  });
+
+  it("uses broader fallback buckets with shrinkage when pair bucket is sparse", async () => {
+    const service = new AdaptiveLearningService(
+      new FakeLearningStore({
+        specific: {
+          samples: 6,
+          winRate: 0.34,
+          avgPnlUsd: -4.2,
+          recentOutcomes: [
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+            { status: "SUCCESS", failureType: "NONE" }
+          ]
+        },
+        pairTimeframe: {
+          samples: 20,
+          winRate: 0.52,
+          avgPnlUsd: 0.8,
+          recentOutcomes: [
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "FAILURE", failureType: "TIMEOUT_LOSS" }
+          ]
+        },
+        timeframeRegime: {
+          samples: 35,
+          winRate: 0.6,
+          avgPnlUsd: 2.1,
+          recentOutcomes: [
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "FAILURE", failureType: "STOP_TOO_TIGHT_REBOUND" }
+          ]
+        },
+        global: {
+          samples: 90,
+          winRate: 0.62,
+          avgPnlUsd: 2.9,
+          recentOutcomes: [
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "SUCCESS", failureType: "NONE" },
+            { status: "FAILURE", failureType: "WRONG_DIRECTION" },
+            { status: "SUCCESS", failureType: "NONE" }
+          ]
+        }
+      })
+    );
+    const rec = baseRecommendation();
+
+    const adjusted = await service.applyPolicy({
+      recommendation: rec,
+      timeframe: "1m"
+    });
+
+    expect(adjusted.confidence).toBeGreaterThan(58);
+    expect(adjusted.rationale.some((line) => line.includes("blended"))).toBe(true);
   });
 });

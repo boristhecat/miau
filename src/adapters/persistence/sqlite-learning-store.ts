@@ -113,6 +113,7 @@ class SqliteLearningStore implements LearningStorePort {
   }
 
   async getStats(input: LearningStatsQuery): Promise<LearningStatsResult> {
+    const { whereClause, params } = this.buildStatsWhere(input);
     const aggregate =
       this.db
         .prepare(
@@ -121,27 +122,19 @@ class SqliteLearningStore implements LearningStorePort {
             AVG(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0.0 END) AS winRate,
             AVG(COALESCE(pnl_usd, 0)) AS avgPnlUsd
           FROM learning_outcomes
-          WHERE pair = @pair
-            AND timeframe = @timeframe
-            AND market_regime = @marketRegime
-            AND status IN ('SUCCESS', 'FAILURE')
-            AND recorded_at >= datetime('now', '-' || @lookbackDays || ' days')`
+          WHERE ${whereClause}`
         )
-        .get(input) ?? {};
+        .get(params) ?? {};
 
     const recentRows = this.db
       .prepare(
         `SELECT status, failure_type
          FROM learning_outcomes
-         WHERE pair = @pair
-           AND timeframe = @timeframe
-           AND market_regime = @marketRegime
-           AND status IN ('SUCCESS', 'FAILURE')
-           AND recorded_at >= datetime('now', '-' || @lookbackDays || ' days')
+         WHERE ${whereClause}
          ORDER BY id DESC
          LIMIT @limit`
       )
-      .all(input);
+      .all(params);
 
     const samples = Number(aggregate.samples ?? 0);
     if (!samples) {
@@ -161,6 +154,36 @@ class SqliteLearningStore implements LearningStorePort {
           return { status, failureType };
         })
         .filter((value): value is LearningOutcomeSummary => value !== null)
+    };
+  }
+
+  private buildStatsWhere(input: LearningStatsQuery): {
+    whereClause: string;
+    params: Record<string, unknown>;
+  } {
+    const filters: string[] = [
+      "status IN ('SUCCESS', 'FAILURE')",
+      "recorded_at >= datetime('now', '-' || @lookbackDays || ' days')"
+    ];
+    const params: Record<string, unknown> = {
+      lookbackDays: input.lookbackDays,
+      limit: input.limit
+    };
+    if (input.pair) {
+      filters.push("pair = @pair");
+      params.pair = input.pair;
+    }
+    if (input.timeframe) {
+      filters.push("timeframe = @timeframe");
+      params.timeframe = input.timeframe;
+    }
+    if (input.marketRegime) {
+      filters.push("market_regime = @marketRegime");
+      params.marketRegime = input.marketRegime;
+    }
+    return {
+      whereClause: filters.join(" AND "),
+      params
     };
   }
 

@@ -35,34 +35,74 @@ export class AdaptiveLearningService {
     timeframe: string;
     marketRegime: string;
   }): Promise<LearningPolicy> {
-    const stats = await this.store.getStats({
-      pair: input.pair,
-      timeframe: input.timeframe,
-      marketRegime: input.marketRegime,
-      lookbackDays: 14,
-      limit: 120
-    });
-    if (stats.samples < 15) {
+    const lookbackDays = 14;
+    const limit = 120;
+    const [specific, pairTimeframe, timeframeRegime, global] = await Promise.all([
+      this.store.getStats({
+        pair: input.pair,
+        timeframe: input.timeframe,
+        marketRegime: input.marketRegime,
+        lookbackDays,
+        limit
+      }),
+      this.store.getStats({
+        pair: input.pair,
+        timeframe: input.timeframe,
+        lookbackDays,
+        limit
+      }),
+      this.store.getStats({
+        timeframe: input.timeframe,
+        marketRegime: input.marketRegime,
+        lookbackDays,
+        limit
+      }),
+      this.store.getStats({
+        lookbackDays,
+        limit
+      })
+    ]);
+
+    const broaderPriorWinRate = weightedMean(
+      [pairTimeframe.winRate, timeframeRegime.winRate, global.winRate],
+      [pairTimeframe.samples, timeframeRegime.samples, global.samples]
+    );
+    const broaderPriorPnl = weightedMean(
+      [pairTimeframe.avgPnlUsd, timeframeRegime.avgPnlUsd, global.avgPnlUsd],
+      [pairTimeframe.samples, timeframeRegime.samples, global.samples]
+    );
+    const shrinkage = computeShrinkage(specific.samples, 30);
+    const blendedWinRate = blendValue(specific.winRate, broaderPriorWinRate, shrinkage);
+    const blendedAvgPnlUsd = blendValue(specific.avgPnlUsd, broaderPriorPnl, shrinkage);
+    const effectiveSamples = Math.round(
+      specific.samples +
+        pairTimeframe.samples * 0.5 +
+        timeframeRegime.samples * 0.35 +
+        global.samples * 0.2
+    );
+    if (effectiveSamples < 18) {
       return {
         confidenceDelta: 0,
         minConfidence: 45,
         minSetupQuality: 52,
-        sampleSize: stats.samples,
+        sampleSize: specific.samples,
         active: false
       };
     }
 
-    const weightedWinRate = computeWeightedWinRate(stats.recentOutcomes, stats.winRate);
-    const pnlBias = stats.avgPnlUsd >= 0 ? Math.min(5, stats.avgPnlUsd / 4) : -Math.min(5, Math.abs(stats.avgPnlUsd) / 4);
+    const failureContext =
+      [specific, pairTimeframe, timeframeRegime, global].find((item) => item.recentOutcomes.length >= 8) ?? global;
+    const weightedWinRate = computeWeightedWinRate(failureContext.recentOutcomes, blendedWinRate);
+    const pnlBias = blendedAvgPnlUsd >= 0 ? Math.min(5, blendedAvgPnlUsd / 4) : -Math.min(5, Math.abs(blendedAvgPnlUsd) / 4);
     const confidenceDelta = clamp(Math.round((weightedWinRate - 0.5) * 24 + pnlBias), -15, 15);
     const minConfidence =
       weightedWinRate < 0.45 ? 50 : weightedWinRate > 0.58 ? 43 : 45;
     const minSetupQuality =
       weightedWinRate < 0.45 ? 58 : weightedWinRate > 0.58 ? 49 : 52;
-    const recentFailures = stats.recentOutcomes.filter(
+    const recentFailures = failureContext.recentOutcomes.filter(
       (outcome) => outcome.status === "FAILURE" && outcome.failureType !== "STOP_TOO_TIGHT_REBOUND"
     ).length;
-    const tightStopFailures = stats.recentOutcomes.filter(
+    const tightStopFailures = failureContext.recentOutcomes.filter(
       (outcome) => outcome.status === "FAILURE" && outcome.failureType === "STOP_TOO_TIGHT_REBOUND"
     ).length;
     const strictnessBump = recentFailures >= 4 ? 3 : 0;
@@ -71,10 +111,10 @@ export class AdaptiveLearningService {
       confidenceDelta,
       minConfidence: clamp(minConfidence + strictnessBump, 35, 70),
       minSetupQuality: clamp(minSetupQuality + strictnessBump, 40, 75),
-      sampleSize: stats.samples,
-      active: stats.samples >= 30,
+      sampleSize: specific.samples,
+      active: true,
       note:
-        `learning win ${Math.round(weightedWinRate * 100)}% (raw ${Math.round(stats.winRate * 100)}%, tight-stop ${tightStopFailures}) / avg ${stats.avgPnlUsd.toFixed(2)} USDC (${stats.samples} samples)`
+        `learning win ${Math.round(weightedWinRate * 100)}% (specific ${Math.round(specific.winRate * 100)}%, blended ${Math.round(blendedWinRate * 100)}%, tight-stop ${tightStopFailures}) / avg ${blendedAvgPnlUsd.toFixed(2)} USDC (specific ${specific.samples}, effective ${effectiveSamples}, shrink ${Math.round((1 - shrinkage) * 100)}%)`
     };
   }
 
@@ -228,4 +268,33 @@ function computeWeightedWinRate(recentOutcomes: LearningOutcomeSummary[], fallba
     return fallbackWinRate;
   }
   return weightedWins / total;
+}
+
+function computeShrinkage(samples: number, priorStrength: number): number {
+  if (samples <= 0) {
+    return 0;
+  }
+  return samples / (samples + Math.max(1, priorStrength));
+}
+
+function blendValue(primary: number, prior: number, primaryWeight: number): number {
+  return primary * primaryWeight + prior * (1 - primaryWeight);
+}
+
+function weightedMean(values: number[], weights: number[]): number {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i];
+    const weight = weights[i] ?? 0;
+    if (!Number.isFinite(value) || weight <= 0) {
+      continue;
+    }
+    weightedSum += value * weight;
+    totalWeight += weight;
+  }
+  if (totalWeight <= 0) {
+    return 0;
+  }
+  return weightedSum / totalWeight;
 }

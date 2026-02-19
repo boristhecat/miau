@@ -59,9 +59,9 @@ export interface LearningOutcomeRecord {
 }
 
 export interface LearningStatsQuery {
-  pair: string;
-  timeframe: string;
-  marketRegime: string;
+  pair?: string;
+  timeframe?: string;
+  marketRegime?: string;
   lookbackDays: number;
   limit: number;
 }

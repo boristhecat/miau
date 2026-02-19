@@ -355,3 +355,10 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Move session calibration/cooldown policy out of `cli.ts` into application layer
 - [x] Add regression tests for delayed simulation scheduling + time anchoring
 - [x] Run build and test suite
+
+## Task: Hierarchical learning policy + shrinkage (2026-02-19)
+- [x] Extend learning stats query to support optional scope filters
+- [x] Add flexible scoped stats retrieval in SQLite adapter
+- [x] Blend specific + broader bucket stats in adaptive learning policy with sample-size shrinkage
+- [x] Keep failure-type weighting and strictness gating using best-available recent context
+- [x] Update adaptive learning tests for sparse-bucket fallback behavior and run build+tests
