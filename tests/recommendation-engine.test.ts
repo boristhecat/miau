@@ -122,6 +122,35 @@ describe("RecommendationEngine", () => {
     expect(recShortBias.rationale.some((line) => line.includes("15m") && line.includes("bearish"))).toBe(true);
   });
 
+  it("emits horizon/regime weight profile rationale", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 50,
+      ema20: 50010,
+      ema50: 50000,
+      macd: 1,
+      macdSignal: 1,
+      macdHistogram: 0,
+      atr14: 120,
+      adx14: 24,
+      bbUpper: 50200,
+      bbMiddle: 50000,
+      bbLower: 49800,
+      stochRsiK: 50,
+      stochRsiD: 50,
+      vwap: 50000
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      baseInterval: "1m"
+    });
+
+    expect(rec.rationale.some((line) => line.startsWith("Weight profile"))).toBe(true);
+  });
+
   it("computes position-based recommendation when leverage and size are provided", () => {
     const indicators: IndicatorSnapshot = {
       rsi14: 60,

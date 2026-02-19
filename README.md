@@ -154,6 +154,7 @@ Additional market microstructure context:
 - Funding + funding average
 - Mark/index premium
 - Orderbook spread, imbalance, and microprice premium (when depth endpoint is available)
+- Confluence weights adapt by horizon bucket and market regime (deterministic policy in domain layer)
 
 ## Commands
 

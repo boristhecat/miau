@@ -294,6 +294,12 @@
 - [x] Wrap CLI startup initialization in robust error handling
 - [x] Run test + build after cleanup
 
+## Task: Horizon/regime-adaptive indicator weighting (2026-02-19)
+- [x] Add domain policy for deterministic indicator weight profiles by horizon bucket + market regime
+- [x] Integrate weighted scoring channels into recommendation evaluation path
+- [x] Surface active weight profile in rationale output for transparency
+- [x] Add policy tests and regression checks, then verify build + tests
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

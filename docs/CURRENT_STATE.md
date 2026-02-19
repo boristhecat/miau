@@ -38,6 +38,7 @@ Last updated: 2026-02-18
 - Indicators: RSI(14), EMA(20/50), MACD(12,26,9), ATR(14), ADX(14), Bollinger Bands(20,2), StochRSI, VWAP, OBV slope, MFI(14), CMF(20), volume z-score, short CVD delta proxy.
 - Additional context: funding, premium, open interest (+delta when available), optional orderbook microstructure (spread/imbalance/microprice), recent-candle impulse/breakout context.
 - Market regime classes: `TREND`, `RANGE`, `VOLATILE_SPIKE`, `LOW_LIQ_CHOP`.
+- Indicator confluence weights are adaptive by horizon bucket (`1-10m`, `10-30m`, `30-90m`, `90m+`) and regime; short horizons emphasize momentum/flow/microstructure, while longer horizons emphasize trend/volatility.
 - Signal scoring now includes directional-consensus weighting to reduce false contrarian flips on clear trend structure.
 - Overbought/oversold RSI handling is trend-aware (less aggressive reversal bias when structure strongly confirms continuation).
 - Guard behavior is less binary:
