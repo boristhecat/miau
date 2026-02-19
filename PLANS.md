@@ -218,6 +218,24 @@
 - [x] Update tests and docs to reflect default AI behavior
 
 ## Task: Enrich AI secondary opinion with agreement/regime context (2026-02-18)
+
+## Task: Align learning cycle with live engine settings (2026-02-19)
+- [x] Pass runtime defaults (leverage, size) into learning cycle generation
+- [x] Use horizon-adaptive base/bias timeframe per learning candidate horizon
+- [x] Add regression tests for learning-cycle input mapping and candidate interval output
+- [x] Update current-state docs to state that learning excludes AI advisory and mirrors runtime timeframe policy
+
+## Task: Standardize learning horizons (2026-02-19)
+- [x] Restrict background learning horizons to 15/30/60/90 minutes
+- [x] Update docs/help-visible behavior accordingly
+- [x] Run test suite
+
+## Task: Persist rich learning snapshots (2026-02-19)
+- [x] Extend learning outcome contract with recommendation snapshot payload
+- [x] Persist snapshot JSON and key analysis fields in SQLite (with migration-safe column adds)
+- [x] Record full recommendation context during simulation outcome writes
+- [x] Add/adjust tests for snapshot persistence contract
+- [x] Update state docs and run full tests
 - [x] Extend AI response schema with `agreement`, `overruledSignals`, and `regime`
 - [x] Update OpenAI prompt/parsing and type contracts for the new fields
 - [x] Render the new fields in console AI output
@@ -323,3 +341,10 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - `npm run build` succeeds
 - `npm test` succeeds
 - Architecture boundaries from `AGENTS.md` are respected
+
+## Task: Persist single-symbol query snapshots into learning data (2026-02-19)
+- [x] Add a query-observation persistence path in adaptive learning service
+- [x] Extend learning outcome model/storage to support non-evaluated query rows
+- [x] Record single-symbol recommendations after generation in interactive flow
+- [x] Keep adaptive policy stats based only on evaluated SUCCESS/FAILURE outcomes
+- [x] Add/update tests for new persistence and stats filtering behavior

@@ -49,18 +49,34 @@ class SqliteLearningStore implements LearningStorePort {
         signal TEXT NOT NULL,
         confidence REAL NOT NULL,
         setup_quality REAL NOT NULL,
+        setup_grade TEXT,
+        analysis_interval TEXT,
+        analysis_bias_interval TEXT,
+        entry REAL,
+        stop_loss REAL,
+        take_profit REAL,
+        risk_reward_ratio REAL,
         status TEXT NOT NULL,
         failure_type TEXT NOT NULL DEFAULT 'NONE',
         directional_correct INTEGER,
         mfe_pct REAL,
         mae_pct REAL,
-        pnl_usd REAL
+        pnl_usd REAL,
+        recommendation_snapshot_json TEXT NOT NULL DEFAULT '{}'
       )`
     ).run();
     this.ensureColumn("learning_outcomes", "failure_type", "TEXT NOT NULL DEFAULT 'NONE'");
     this.ensureColumn("learning_outcomes", "directional_correct", "INTEGER");
     this.ensureColumn("learning_outcomes", "mfe_pct", "REAL");
     this.ensureColumn("learning_outcomes", "mae_pct", "REAL");
+    this.ensureColumn("learning_outcomes", "setup_grade", "TEXT");
+    this.ensureColumn("learning_outcomes", "analysis_interval", "TEXT");
+    this.ensureColumn("learning_outcomes", "analysis_bias_interval", "TEXT");
+    this.ensureColumn("learning_outcomes", "entry", "REAL");
+    this.ensureColumn("learning_outcomes", "stop_loss", "REAL");
+    this.ensureColumn("learning_outcomes", "take_profit", "REAL");
+    this.ensureColumn("learning_outcomes", "risk_reward_ratio", "REAL");
+    this.ensureColumn("learning_outcomes", "recommendation_snapshot_json", "TEXT NOT NULL DEFAULT '{}'");
     this.db.prepare(
       `CREATE INDEX IF NOT EXISTS idx_learning_outcomes_lookup
        ON learning_outcomes(pair, timeframe, market_regime, recorded_at)`
@@ -71,16 +87,28 @@ class SqliteLearningStore implements LearningStorePort {
     this.db.prepare(
       `INSERT INTO learning_outcomes (
         pair, symbol, timeframe, horizon_minutes, market_regime,
-        signal, confidence, setup_quality, status, failure_type, directional_correct, mfe_pct, mae_pct, pnl_usd
+        signal, confidence, setup_quality, setup_grade, analysis_interval, analysis_bias_interval,
+        entry, stop_loss, take_profit, risk_reward_ratio,
+        status, failure_type, directional_correct, mfe_pct, mae_pct, pnl_usd, recommendation_snapshot_json
       ) VALUES (
         @pair, @symbol, @timeframe, @horizonMinutes, @marketRegime,
-        @signal, @confidence, @setupQuality, @status, @failureType, @directionalCorrect, @maxFavorableExcursionPct, @maxAdverseExcursionPct, @pnlUsd
+        @signal, @confidence, @setupQuality, @setupGrade, @analysisInterval, @analysisBiasInterval,
+        @entry, @stopLoss, @takeProfit, @riskRewardRatio,
+        @status, @failureType, @directionalCorrect, @maxFavorableExcursionPct, @maxAdverseExcursionPct, @pnlUsd, @recommendationSnapshotJson
       )`
     ).run({
       ...input,
+      setupGrade: input.recommendationSnapshot?.setupGrade ?? null,
+      analysisInterval: input.recommendationSnapshot?.analysisInterval ?? null,
+      analysisBiasInterval: input.recommendationSnapshot?.analysisBiasInterval ?? null,
+      entry: input.recommendationSnapshot?.entry ?? null,
+      stopLoss: input.recommendationSnapshot?.stopLoss ?? null,
+      takeProfit: input.recommendationSnapshot?.takeProfit ?? null,
+      riskRewardRatio: input.recommendationSnapshot?.riskRewardRatio ?? null,
       failureType: input.failureType ?? "NONE",
       directionalCorrect:
-        input.directionalCorrect === undefined ? null : input.directionalCorrect ? 1 : 0
+        input.directionalCorrect === undefined ? null : input.directionalCorrect ? 1 : 0,
+      recommendationSnapshotJson: toJsonString(input.recommendationSnapshot ?? {})
     });
   }
 
@@ -96,6 +124,7 @@ class SqliteLearningStore implements LearningStorePort {
           WHERE pair = @pair
             AND timeframe = @timeframe
             AND market_regime = @marketRegime
+            AND status IN ('SUCCESS', 'FAILURE')
             AND recorded_at >= datetime('now', '-' || @lookbackDays || ' days')`
         )
         .get(input) ?? {};
@@ -107,6 +136,7 @@ class SqliteLearningStore implements LearningStorePort {
          WHERE pair = @pair
            AND timeframe = @timeframe
            AND market_regime = @marketRegime
+           AND status IN ('SUCCESS', 'FAILURE')
            AND recorded_at >= datetime('now', '-' || @lookbackDays || ' days')
          ORDER BY id DESC
          LIMIT @limit`
@@ -145,7 +175,8 @@ class SqliteLearningStore implements LearningStorePort {
             AVG(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0.0 END) AS winRate,
             AVG(COALESCE(pnl_usd, 0)) AS avgPnlUsd
           FROM learning_outcomes
-          WHERE recorded_at >= datetime('now', '-' || @lookbackDays || ' days')`
+          WHERE status IN ('SUCCESS', 'FAILURE')
+            AND recorded_at >= datetime('now', '-' || @lookbackDays || ' days')`
         )
         .get(input) ?? {};
 
@@ -176,7 +207,8 @@ class SqliteLearningStore implements LearningStorePort {
            AVG(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0.0 END) AS winRate,
            AVG(COALESCE(pnl_usd, 0)) AS avgPnlUsd
          FROM learning_outcomes
-         WHERE recorded_at >= datetime('now', '-' || @lookbackDays || ' days')
+         WHERE status IN ('SUCCESS', 'FAILURE')
+           AND recorded_at >= datetime('now', '-' || @lookbackDays || ' days')
          GROUP BY timeframe, horizonBucket
          ORDER BY
            CASE
@@ -206,6 +238,14 @@ class SqliteLearningStore implements LearningStorePort {
     if (!exists) {
       this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
     }
+  }
+}
+
+function toJsonString(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "{}";
   }
 }
 

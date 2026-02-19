@@ -121,7 +121,7 @@ interface LearningRunnerState {
   symbols: string[];
 }
 
-const LEARN_HORIZONS_MINUTES = [5, 10, 15, 30, 60, 90] as const;
+const LEARN_HORIZONS_MINUTES = [15, 30, 60, 90] as const;
 const LEARN_CYCLE_INTERVAL_MINUTES = 10;
 
 interface TradeDefaults {
@@ -453,6 +453,7 @@ async function main(): Promise<void> {
             runner: learningRunner,
             tracker,
             simulationUseCase,
+            defaults: tradeDefaults,
             onStateChanged: () => {
               syncLearningIndicator();
               requestRender();
@@ -465,6 +466,7 @@ async function main(): Promise<void> {
           runner: learningRunner,
           tracker,
           simulationUseCase,
+          defaults: tradeDefaults,
           onStateChanged: () => {
             syncLearningIndicator();
             requestRender();
@@ -658,6 +660,20 @@ async function main(): Promise<void> {
         }
         requestRender();
 
+        try {
+          await learning.recordQueryObservation({
+            recommendation,
+            timeframe: interval,
+            horizonMinutes: resolveSimulationHorizonMinutes(
+              tradeInput.expectedRangeHorizon ?? tradeInput.objectiveHorizon
+            )
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to store query observation";
+          dashboard.latestQueryLines.push(`${ui.yellow}[learning] ${message}${ui.reset}`);
+          requestRender();
+        }
+
         if (tradeInput.runSimulation) {
           const simulationHorizonMinutes = resolveSimulationHorizonMinutes(tradeInput.objectiveHorizon);
           scheduleSimulation({
@@ -773,6 +789,7 @@ async function runLearningCycle(input: {
   runner: LearningRunnerState;
   simulationUseCase: EvaluateSimulationUseCase;
   tracker: SessionPerformanceTracker;
+  defaults: Pick<TradeDefaults, "leverage" | "positionSizeUsd">;
   onStateChanged?: () => void;
 }): Promise<void> {
   if (!input.runner.active || input.runner.cycleRunning) {
@@ -783,6 +800,8 @@ async function runLearningCycle(input: {
   try {
     const cycle = await input.learningCycleUseCase.execute({
       horizonsMinutes: LEARN_HORIZONS_MINUTES,
+      leverage: input.defaults.leverage,
+      positionSizeUsd: input.defaults.positionSizeUsd,
       active: () => input.runner.active
     });
     input.runner.symbols = cycle.symbols;

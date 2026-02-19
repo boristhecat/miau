@@ -2,6 +2,7 @@ import type { Recommendation } from "../domain/types.js";
 import type {
   LearningBucketRow,
   LearningOutcomeRecord,
+  LearningRecommendationSnapshot,
   LearningOverview,
   LearningOutcomeSummary,
   LearningStorePort,
@@ -121,6 +122,27 @@ export class AdaptiveLearningService {
     pnlUsd?: number;
   }): Promise<void> {
     const symbol = input.recommendation.pair.split("-")[0] ?? input.recommendation.pair;
+    const recommendationSnapshot: LearningRecommendationSnapshot = {
+      analysisInterval: input.recommendation.analysisInterval,
+      analysisBiasInterval: input.recommendation.analysisBiasInterval,
+      modelSignal: input.recommendation.modelSignal,
+      requestedDirection: input.recommendation.requestedDirection,
+      qualityVerdict: input.recommendation.qualityVerdict,
+      setupGrade: input.recommendation.setupGrade,
+      entry: input.recommendation.entry,
+      stopLoss: input.recommendation.stopLoss,
+      takeProfit: input.recommendation.takeProfit,
+      riskRewardRatio: input.recommendation.riskRewardRatio,
+      expectedLow: input.recommendation.expectedLow,
+      expectedHigh: input.recommendation.expectedHigh,
+      objectiveHorizon: input.recommendation.objectiveHorizon,
+      objectiveHorizonMinutes: input.recommendation.objectiveHorizonMinutes,
+      objectiveHorizonCandles: input.recommendation.objectiveHorizonCandles,
+      confidenceBreakdown: input.recommendation.confidenceBreakdown,
+      indicators: input.recommendation.indicators as unknown as Record<string, unknown>,
+      perp: input.recommendation.perp as unknown as Record<string, unknown>,
+      rationale: [...input.recommendation.rationale]
+    };
     const record: LearningOutcomeRecord = {
       pair: input.recommendation.pair,
       symbol,
@@ -135,7 +157,50 @@ export class AdaptiveLearningService {
       directionalCorrect: input.directionalCorrect,
       maxFavorableExcursionPct: input.maxFavorableExcursionPct,
       maxAdverseExcursionPct: input.maxAdverseExcursionPct,
-      pnlUsd: input.pnlUsd
+      pnlUsd: input.pnlUsd,
+      recommendationSnapshot
+    };
+    await this.store.recordOutcome(record);
+  }
+
+  async recordQueryObservation(input: {
+    recommendation: Recommendation;
+    timeframe: string;
+    horizonMinutes: number;
+  }): Promise<void> {
+    const symbol = input.recommendation.pair.split("-")[0] ?? input.recommendation.pair;
+    const recommendationSnapshot: LearningRecommendationSnapshot = {
+      analysisInterval: input.recommendation.analysisInterval,
+      analysisBiasInterval: input.recommendation.analysisBiasInterval,
+      modelSignal: input.recommendation.modelSignal,
+      requestedDirection: input.recommendation.requestedDirection,
+      qualityVerdict: input.recommendation.qualityVerdict,
+      setupGrade: input.recommendation.setupGrade,
+      entry: input.recommendation.entry,
+      stopLoss: input.recommendation.stopLoss,
+      takeProfit: input.recommendation.takeProfit,
+      riskRewardRatio: input.recommendation.riskRewardRatio,
+      expectedLow: input.recommendation.expectedLow,
+      expectedHigh: input.recommendation.expectedHigh,
+      objectiveHorizon: input.recommendation.objectiveHorizon,
+      objectiveHorizonMinutes: input.recommendation.objectiveHorizonMinutes,
+      objectiveHorizonCandles: input.recommendation.objectiveHorizonCandles,
+      confidenceBreakdown: input.recommendation.confidenceBreakdown,
+      indicators: input.recommendation.indicators as unknown as Record<string, unknown>,
+      perp: input.recommendation.perp as unknown as Record<string, unknown>,
+      rationale: [...input.recommendation.rationale]
+    };
+    const record: LearningOutcomeRecord = {
+      pair: input.recommendation.pair,
+      symbol,
+      timeframe: input.timeframe,
+      horizonMinutes: input.horizonMinutes,
+      marketRegime: input.recommendation.marketRegime,
+      signal: input.recommendation.signal,
+      confidence: input.recommendation.confidence,
+      setupQuality: input.recommendation.confidenceBreakdown.setupQuality,
+      status: "PENDING",
+      recommendationSnapshot
     };
     await this.store.recordOutcome(record);
   }

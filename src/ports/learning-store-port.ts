@@ -1,4 +1,4 @@
-export type OutcomeStatus = "SUCCESS" | "FAILURE";
+export type OutcomeStatus = "SUCCESS" | "FAILURE" | "PENDING";
 export type OutcomeFailureType =
   | "NONE"
   | "WRONG_DIRECTION"
@@ -9,6 +9,35 @@ export type OutcomeFailureType =
 export interface LearningOutcomeSummary {
   status: OutcomeStatus;
   failureType: OutcomeFailureType;
+}
+
+export interface LearningRecommendationSnapshot {
+  analysisInterval?: string;
+  analysisBiasInterval?: string;
+  modelSignal?: "LONG" | "SHORT";
+  requestedDirection?: "LONG" | "SHORT";
+  qualityVerdict?: "VALID" | "WEAK";
+  setupGrade: "A" | "B" | "C" | "D";
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskRewardRatio: number;
+  expectedLow?: number;
+  expectedHigh?: number;
+  objectiveHorizon?: string;
+  objectiveHorizonMinutes?: number;
+  objectiveHorizonCandles?: number;
+  confidenceBreakdown: {
+    trend: number;
+    momentum: number;
+    volatility: number;
+    structure: number;
+    context: number;
+    setupQuality: number;
+  };
+  indicators: Record<string, unknown>;
+  perp: Record<string, unknown>;
+  rationale: string[];
 }
 
 export interface LearningOutcomeRecord {
@@ -26,6 +55,7 @@ export interface LearningOutcomeRecord {
   maxFavorableExcursionPct?: number;
   maxAdverseExcursionPct?: number;
   pnlUsd?: number;
+  recommendationSnapshot?: LearningRecommendationSnapshot;
 }
 
 export interface LearningStatsQuery {

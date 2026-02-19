@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Last updated: 2026-02-18
+Last updated: 2026-02-19
 
 ## Summary
 - `miau-trader` is a TypeScript CLI that produces crypto trade suggestions from Backpack public market data.
@@ -53,6 +53,12 @@ Last updated: 2026-02-18
 ## Learning + Persistence
 - Local learning outcomes are stored in SQLite (`data/learning.sqlite`).
 - Adaptive learning adjusts confidence calibration and gating from simulated outcomes.
+- Every single-symbol query now also writes a `PENDING` recommendation snapshot row to learning storage for offline analysis history.
+- Learning policy/stats calculations still use only evaluated `SUCCESS`/`FAILURE` outcomes (pending snapshots are excluded from win/loss math).
+- Background learning cycles mirror runtime recommendation configuration (horizon-adaptive base/bias timeframes and active leverage/size defaults).
+- Background learning currently evaluates horizons: `15m`, `30m`, `60m`, `90m`.
+- Each learning row persists both policy-friendly scalar fields and a full recommendation snapshot JSON (indicators, market context, confidence breakdown, rationale, and trade levels) for future offline analysis tasks.
+- AI advisory is excluded from learning generation/evaluation; learning uses deterministic engine + simulation outcomes only.
 
 ## Tooling
 - Node.js `>=20`

@@ -175,6 +175,34 @@ describe("AdaptiveLearningService", () => {
     expect(store.lastRecord?.failureType).toBe("NONE");
     expect(store.lastRecord?.directionalCorrect).toBe(true);
     expect(store.lastRecord?.pnlUsd).toBe(12.3);
+    expect(store.lastRecord?.recommendationSnapshot?.entry).toBe(100);
+    expect(store.lastRecord?.recommendationSnapshot?.setupGrade).toBe("B");
+    expect(store.lastRecord?.recommendationSnapshot?.confidenceBreakdown.setupQuality).toBe(56);
+    expect(store.lastRecord?.recommendationSnapshot?.indicators).toBeDefined();
+    expect(store.lastRecord?.recommendationSnapshot?.perp).toBeDefined();
+  });
+
+  it("records single-query observations as pending samples", async () => {
+    const store = new FakeLearningStore({
+      samples: 0,
+      winRate: 0,
+      avgPnlUsd: 0,
+      recentOutcomes: []
+    });
+    const service = new AdaptiveLearningService(store);
+    const rec = baseRecommendation();
+
+    await service.recordQueryObservation({
+      recommendation: rec,
+      timeframe: "1m",
+      horizonMinutes: 15
+    });
+
+    expect(store.lastRecord).toBeDefined();
+    expect(store.lastRecord?.pair).toBe("BTC-USD");
+    expect(store.lastRecord?.status).toBe("PENDING");
+    expect(store.lastRecord?.horizonMinutes).toBe(15);
+    expect(store.lastRecord?.recommendationSnapshot?.entry).toBe(100);
   });
 
   it("does not apply learning adjustments below activation sample size", async () => {
