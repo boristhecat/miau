@@ -8,7 +8,9 @@ import { EvaluateWatchSymbolUseCase } from "./application/evaluate-watch-symbol-
 import { RunLearningCycleUseCase } from "./application/run-learning-cycle-use-case.js";
 import { RunLearningBucketReportUseCase } from "./application/run-learning-bucket-report-use-case.js";
 import { RunRecommendationRankingUseCase } from "./application/run-recommendation-ranking-use-case.js";
-import { intervalToMs, resolveAdaptiveTimeframes, resolveSimulationHorizonMinutes } from "./application/timeframe-policy.js";
+import { ScheduleSimulationUseCase } from "./application/schedule-simulation-use-case.js";
+import { SessionPerformanceService } from "./application/session-performance-service.js";
+import { resolveAdaptiveTimeframes, resolveSimulationHorizonMinutes } from "./application/timeframe-policy.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { OpenAiAiAdvisor } from "./adapters/ai/openai-ai-advisor.js";
 import { getUsageText, parseCliInput } from "./adapters/console/cli-input-parser.js";
@@ -39,58 +41,6 @@ const ui = {
   gray: "\u001b[90m",
   blue: "\u001b[34m"
 };
-
-interface SessionStats {
-  wins: number;
-  losses: number;
-}
-
-class SessionPerformanceTracker {
-  private readonly byPair = new Map<string, SessionStats>();
-  private readonly cooldownUntilMsByPair = new Map<string, number>();
-
-  applyConfidenceCalibration(pair: string, confidence: number): { confidence: number; note?: string } {
-    const stats = this.byPair.get(pair);
-    if (!stats) {
-      return { confidence };
-    }
-    const samples = stats.wins + stats.losses;
-    if (samples < 3) {
-      return { confidence };
-    }
-    const winRate = stats.wins / Math.max(samples, 1);
-    const delta = Math.round((winRate - 0.5) * 20);
-    if (delta === 0) {
-      return { confidence };
-    }
-    const adjusted = Math.min(99, Math.max(1, confidence + delta));
-    return {
-      confidence: adjusted,
-      note: `session calibration ${delta >= 0 ? "+" : ""}${delta}% from ${samples} sims (${Math.round(winRate * 100)}% win)`
-    };
-  }
-
-  recordSimulation(pair: string, status: "SUCCESS" | "FAILURE", interval: string): void {
-    const current = this.byPair.get(pair) ?? { wins: 0, losses: 0 };
-    if (status === "SUCCESS") {
-      current.wins += 1;
-    } else {
-      current.losses += 1;
-      const intervalMs = intervalToMs(interval);
-      const cooldownMs = Math.max(intervalMs, 60_000) * 8;
-      this.cooldownUntilMsByPair.set(pair, Date.now() + cooldownMs);
-    }
-    this.byPair.set(pair, current);
-  }
-
-  getCooldownRemainingMs(pair: string): number {
-    const until = this.cooldownUntilMsByPair.get(pair);
-    if (!until) {
-      return 0;
-    }
-    return Math.max(0, until - Date.now());
-  }
-}
 
 interface WatchRow {
   symbol: string;
@@ -168,7 +118,9 @@ async function loadTradeDefaults(): Promise<TradeDefaults> {
       leverage: Number.isFinite(parsed.leverage) ? Number(parsed.leverage) : FALLBACK_TRADE_DEFAULTS.leverage,
       positionSizeUsd: Number.isFinite(parsed.positionSizeUsd) ? Number(parsed.positionSizeUsd) : FALLBACK_TRADE_DEFAULTS.positionSizeUsd,
       objectiveHorizon:
-        typeof parsed.objectiveHorizon === "string" && /^\d+$/.test(parsed.objectiveHorizon)
+        typeof parsed.objectiveHorizon === "string" &&
+        /^\d+$/.test(parsed.objectiveHorizon) &&
+        Number(parsed.objectiveHorizon) > 0
           ? parsed.objectiveHorizon
           : FALLBACK_TRADE_DEFAULTS.objectiveHorizon,
       aiModel:
@@ -296,6 +248,7 @@ async function main(): Promise<void> {
   let learningCycleUseCase: RunLearningCycleUseCase;
   let watchSymbolUseCase: EvaluateWatchSymbolUseCase;
   let simulationUseCase: EvaluateSimulationUseCase;
+  let simulationScheduler: ScheduleSimulationUseCase;
 
   const createAiAdviceUseCase = (defaults: TradeDefaults): GenerateAiAdviceUseCase =>
     new GenerateAiAdviceUseCase({
@@ -325,6 +278,7 @@ async function main(): Promise<void> {
     learningCycleUseCase = new RunLearningCycleUseCase(logger, useCase, marketData, learning);
     watchSymbolUseCase = new EvaluateWatchSymbolUseCase(useCase, learning);
     simulationUseCase = new EvaluateSimulationUseCase(marketData);
+    simulationScheduler = new ScheduleSimulationUseCase(simulationUseCase);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to initialize runtime dependencies.";
     logger.error(message);
@@ -339,7 +293,7 @@ async function main(): Promise<void> {
   }
 
   const rl = readline.createInterface({ input, output });
-  const tracker = new SessionPerformanceTracker();
+  const tracker = new SessionPerformanceService();
   const watchIntervals = new Map<string, NodeJS.Timeout>();
   const watchSignatures = new Map<string, string>();
   const watchRunning = new Set<string>();
@@ -452,7 +406,7 @@ async function main(): Promise<void> {
             learning,
             runner: learningRunner,
             tracker,
-            simulationUseCase,
+            simulationScheduler,
             defaults: tradeDefaults,
             onStateChanged: () => {
               syncLearningIndicator();
@@ -465,7 +419,7 @@ async function main(): Promise<void> {
           learning,
           runner: learningRunner,
           tracker,
-          simulationUseCase,
+          simulationScheduler,
           defaults: tradeDefaults,
           onStateChanged: () => {
             syncLearningIndicator();
@@ -676,12 +630,19 @@ async function main(): Promise<void> {
 
         if (tradeInput.runSimulation) {
           const simulationHorizonMinutes = resolveSimulationHorizonMinutes(tradeInput.objectiveHorizon);
-          scheduleSimulation({
-            simulationUseCase,
+          const recommendationOpenedAtMs = Date.now();
+          simulationScheduler.schedule({
             recommendation,
             interval,
             horizonMinutes: simulationHorizonMinutes,
+            openedAtMs: recommendationOpenedAtMs,
             onResult: async (result) => {
+              dashboard.latestQueryLines = renderSimulationResultLines({
+                recommendation,
+                horizonMinutes: simulationHorizonMinutes,
+                outcome: result
+              });
+              requestRender();
               tracker.recordSimulation(pair, result.status, interval);
               await learning.recordSimulationOutcome({
                 recommendation,
@@ -695,8 +656,9 @@ async function main(): Promise<void> {
                 pnlUsd: result.pnlUsd
               });
             },
-            onRendered: (lines) => {
-              dashboard.latestQueryLines = lines;
+            onError: (error) => {
+              const message = error instanceof Error ? error.message : "Unhandled simulation error";
+              dashboard.latestQueryLines = [`${ui.red}[sim] Failed to evaluate ${recommendation.pair}: ${message}${ui.reset}`];
               requestRender();
             }
           });
@@ -787,8 +749,8 @@ async function runLearningCycle(input: {
   learningCycleUseCase: RunLearningCycleUseCase;
   learning: AdaptiveLearningService;
   runner: LearningRunnerState;
-  simulationUseCase: EvaluateSimulationUseCase;
-  tracker: SessionPerformanceTracker;
+  simulationScheduler: ScheduleSimulationUseCase;
+  tracker: SessionPerformanceService;
   defaults: Pick<TradeDefaults, "leverage" | "positionSizeUsd">;
   onStateChanged?: () => void;
 }): Promise<void> {
@@ -811,12 +773,11 @@ async function runLearningCycle(input: {
       if (!input.runner.active) {
         return;
       }
-      scheduleSimulation({
-        simulationUseCase: input.simulationUseCase,
+      input.simulationScheduler.schedule({
         recommendation: candidate.recommendation,
         interval: candidate.interval,
         horizonMinutes: candidate.horizonMinutes,
-        silent: true,
+        openedAtMs: candidate.openedAtMs,
         timerRegistry: input.runner.pendingTimers,
         onResult: async (result) => {
           input.tracker.recordSimulation(candidate.pair, result.status, candidate.interval);
@@ -857,7 +818,7 @@ function stopLearningRunner(runner: LearningRunnerState): void {
 async function runWatchIteration(input: {
   key: string;
   watchSymbolUseCase: EvaluateWatchSymbolUseCase;
-  tracker: SessionPerformanceTracker;
+  tracker: SessionPerformanceService;
   watchConfig: WatchConfig;
   watchSignatures: Map<string, string>;
   watchRunning: Set<string>;
@@ -985,77 +946,31 @@ async function promptQuickTradeInput(
   };
 }
 
-function scheduleSimulation(input: {
-  simulationUseCase: EvaluateSimulationUseCase;
+function renderSimulationResultLines(input: {
   recommendation: Recommendation;
-  interval: string;
   horizonMinutes: number;
-  onResult?: (result: {
+  outcome: {
     status: "SUCCESS" | "FAILURE";
-    failureType: "NONE" | "WRONG_DIRECTION" | "STOP_TOO_TIGHT_REBOUND" | "TIMEOUT_LOSS" | "WHIPSAW_SL_TP";
-    directionalCorrect: boolean;
-    maxFavorableExcursionPct: number;
-    maxAdverseExcursionPct: number;
+    pnlPct: number;
     pnlUsd?: number;
-  }) => void | Promise<void>;
-  onRendered?: (lines: string[]) => void;
-  silent?: boolean;
-  timerRegistry?: Set<NodeJS.Timeout>;
-}): void {
-  const horizonMs = input.horizonMinutes * 60 * 1000;
-
-  const timeout = setTimeout(() => {
-    void (async () => {
-      input.timerRegistry?.delete(timeout);
-      try {
-        const outcome = await input.simulationUseCase.execute({
-          recommendation: input.recommendation,
-          interval: input.interval,
-          horizonMinutes: input.horizonMinutes
-        });
-        const outcomeColor = outcome.status === "SUCCESS" ? ui.green : ui.red;
-        const pnlColor = outcome.pnlPct >= 0 ? ui.green : ui.red;
-        const rendered = [
-          `${ui.bold}${ui.blue}SIM RESULT${ui.reset} ${ui.gray}${input.recommendation.pair}${ui.reset}`,
-          `${ui.gray}status:${ui.reset} ${outcomeColor}${ui.bold}${outcome.status}${ui.reset}   ` +
-            `${ui.gray}pnl:${ui.reset} ${pnlColor}${outcome.pnlPct.toFixed(2)}%${ui.reset}` +
-            (outcome.pnlUsd !== undefined
-              ? ` ${ui.gray}(${outcome.pnlUsd >= 0 ? "+" : ""}${outcome.pnlUsd.toFixed(2)} USDC)${ui.reset}`
-              : ""),
-          `${ui.gray}entry:${ui.reset} ${input.recommendation.entry.toFixed(4)}   ` +
-            `${ui.gray}exit:${ui.reset} ${outcome.exitPrice.toFixed(4)}   ` +
-            `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`,
-          `${ui.gray}reason:${ui.reset} ${outcome.reason}`
-        ];
-        if (input.silent) {
-          // Keep learn-mode background simulations non-intrusive for the interactive dashboard.
-        } else if (input.onRendered) {
-          input.onRendered(rendered);
-        } else {
-          rendered.forEach((line) => console.log(line));
-        }
-        await input.onResult?.({
-          status: outcome.status,
-          failureType: outcome.failureType,
-          directionalCorrect: outcome.directionalCorrect,
-          maxFavorableExcursionPct: outcome.maxFavorableExcursionPct,
-          maxAdverseExcursionPct: outcome.maxAdverseExcursionPct,
-          pnlUsd: outcome.pnlUsd
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unhandled simulation error";
-        const rendered = [`${ui.red}[sim] Failed to evaluate ${input.recommendation.pair}: ${message}${ui.reset}`];
-        if (input.silent) {
-          // noop
-        } else if (input.onRendered) {
-          input.onRendered(rendered);
-        } else {
-          rendered.forEach((line) => console.log(line));
-        }
-      }
-    })();
-  }, horizonMs);
-  input.timerRegistry?.add(timeout);
+    exitPrice: number;
+    reason: string;
+  };
+}): string[] {
+  const outcomeColor = input.outcome.status === "SUCCESS" ? ui.green : ui.red;
+  const pnlColor = input.outcome.pnlPct >= 0 ? ui.green : ui.red;
+  return [
+    `${ui.bold}${ui.blue}SIM RESULT${ui.reset} ${ui.gray}${input.recommendation.pair}${ui.reset}`,
+    `${ui.gray}status:${ui.reset} ${outcomeColor}${ui.bold}${input.outcome.status}${ui.reset}   ` +
+      `${ui.gray}pnl:${ui.reset} ${pnlColor}${input.outcome.pnlPct.toFixed(2)}%${ui.reset}` +
+      (input.outcome.pnlUsd !== undefined
+        ? ` ${ui.gray}(${input.outcome.pnlUsd >= 0 ? "+" : ""}${input.outcome.pnlUsd.toFixed(2)} USDC)${ui.reset}`
+        : ""),
+    `${ui.gray}entry:${ui.reset} ${input.recommendation.entry.toFixed(4)}   ` +
+      `${ui.gray}exit:${ui.reset} ${input.outcome.exitPrice.toFixed(4)}   ` +
+      `${ui.gray}horizon:${ui.reset} ${input.horizonMinutes}m`,
+    `${ui.gray}reason:${ui.reset} ${input.outcome.reason}`
+  ];
 }
 
 async function promptWithDefault(rl: readline.Interface, label: string, defaultValue: string): Promise<string> {
@@ -1071,7 +986,7 @@ function parseOptionalHorizonInput(value: string | undefined): string | undefine
     return undefined;
   }
   const normalized = value.trim();
-  if (!/^\d+$/.test(normalized)) {
+  if (!/^\d+$/.test(normalized) || Number(normalized) <= 0) {
     throw new Error("Invalid trade horizon. Use minutes as a positive integer (e.g. 15, 75, 90).");
   }
   return normalized;

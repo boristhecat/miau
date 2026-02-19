@@ -57,6 +57,9 @@ export function parseTradingInput(raw: string): TradingInput {
       if (!/^\d+$/i.test(rawValue)) {
         throw new Error("Invalid --horizon value. Use minutes as a positive integer (e.g. 15, 75, 90).");
       }
+      if (Number(rawValue) <= 0) {
+        throw new Error("Invalid --horizon value. Use minutes as a positive integer (e.g. 15, 75, 90).");
+      }
       if (objectiveHorizon && objectiveHorizon !== rawValue) {
         throw new Error("Horizon can only be set once. Use either positional minutes or --horizon.");
       }
@@ -65,6 +68,9 @@ export function parseTradingInput(raw: string): TradingInput {
       continue;
     }
     if (/^\d+$/.test(token)) {
+      if (Number(token) <= 0) {
+        throw new Error("Invalid --horizon value. Use minutes as a positive integer (e.g. 15, 75, 90).");
+      }
       if (objectiveHorizon && objectiveHorizon !== token) {
         throw new Error("Horizon can only be set once. Use either positional minutes or --horizon.");
       }
@@ -77,6 +83,9 @@ export function parseTradingInput(raw: string): TradingInput {
         throw new Error("Missing value for --expected.");
       }
       if (!/^\d+$/i.test(rawValue)) {
+        throw new Error("Invalid --expected value. Use minutes as a positive integer (e.g. 60, 120, 240).");
+      }
+      if (Number(rawValue) <= 0) {
         throw new Error("Invalid --expected value. Use minutes as a positive integer (e.g. 60, 120, 240).");
       }
       expectedRangeHorizon = rawValue;

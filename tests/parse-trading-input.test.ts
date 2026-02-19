@@ -106,11 +106,14 @@ describe("parseTradingInput", () => {
 
   it("rejects invalid expected value", () => {
     expect(() => parseTradingInput("BTC --expected 4h")).toThrowError("Invalid --expected value");
+    expect(() => parseTradingInput("BTC --expected 0")).toThrowError("Invalid --expected value");
     expect(() => parseTradingInput("BTC --expected")).toThrowError("Missing value for --expected");
   });
 
   it("rejects invalid targeting flag values", () => {
     expect(() => parseTradingInput("BTC --horizon 90m")).toThrowError("Invalid --horizon value");
+    expect(() => parseTradingInput("BTC --horizon 0")).toThrowError("Invalid --horizon value");
+    expect(() => parseTradingInput("BTC 0")).toThrowError("Invalid --horizon value");
   });
 
   it("parses --custom flag", () => {

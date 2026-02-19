@@ -22,9 +22,10 @@ export class EvaluateSimulationUseCase {
     recommendation: Recommendation;
     interval: string;
     horizonMinutes: number;
+    openedAtMs?: number;
   }): Promise<SimulationEvaluationResult> {
     const signal = this.resolveSimulationSignal(input.recommendation);
-    const openedAtMs = Date.now();
+    const openedAtMs = input.openedAtMs ?? Date.now();
     const horizonMs = input.horizonMinutes * 60 * 1000;
     const timeframeMs = intervalToMs(input.interval);
     const minLimit = Math.max(120, Math.ceil(horizonMs / Math.max(timeframeMs, 60_000)) + 40);

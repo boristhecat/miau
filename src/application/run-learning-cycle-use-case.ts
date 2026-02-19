@@ -2,6 +2,7 @@ import type { AdaptiveLearningService } from "./adaptive-learning-service.js";
 import type { GenerateRecommendationUseCase } from "./generate-recommendation-use-case.js";
 import { RankTopOpportunitiesUseCase } from "./rank-top-opportunities-use-case.js";
 import { getLearningGates } from "./learning-gates-policy.js";
+import { resolveAdaptiveTimeframes } from "./timeframe-policy.js";
 import type { LoggerPort } from "../ports/logger-port.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { Recommendation } from "../domain/types.js";
@@ -11,6 +12,7 @@ export interface LearningSimulationCandidate {
   recommendation: Recommendation;
   interval: string;
   horizonMinutes: number;
+  openedAtMs: number;
 }
 
 export class RunLearningCycleUseCase {
@@ -23,6 +25,8 @@ export class RunLearningCycleUseCase {
 
   async execute(input: {
     horizonsMinutes: readonly number[];
+    leverage: number;
+    positionSizeUsd: number;
     active: () => boolean;
   }): Promise<{ symbols: string[]; candidates: LearningSimulationCandidate[] }> {
     const symbols = await this.getLearningSymbols();
@@ -35,17 +39,18 @@ export class RunLearningCycleUseCase {
           return { symbols, candidates };
         }
         try {
+          const adaptiveTimeframes = resolveAdaptiveTimeframes(String(horizonMinutes));
           let recommendation = await this.recommendationUseCase.execute({
             pair,
-            interval: "1m",
-            biasInterval: "15m",
-            leverage: 20,
-            positionSizeUsd: 250,
+            interval: adaptiveTimeframes.timeframe,
+            biasInterval: adaptiveTimeframes.biasTimeframe,
+            leverage: input.leverage,
+            positionSizeUsd: input.positionSizeUsd,
             objectiveHorizon: String(horizonMinutes)
           });
           recommendation = await this.learning.applyPolicy({
             recommendation,
-            timeframe: "1m"
+            timeframe: adaptiveTimeframes.timeframe
           });
           const gates = getLearningGates(horizonMinutes);
           if (
@@ -60,8 +65,9 @@ export class RunLearningCycleUseCase {
           candidates.push({
             pair,
             recommendation,
-            interval: "1m",
-            horizonMinutes
+            interval: adaptiveTimeframes.timeframe,
+            horizonMinutes,
+            openedAtMs: Date.now()
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "Learning cycle candidate failed";

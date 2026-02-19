@@ -348,3 +348,10 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Record single-symbol recommendations after generation in interactive flow
 - [x] Keep adaptive policy stats based only on evaluated SUCCESS/FAILURE outcomes
 - [x] Add/update tests for new persistence and stats filtering behavior
+
+## Task: Fix architecture + code audit findings (2026-02-19)
+- [x] Fix simulation time anchoring so evaluation uses recommendation-open timestamp
+- [x] Reject non-positive horizon values at input/default parsing boundaries
+- [x] Move session calibration/cooldown policy out of `cli.ts` into application layer
+- [x] Add regression tests for delayed simulation scheduling + time anchoring
+- [x] Run build and test suite
