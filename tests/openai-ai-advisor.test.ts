@@ -77,11 +77,6 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "MEDIUM",
-              aiAction: "KEEP",
-              changeDirection: false,
-              changeEntry: false,
-              changeStopLoss: false,
-              changeTakeProfit: false,
               agreement: "AGREE",
               regime: "TREND",
               overruledSignals: [],
@@ -120,12 +115,6 @@ describe("OpenAiAiAdvisor", () => {
                 text: JSON.stringify({
                   bias: "SHORT",
                   confidenceBand: "LOW",
-                  aiAction: "ADJUST",
-                  changeDirection: true,
-                  changeEntry: true,
-                  changeStopLoss: true,
-                  changeTakeProfit: true,
-                  suggestedDirection: "SHORT",
                   suggestedEntry: 100.5,
                   suggestedStopLoss: 101.2,
                   suggestedTakeProfit: 98.8,
@@ -148,7 +137,6 @@ describe("OpenAiAiAdvisor", () => {
 
     expect(advice.bias).toBe("SHORT");
     expect(advice.regime).toBe("VOLATILE");
-    expect(advice.suggestedDirection).toBe("SHORT");
     expect(advice.suggestedEntry).toBe(100.5);
     expect(advice.suggestedStopLoss).toBe(101.2);
     expect(advice.suggestedTakeProfit).toBe(98.8);
@@ -164,11 +152,6 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "LOW",
-              aiAction: "KEEP",
-              changeDirection: false,
-              changeEntry: false,
-              changeStopLoss: false,
-              changeTakeProfit: false,
               agreement: "MAYBE",
               regime: "TREND",
               overruledSignals: ["EMA cross"],
@@ -185,7 +168,7 @@ describe("OpenAiAiAdvisor", () => {
     await expect(advisor.advise(baseRequest)).rejects.toThrow("AI response agreement is invalid.");
   });
 
-  it("keeps model values as returned even when direction target matches current signal", async () => {
+  it("keeps model values as returned when optional suggestions are absent", async () => {
     const httpClient = new FakeHttpClient();
     httpClient.postResponse = {
       model: "gpt-5-mini",
@@ -195,12 +178,6 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "MEDIUM",
-              aiAction: "ADJUST",
-              changeDirection: true,
-              changeEntry: false,
-              changeStopLoss: false,
-              changeTakeProfit: false,
-              suggestedDirection: "LONG",
               agreement: "PARTIAL",
               regime: "RANGE",
               overruledSignals: [],
@@ -215,11 +192,12 @@ describe("OpenAiAiAdvisor", () => {
     const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
 
     const advice = await advisor.advise(baseRequest);
-    expect(advice.changeDirection).toBe(true);
-    expect(advice.suggestedDirection).toBe("LONG");
+    expect(advice.suggestedEntry).toBeUndefined();
+    expect(advice.suggestedStopLoss).toBeUndefined();
+    expect(advice.suggestedTakeProfit).toBeUndefined();
   });
 
-  it("requires suggested value when change flag is true", async () => {
+  it("accepts response without optional suggestion fields", async () => {
     const httpClient = new FakeHttpClient();
     httpClient.postResponse = {
       model: "gpt-5-mini",
@@ -229,11 +207,6 @@ describe("OpenAiAiAdvisor", () => {
             content: JSON.stringify({
               bias: "LONG",
               confidenceBand: "MEDIUM",
-              aiAction: "ADJUST",
-              changeDirection: false,
-              changeEntry: true,
-              changeStopLoss: false,
-              changeTakeProfit: false,
               agreement: "PARTIAL",
               regime: "RANGE",
               overruledSignals: [],
@@ -247,9 +220,8 @@ describe("OpenAiAiAdvisor", () => {
     };
     const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
 
-    await expect(advisor.advise(baseRequest)).rejects.toThrow(
-      "AI response suggestedEntry is required when changeEntry=true."
-    );
+    const advice = await advisor.advise(baseRequest);
+    expect(advice.suggestedEntry).toBeUndefined();
   });
 
   it("surfaces OpenAI response error details in thrown message", async () => {

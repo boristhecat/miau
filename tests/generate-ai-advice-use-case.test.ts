@@ -60,11 +60,6 @@ class FakeAiAdvisor implements AiAdvisorPort {
     return this.nextAdvice ?? {
       bias: "LONG",
       confidenceBand: "MEDIUM",
-      aiAction: "KEEP",
-      changeDirection: false,
-      changeEntry: false,
-      changeStopLoss: false,
-      changeTakeProfit: false,
       agreement: "AGREE",
       regime: "TREND",
       overruledSignals: [],
@@ -104,12 +99,7 @@ describe("GenerateAiAdviceUseCase", () => {
     advisor.nextAdvice = {
       bias: "LONG",
       confidenceBand: "MEDIUM",
-      aiAction: "ADJUST",
-      changeDirection: true,
-      suggestedDirection: "LONG",
-      changeEntry: false,
-      changeStopLoss: false,
-      changeTakeProfit: false,
+      suggestedEntry: 100.25,
       agreement: "PARTIAL",
       regime: "RANGE",
       overruledSignals: [],
@@ -120,7 +110,6 @@ describe("GenerateAiAdviceUseCase", () => {
     const useCase = new GenerateAiAdviceUseCase({ aiAdvisor: advisor });
 
     const result = await useCase.execute({ recommendation: baseRecommendation });
-    expect(result.changeDirection).toBe(true);
-    expect(result.suggestedDirection).toBe("LONG");
+    expect(result.suggestedEntry).toBe(100.25);
   });
 });

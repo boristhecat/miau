@@ -63,12 +63,6 @@ function yesNoColor(value: boolean): string {
   return value ? colors.brightRed : colors.brightGreen;
 }
 
-function aiActionColor(action: AiAdvice["aiAction"]): string {
-  if (action === "REJECT") return colors.brightRed;
-  if (action === "ADJUST") return colors.brightYellow;
-  return colors.brightGreen;
-}
-
 function stripReasonPrefix(line: string): string {
   return line
     .replace(/^No-trade guard:\s*/i, "")
@@ -469,42 +463,38 @@ export class RecommendationPrinter {
     if (aiAdvice) {
       write(`${colors.brightBlack}${".".repeat(64)}${colors.reset}`);
       write(`${colors.bold}${colors.cyan}2A) AI SECONDARY VIEW${colors.reset}`);
-      write(`${label("AI Action")} ${aiActionColor(aiAdvice.aiAction)}${aiAdvice.aiAction}${colors.reset}`);
       const currentSignal = rec.signal;
-      const nextSignal = aiAdvice.suggestedDirection ?? aiAdvice.bias;
+      const changeDirection = aiAdvice.bias !== rec.signal;
+      const changeEntry = aiAdvice.suggestedEntry !== undefined;
+      const changeStopLoss = aiAdvice.suggestedStopLoss !== undefined;
+      const changeTakeProfit = aiAdvice.suggestedTakeProfit !== undefined;
       write(
-        `${label("Change Direction")} ${yesNoColor(aiAdvice.changeDirection)}${yesNo(aiAdvice.changeDirection)}${colors.reset} ` +
-          `${colors.brightBlack}(${currentSignal} -> ${nextSignal}` +
+        `${label("Change Direction")} ${yesNoColor(changeDirection)}${yesNo(changeDirection)}${colors.reset} ` +
+          `${colors.brightBlack}(${currentSignal} -> ${aiAdvice.bias}` +
           `)${colors.reset}`
       );
       write(
-        `${label("Change Entry")} ${yesNoColor(aiAdvice.changeEntry)}${yesNo(aiAdvice.changeEntry)}${colors.reset}` +
-          (aiAdvice.changeEntry && aiAdvice.suggestedEntry !== undefined
+        `${label("Change Entry")} ${yesNoColor(changeEntry)}${yesNo(changeEntry)}${colors.reset}` +
+          (changeEntry && aiAdvice.suggestedEntry !== undefined
             ? ` ${colors.brightBlack}(-> ${fmt(aiAdvice.suggestedEntry)})${colors.reset}`
             : "")
       );
       write(
-        `${label("Change Stop Loss")} ${yesNoColor(aiAdvice.changeStopLoss)}${yesNo(aiAdvice.changeStopLoss)}${colors.reset}` +
-          (aiAdvice.changeStopLoss && aiAdvice.suggestedStopLoss !== undefined
+        `${label("Change Stop Loss")} ${yesNoColor(changeStopLoss)}${yesNo(changeStopLoss)}${colors.reset}` +
+          (changeStopLoss && aiAdvice.suggestedStopLoss !== undefined
             ? ` ${colors.brightBlack}(-> ${fmt(aiAdvice.suggestedStopLoss)})${colors.reset}`
             : "")
       );
       write(
-        `${label("Change Take Profit")} ${yesNoColor(aiAdvice.changeTakeProfit)}${yesNo(aiAdvice.changeTakeProfit)}${colors.reset}` +
-          (aiAdvice.changeTakeProfit && aiAdvice.suggestedTakeProfit !== undefined
+        `${label("Change Take Profit")} ${yesNoColor(changeTakeProfit)}${yesNo(changeTakeProfit)}${colors.reset}` +
+          (changeTakeProfit && aiAdvice.suggestedTakeProfit !== undefined
             ? ` ${colors.brightBlack}(-> ${fmt(aiAdvice.suggestedTakeProfit)})${colors.reset}`
             : "")
       );
-      if (aiAdvice.agreement !== "AGREE" || aiAdvice.overruledSignals.length > 0) {
-        const filteredSignals = aiAdvice.overruledSignals.filter((value) => {
-          const normalized = value.trim().toUpperCase();
-          return normalized !== "LONG" && normalized !== "SHORT" && normalized !== "NO_TRADE";
-        });
-        const notes = filteredSignals.length > 0
-          ? filteredSignals.join("; ")
-          : (aiAdvice.reasons[0] ?? `${aiAdvice.agreement} (${aiAdvice.regime})`);
-        writeWrappedLabel(write, "AI Note", notes, colors.cyan);
-      }
+      const notes = aiAdvice.overruledSignals.length > 0
+        ? aiAdvice.overruledSignals.join("; ")
+        : (aiAdvice.reasons[0] ?? `${aiAdvice.agreement} (${aiAdvice.regime})`);
+      writeWrappedLabel(write, "AI Note", notes, colors.cyan);
       if (aiAdvice.model || aiAdvice.latencyMs !== undefined) {
         write(
           `${label("AI Meta")} ${colors.brightBlack}${aiAdvice.model ?? "n/a"}${colors.reset}` +

@@ -82,7 +82,7 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
         {
           role: "system",
           content:
-            "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, aiAction, changeDirection, changeEntry, changeStopLoss, changeTakeProfit, suggestedDirection, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+            "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
         },
         {
           role: "user",
@@ -315,11 +315,11 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       "- Keep reasons simple for average crypto traders.",
       "- Be conservative when setup quality is weak.",
       "- Compare your view with the model signal and state agreement clearly.",
-      "- aiAction must be one of: KEEP, REJECT, ADJUST.",
-      "- If any change flag is true, provide the corresponding suggested value.",
+      "- Do not echo snapshot fields verbatim (like modelSignal, pair, or unchanged levels) into reasons/overruledSignals unless essential.",
+      "- Only include suggestedEntry/suggestedStopLoss/suggestedTakeProfit when you actually propose a changed value.",
       "- Output only valid JSON.",
       "Schema:",
-      '{ "bias":"LONG|SHORT|NO_TRADE", "confidenceBand":"LOW|MEDIUM|HIGH", "aiAction":"KEEP|REJECT|ADJUST", "changeDirection":true|false, "changeEntry":true|false, "changeStopLoss":true|false, "changeTakeProfit":true|false, "suggestedDirection":"LONG|SHORT|NO_TRADE|null", "suggestedEntry":number|null, "suggestedStopLoss":number|null, "suggestedTakeProfit":number|null, "agreement":"AGREE|DISAGREE|PARTIAL", "regime":"TREND|RANGE|CHOPPY|VOLATILE", "overruledSignals":["..."], "reasons":["...","...","..."], "invalidation":"...", "riskNote":"..." }',
+      '{ "bias":"LONG|SHORT|NO_TRADE", "confidenceBand":"LOW|MEDIUM|HIGH", "suggestedEntry":number|null, "suggestedStopLoss":number|null, "suggestedTakeProfit":number|null, "agreement":"AGREE|DISAGREE|PARTIAL", "regime":"TREND|RANGE|CHOPPY|VOLATILE", "overruledSignals":["..."], "reasons":["...","...","..."], "invalidation":"...", "riskNote":"..." }',
       "Snapshot:",
       JSON.stringify(compact)
     ].join("\n");
@@ -345,54 +345,9 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     if (confidenceBand !== "LOW" && confidenceBand !== "MEDIUM" && confidenceBand !== "HIGH") {
       throw new Error("AI response confidence band is invalid.");
     }
-    const aiAction = String(candidate.aiAction ?? "").toUpperCase();
-    if (aiAction !== "KEEP" && aiAction !== "REJECT" && aiAction !== "ADJUST") {
-      throw new Error("AI response aiAction is invalid.");
-    }
-    const changeDirection = candidate.changeDirection;
-    if (typeof changeDirection !== "boolean") {
-      throw new Error("AI response changeDirection is invalid.");
-    }
-    const changeEntry = candidate.changeEntry;
-    if (typeof changeEntry !== "boolean") {
-      throw new Error("AI response changeEntry is invalid.");
-    }
-    const changeStopLoss = candidate.changeStopLoss;
-    if (typeof changeStopLoss !== "boolean") {
-      throw new Error("AI response changeStopLoss is invalid.");
-    }
-    const changeTakeProfit = candidate.changeTakeProfit;
-    if (typeof changeTakeProfit !== "boolean") {
-      throw new Error("AI response changeTakeProfit is invalid.");
-    }
-    const suggestedDirectionRaw = candidate.suggestedDirection;
-    const suggestedDirection =
-      suggestedDirectionRaw === null || suggestedDirectionRaw === undefined
-        ? undefined
-        : String(suggestedDirectionRaw).toUpperCase();
-    if (
-      suggestedDirection !== undefined &&
-      suggestedDirection !== "LONG" &&
-      suggestedDirection !== "SHORT" &&
-      suggestedDirection !== "NO_TRADE"
-    ) {
-      throw new Error("AI response suggestedDirection is invalid.");
-    }
     const suggestedEntry = this.toOptionalFiniteNumber(candidate.suggestedEntry);
     const suggestedStopLoss = this.toOptionalFiniteNumber(candidate.suggestedStopLoss);
     const suggestedTakeProfit = this.toOptionalFiniteNumber(candidate.suggestedTakeProfit);
-    if (changeDirection && suggestedDirection === undefined) {
-      throw new Error("AI response suggestedDirection is required when changeDirection=true.");
-    }
-    if (changeEntry && suggestedEntry === undefined) {
-      throw new Error("AI response suggestedEntry is required when changeEntry=true.");
-    }
-    if (changeStopLoss && suggestedStopLoss === undefined) {
-      throw new Error("AI response suggestedStopLoss is required when changeStopLoss=true.");
-    }
-    if (changeTakeProfit && suggestedTakeProfit === undefined) {
-      throw new Error("AI response suggestedTakeProfit is required when changeTakeProfit=true.");
-    }
     const agreement = String(candidate.agreement ?? "").toUpperCase();
     if (agreement !== "AGREE" && agreement !== "DISAGREE" && agreement !== "PARTIAL") {
       throw new Error("AI response agreement is invalid.");
@@ -423,12 +378,6 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
     return {
       bias,
       confidenceBand,
-      aiAction,
-      changeDirection,
-      changeEntry,
-      changeStopLoss,
-      changeTakeProfit,
-      suggestedDirection,
       suggestedEntry,
       suggestedStopLoss,
       suggestedTakeProfit,

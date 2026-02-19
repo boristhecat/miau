@@ -275,6 +275,11 @@
 - [x] Update `defaults` command to edit and display model, applying changes immediately
 - [x] Refresh docs/defaults file to reflect AI model persistence
 
+## Task: Remove redundant AI response fields (2026-02-18)
+- [x] Simplify AI schema by removing duplicated action/change flags from requested response
+- [x] Keep only unique decision outputs (`bias` + optional suggested levels + rationale metadata)
+- [x] Update parser/types/tests and derive UI change indicators from remaining fields
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 

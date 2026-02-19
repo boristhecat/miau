@@ -1,12 +1,6 @@
 export interface AiAdvice {
   bias: "LONG" | "SHORT" | "NO_TRADE";
   confidenceBand: "LOW" | "MEDIUM" | "HIGH";
-  aiAction: "KEEP" | "REJECT" | "ADJUST";
-  changeDirection: boolean;
-  changeEntry: boolean;
-  changeStopLoss: boolean;
-  changeTakeProfit: boolean;
-  suggestedDirection?: "LONG" | "SHORT" | "NO_TRADE";
   suggestedEntry?: number;
   suggestedStopLoss?: number;
   suggestedTakeProfit?: number;
