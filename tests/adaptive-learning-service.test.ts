@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AdaptiveLearningService } from "../src/application/adaptive-learning-service.js";
 import type {
+  LearningBucketRow,
   LearningOverview,
   LearningOutcomeRecord,
   LearningStatsQuery,
@@ -86,6 +87,10 @@ class FakeLearningStore implements LearningStorePort {
         avgPnlUsd: this.stats.avgPnlUsd
       }
     );
+  }
+
+  async getBucketOverview(_input: { lookbackDays: number }): Promise<LearningBucketRow[]> {
+    return [];
   }
 }
 

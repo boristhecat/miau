@@ -114,6 +114,48 @@ describe("BackpackMarketDataClient", () => {
     expect(snapshot.fundingRate).toBe(-0.00001029);
   });
 
+  it("adds orderbook features and open-interest delta when available", async () => {
+    nock(baseUrl).get("/api/v1/markets").reply(200, [
+      { symbol: "BTC_USDC_PERP", baseSymbol: "BTC", quoteSymbol: "USDC", marketType: "PERP" }
+    ]);
+    nock(baseUrl)
+      .get("/api/v1/markPrices")
+      .query({ symbol: "BTC_USDC_PERP" })
+      .reply(200, [{ fundingRate: "0.00001", indexPrice: "100", markPrice: "100.1", symbol: "BTC_USDC_PERP" }]);
+    nock(baseUrl)
+      .get("/api/v1/openInterest")
+      .query({ symbol: "BTC_USDC_PERP" })
+      .reply(200, [
+        { openInterest: "1200", symbol: "BTC_USDC_PERP" },
+        { openInterest: "1000", symbol: "BTC_USDC_PERP" }
+      ]);
+    nock(baseUrl)
+      .get("/api/v1/fundingRates")
+      .query({ symbol: "BTC_USDC_PERP" })
+      .reply(200, [{ fundingRate: "0.00001", symbol: "BTC_USDC_PERP" }]);
+    nock(baseUrl)
+      .get("/api/v1/depth")
+      .query({ symbol: "BTC_USDC_PERP", limit: 20 })
+      .reply(200, {
+        bids: [
+          ["100", "4"],
+          ["99.9", "3"]
+        ],
+        asks: [
+          ["100.2", "2"],
+          ["100.3", "1"]
+        ]
+      });
+
+    const client = new BackpackMarketDataClient(new AxiosHttpClient(baseUrl));
+    const snapshot = await client.getPerpSnapshot({ pair: "BTC-USD" });
+
+    expect(snapshot.openInterestDeltaPct).toBeCloseTo(20, 6);
+    expect(snapshot.bidAskSpreadPct).toBeGreaterThan(0);
+    expect(snapshot.orderBookImbalance).toBeGreaterThan(0);
+    expect(snapshot.microPricePremiumPct).toBeDefined();
+  });
+
   it("returns top perp base symbols by quote volume", async () => {
     nock(baseUrl).get("/api/v1/markets").reply(200, [
       { symbol: "BTC_USDC_PERP", baseSymbol: "BTC", quoteSymbol: "USDC", marketType: "PERP" },

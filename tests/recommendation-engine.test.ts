@@ -657,4 +657,75 @@ describe("RecommendationEngine", () => {
     expect(rec.signal).toBe("SHORT");
     expect(rec.rationale.some((line) => line.includes("breakout follow-through warning"))).toBe(true);
   });
+
+  it("uses positive orderbook imbalance as an additional bullish input", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 54,
+      ema20: 50040,
+      ema50: 50000,
+      macd: 4,
+      macdSignal: 3,
+      macdHistogram: 1,
+      atr14: 120,
+      adx14: 24,
+      bbUpper: 50400,
+      bbMiddle: 50000,
+      bbLower: 49600,
+      stochRsiK: 57,
+      stochRsiD: 52,
+      vwap: 50010,
+      mfi14: 58,
+      cmf20: 0.1,
+      obvSlope5: 0.04,
+      volumeZScore20: 1.2,
+      cvdDeltaPct5: 14
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50050,
+      indicators,
+      perp: {
+        ...basePerp,
+        orderBookImbalance: 0.22,
+        microPricePremiumPct: 0.03
+      },
+      baseInterval: "5m"
+    });
+
+    expect(rec.rationale.some((line) => line.includes("Orderbook imbalance favors bids"))).toBe(true);
+  });
+
+  it("blocks setups with overly wide spread when not forced", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 57,
+      ema20: 50200,
+      ema50: 50000,
+      macd: 8,
+      macdSignal: 6,
+      macdHistogram: 2,
+      atr14: 130,
+      adx14: 28,
+      bbUpper: 50700,
+      bbMiddle: 50100,
+      bbLower: 49500,
+      stochRsiK: 60,
+      stochRsiD: 54,
+      vwap: 50100
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50220,
+      indicators,
+      perp: {
+        ...basePerp,
+        bidAskSpreadPct: 0.2
+      },
+      baseInterval: "1m"
+    });
+
+    expect(rec.signal).toBe("NO_TRADE");
+    expect(rec.rationale.some((line) => line.includes("orderbook spread is too wide"))).toBe(true);
+  });
 });

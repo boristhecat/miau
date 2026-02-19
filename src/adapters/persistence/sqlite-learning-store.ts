@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type {
+  LearningBucketRow,
   LearningOverview,
   LearningOutcomeRecord,
   LearningOutcomeSummary,
@@ -158,6 +159,47 @@ class SqliteLearningStore implements LearningStorePort {
     };
   }
 
+  async getBucketOverview(input: { lookbackDays: number }): Promise<LearningBucketRow[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT
+           timeframe,
+           CASE
+             WHEN horizon_minutes <= 10 THEN '1-10m'
+             WHEN horizon_minutes <= 30 THEN '10-30m'
+             WHEN horizon_minutes <= 90 THEN '30-90m'
+             ELSE '90m+'
+           END AS horizonBucket,
+           COUNT(*) AS samples,
+           SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS wins,
+           SUM(CASE WHEN status = 'FAILURE' THEN 1 ELSE 0 END) AS losses,
+           AVG(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0.0 END) AS winRate,
+           AVG(COALESCE(pnl_usd, 0)) AS avgPnlUsd
+         FROM learning_outcomes
+         WHERE recorded_at >= datetime('now', '-' || @lookbackDays || ' days')
+         GROUP BY timeframe, horizonBucket
+         ORDER BY
+           CASE
+             WHEN horizonBucket = '1-10m' THEN 1
+             WHEN horizonBucket = '10-30m' THEN 2
+             WHEN horizonBucket = '30-90m' THEN 3
+             ELSE 4
+           END,
+           timeframe`
+      )
+      .all(input);
+
+    return rows.map((row) => ({
+      timeframe: String(row.timeframe ?? "n/a"),
+      horizonBucket: normalizeBucket(row.horizonBucket),
+      samples: Number(row.samples ?? 0),
+      wins: Number(row.wins ?? 0),
+      losses: Number(row.losses ?? 0),
+      winRate: Number(row.winRate ?? 0),
+      avgPnlUsd: Number(row.avgPnlUsd ?? 0)
+    }));
+  }
+
   private ensureColumn(table: string, column: string, definition: string): void {
     const columns = this.db.prepare(`PRAGMA table_info(${table})`).all();
     const exists = columns.some((row) => String(row.name).toLowerCase() === column.toLowerCase());
@@ -178,4 +220,12 @@ function normalizeFailureType(value: unknown): OutcomeFailureType {
     return normalized;
   }
   return "NONE";
+}
+
+function normalizeBucket(value: unknown): LearningBucketRow["horizonBucket"] {
+  const normalized = String(value ?? "");
+  if (normalized === "1-10m" || normalized === "10-30m" || normalized === "30-90m" || normalized === "90m+") {
+    return normalized;
+  }
+  return "90m+";
 }

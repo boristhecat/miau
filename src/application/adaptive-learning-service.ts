@@ -1,5 +1,6 @@
 import type { Recommendation } from "../domain/types.js";
 import type {
+  LearningBucketRow,
   LearningOutcomeRecord,
   LearningOverview,
   LearningOutcomeSummary,
@@ -22,6 +23,10 @@ export class AdaptiveLearningService {
 
   async getOverview(lookbackDays = 14): Promise<LearningOverview> {
     return this.store.getOverview({ lookbackDays });
+  }
+
+  async getBucketOverview(lookbackDays = 14): Promise<LearningBucketRow[]> {
+    return this.store.getBucketOverview({ lookbackDays });
   }
 
   async getPolicy(input: {

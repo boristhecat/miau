@@ -28,20 +28,20 @@ export class GenerateAiAdviceUseCase {
       takeProfit: rec.takeProfit,
       expectedLow: rec.expectedLow,
       expectedHigh: rec.expectedHigh,
-      indicators: {
-        rsi14: rec.indicators.rsi14,
-        ema20: rec.indicators.ema20,
-        ema50: rec.indicators.ema50,
-        macdHistogram: rec.indicators.macdHistogram,
-        atr14: rec.indicators.atr14,
-        adx14: rec.indicators.adx14,
-        vwap: rec.indicators.vwap
-      },
-      perp: {
-        fundingRate: rec.perp.fundingRate,
-        premiumPct: rec.perp.premiumPct,
-        openInterest: rec.perp.openInterest
-      },
+        indicators: {
+          rsi14: rec.indicators.rsi14,
+          ema20: rec.indicators.ema20,
+          ema50: rec.indicators.ema50,
+          macdHistogram: rec.indicators.macdHistogram,
+          atr14: rec.indicators.atr14,
+          adx14: rec.indicators.adx14,
+          vwap: rec.indicators.vwap
+        },
+        perp: {
+          fundingRate: rec.perp.fundingRate,
+          premiumPct: rec.perp.premiumPct,
+          openInterest: rec.perp.openInterest
+        },
       keyRationale: rec.rationale.slice(0, 5)
     });
     return advice;

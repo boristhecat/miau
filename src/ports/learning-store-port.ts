@@ -51,8 +51,19 @@ export interface LearningOverview {
   avgPnlUsd: number;
 }
 
+export interface LearningBucketRow {
+  timeframe: string;
+  horizonBucket: "1-10m" | "10-30m" | "30-90m" | "90m+";
+  samples: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  avgPnlUsd: number;
+}
+
 export interface LearningStorePort {
   recordOutcome(input: LearningOutcomeRecord): Promise<void>;
   getStats(input: LearningStatsQuery): Promise<LearningStatsResult>;
   getOverview(input: { lookbackDays: number }): Promise<LearningOverview>;
+  getBucketOverview(input: { lookbackDays: number }): Promise<LearningBucketRow[]>;
 }

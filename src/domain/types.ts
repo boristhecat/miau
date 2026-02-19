@@ -37,6 +37,12 @@ export interface IndicatorSnapshot {
   stochRsiK: number;
   stochRsiD: number;
   vwap: number;
+  obv?: number;
+  obvSlope5?: number;
+  mfi14?: number;
+  cmf20?: number;
+  volumeZScore20?: number;
+  cvdDeltaPct5?: number;
   recentCandleContext?: {
     momentumPct3: number;
     bullishCloseRatio5: number;
@@ -51,9 +57,13 @@ export interface PerpMarketSnapshot {
   fundingRate: number;
   fundingRateAvg: number;
   openInterest: number;
+  openInterestDeltaPct?: number;
   markPrice: number;
   indexPrice: number;
   premiumPct: number;
+  bidAskSpreadPct?: number;
+  orderBookImbalance?: number;
+  microPricePremiumPct?: number;
 }
 
 export interface Recommendation {

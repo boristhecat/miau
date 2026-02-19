@@ -1,0 +1,44 @@
+import { beforeAll, describe, expect, it } from "vitest";
+import { TalibWasmIndicatorService } from "../src/adapters/indicators/talib-wasm-indicator-service.js";
+import { initializeTalibWasm } from "../src/adapters/indicators/talib-wasm-runtime.js";
+import type { Candle } from "../src/domain/types.js";
+
+function makeCandles(count: number): Candle[] {
+  const candles: Candle[] = [];
+  let price = 100;
+  for (let i = 0; i < count; i += 1) {
+    const drift = i % 2 === 0 ? 0.35 : -0.1;
+    const open = price;
+    const close = Math.max(1, price + drift);
+    const high = Math.max(open, close) + 0.25;
+    const low = Math.min(open, close) - 0.25;
+    candles.push({
+      timestamp: 1_700_000_000_000 + i * 60_000,
+      open,
+      high,
+      low,
+      close,
+      volume: 1000 + i * 5
+    });
+    price = close;
+  }
+  return candles;
+}
+
+describe("TalibWasmIndicatorService", () => {
+  beforeAll(async () => {
+    await initializeTalibWasm();
+  });
+
+  it("computes extended volume and flow features", () => {
+    const snapshot = new TalibWasmIndicatorService().calculate(makeCandles(120));
+
+    expect(snapshot.obv).toBeDefined();
+    expect(snapshot.obvSlope5).toBeDefined();
+    expect(snapshot.mfi14).toBeDefined();
+    expect(snapshot.cmf20).toBeDefined();
+    expect(snapshot.volumeZScore20).toBeDefined();
+    expect(snapshot.cvdDeltaPct5).toBeDefined();
+    expect(Number.isFinite(snapshot.cmf20 ?? Number.NaN)).toBe(true);
+  });
+});

@@ -70,7 +70,7 @@ Concrete implementations:
 - Backpack market data (`backpack/backpack-market-data-client.ts`)
 - HTTP adapter (`http/axios-http-client.ts`)
 - console parsing/rendering/logging (`console/*`)
-- technical indicator implementation (`indicators/technical-indicator-service.ts`)
+- technical indicator implementation (`indicators/talib-wasm-indicator-service.ts`)
 - SQLite learning store (`persistence/sqlite-learning-store.ts`)
 - OpenAI AI advisor (`ai/openai-ai-advisor.ts`)
 
@@ -82,7 +82,7 @@ Concrete implementations:
 2. Instantiate adapters and services:
    - `AxiosHttpClient`
    - `BackpackMarketDataClient`
-   - `TechnicalIndicatorService`
+   - `TalibWasmIndicatorService`
    - `RecommendationEngine`
    - `GenerateRecommendationUseCase`
    - `AdaptiveLearningService` (with SQLite store)

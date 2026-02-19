@@ -73,6 +73,7 @@ After starting the app, enter input at the `Command` prompt:
 - `learn --start` -> start background learning runner
 - `learn --stop` -> stop background learning runner
 - `learn --stats` -> show learning stats (simulated trades, wins/losses, win-rate, avg PnL)
+- `learn --buckets` -> show horizon-bucket A/B stats (`1-10m`, `10-30m`, `30-90m`, `90m+`)
 - `exit` or `quit` -> close the app
 
 Interactive screen layout:
@@ -134,6 +135,7 @@ Defaults to:
 
 ## Indicators used
 
+- Engine: `talib-wasm` adapter (`INDICATOR_ENGINE` can be omitted or set to `talib-wasm`)
 - RSI(14)
 - EMA(20), EMA(50)
 - MACD(12,26,9)
@@ -142,6 +144,16 @@ Defaults to:
 - Bollinger Bands(20, 2)
 - Stochastic RSI
 - VWAP
+- OBV + OBV slope(5)
+- MFI(14)
+- CMF(20)
+- Volume z-score(20) + short CVD delta proxy
+
+Additional market microstructure context:
+- Open interest + OI delta (when available)
+- Funding + funding average
+- Mark/index premium
+- Orderbook spread, imbalance, and microprice premium (when depth endpoint is available)
 
 ## Commands
 

@@ -233,6 +233,7 @@ export class RecommendationEngine {
       setupQuality: confidenceBreakdown.setupQuality,
       confidence,
       riskRewardRatio,
+      bidAskSpreadPct: perp.bidAskSpreadPct,
       rationale
     });
     const finalSignal = guardResult.signal;
@@ -450,6 +451,42 @@ export class RecommendationEngine {
       rationale.push("Mark/index premium is balanced.");
     }
 
+    if (perp.orderBookImbalance !== undefined) {
+      if (perp.orderBookImbalance >= 0.08) {
+        longScore += 8;
+        rationale.push("Orderbook imbalance favors bids.");
+      } else if (perp.orderBookImbalance <= -0.08) {
+        shortScore += 8;
+        rationale.push("Orderbook imbalance favors asks.");
+      } else {
+        rationale.push("Orderbook imbalance is neutral.");
+      }
+    }
+
+    if (perp.microPricePremiumPct !== undefined) {
+      if (perp.microPricePremiumPct > 0.01) {
+        longScore += 3;
+        rationale.push("Microprice sits above mid; near-term pressure is bid-led.");
+      } else if (perp.microPricePremiumPct < -0.01) {
+        shortScore += 3;
+        rationale.push("Microprice sits below mid; near-term pressure is ask-led.");
+      }
+    }
+
+    if (perp.openInterestDeltaPct !== undefined) {
+      if (perp.openInterestDeltaPct > 0.35 && indicators.macdHistogram > 0) {
+        longScore += 3;
+        rationale.push("Open interest is expanding alongside bullish momentum.");
+      } else if (perp.openInterestDeltaPct > 0.35 && indicators.macdHistogram < 0) {
+        shortScore += 3;
+        rationale.push("Open interest is expanding alongside bearish momentum.");
+      } else if (perp.openInterestDeltaPct < -0.35) {
+        longScore -= 2;
+        shortScore -= 2;
+        rationale.push("Open interest is fading; follow-through conviction is reduced.");
+      }
+    }
+
     if (biasTrend) {
       if (biasTrend === "LONG") {
         longScore += 16;
@@ -543,6 +580,53 @@ export class RecommendationEngine {
       rationale.push("ATR indicates controlled intraday volatility.");
     } else {
       rationale.push("ATR indicates elevated volatility; execution risk rises.");
+    }
+
+    if (indicators.mfi14 !== undefined) {
+      if (indicators.mfi14 >= 55 && indicators.mfi14 < 80) {
+        longScore += 4;
+        rationale.push("MFI confirms buying pressure.");
+      } else if (indicators.mfi14 <= 45 && indicators.mfi14 > 20) {
+        shortScore += 4;
+        rationale.push("MFI confirms selling pressure.");
+      } else if (indicators.mfi14 >= 80) {
+        shortScore += 2;
+        rationale.push("MFI is overbought; exhaustion risk rises.");
+      } else if (indicators.mfi14 <= 20) {
+        longScore += 2;
+        rationale.push("MFI is oversold; rebound risk rises.");
+      }
+    }
+
+    if (indicators.cmf20 !== undefined) {
+      if (indicators.cmf20 >= 0.08) {
+        longScore += 4;
+        rationale.push("CMF indicates sustained accumulation.");
+      } else if (indicators.cmf20 <= -0.08) {
+        shortScore += 4;
+        rationale.push("CMF indicates sustained distribution.");
+      }
+    }
+
+    if (indicators.obvSlope5 !== undefined) {
+      if (indicators.obvSlope5 > 0.02) {
+        longScore += 3;
+        rationale.push("OBV slope is rising.");
+      } else if (indicators.obvSlope5 < -0.02) {
+        shortScore += 3;
+        rationale.push("OBV slope is falling.");
+      }
+    }
+
+    if (indicators.volumeZScore20 !== undefined && indicators.cvdDeltaPct5 !== undefined) {
+      const expansion = indicators.volumeZScore20 >= 1;
+      if (expansion && indicators.cvdDeltaPct5 > 10) {
+        longScore += 4;
+        rationale.push("Volume expansion aligns with positive flow delta.");
+      } else if (expansion && indicators.cvdDeltaPct5 < -10) {
+        shortScore += 4;
+        rationale.push("Volume expansion aligns with negative flow delta.");
+      }
     }
 
     if (marketRegime === "TREND") {
@@ -748,6 +832,8 @@ export class RecommendationEngine {
       50 +
         (Math.abs(input.indicators.macdHistogram) > 0.2 ? 8 : -4) +
         (input.biasTrend ? 6 : 0) +
+        ((input.indicators.mfi14 ?? 50) > 55 || (input.indicators.mfi14 ?? 50) < 45 ? 4 : -2) +
+        (Math.abs(input.indicators.cmf20 ?? 0) > 0.06 ? 4 : 0) +
         (input.marketRegime === "LOW_LIQ_CHOP" ? -20 : 0) +
         (input.marketRegime === "VOLATILE_SPIKE" ? -8 : 0),
       0,
@@ -825,12 +911,23 @@ export class RecommendationEngine {
         if (input.perp.premiumPct > 0.15) score -= 10;
         if (input.perp.fundingRate < -0.00005) score += 8;
         if (input.perp.premiumPct < -0.15) score += 8;
+        if ((input.perp.orderBookImbalance ?? 0) > 0.08) score += 10;
+        if ((input.perp.orderBookImbalance ?? 0) < -0.08) score -= 10;
+        if ((input.perp.microPricePremiumPct ?? 0) > 0.01) score += 6;
+        if ((input.perp.microPricePremiumPct ?? 0) < -0.01) score -= 6;
       } else {
         if (input.perp.fundingRate < -0.00005) score -= 10;
         if (input.perp.premiumPct < -0.15) score -= 10;
         if (input.perp.fundingRate > 0.00005) score += 8;
         if (input.perp.premiumPct > 0.15) score += 8;
+        if ((input.perp.orderBookImbalance ?? 0) < -0.08) score += 10;
+        if ((input.perp.orderBookImbalance ?? 0) > 0.08) score -= 10;
+        if ((input.perp.microPricePremiumPct ?? 0) < -0.01) score += 6;
+        if ((input.perp.microPricePremiumPct ?? 0) > 0.01) score -= 6;
       }
+      if ((input.perp.bidAskSpreadPct ?? 0) > 0.08) score -= 12;
+      if ((input.perp.openInterestDeltaPct ?? 0) > 0.35) score += 4;
+      if ((input.perp.openInterestDeltaPct ?? 0) < -0.35) score -= 6;
       return this.clamp(score, 0, 100);
     })();
 
@@ -1171,6 +1268,7 @@ export class RecommendationEngine {
     setupQuality: number;
     confidence: number;
     riskRewardRatio: number;
+    bidAskSpreadPct?: number;
     rationale: string[];
   }): { signal: Signal; blocked: boolean } {
     const intervalMinutes = this.parseIntervalToMinutes(input.interval);
@@ -1207,6 +1305,9 @@ export class RecommendationEngine {
     }
     if (input.marketRegime === "LOW_LIQ_CHOP") {
       return block("low-liquidity chop regime.");
+    }
+    if (input.bidAskSpreadPct !== undefined && input.bidAskSpreadPct > 0.12) {
+      return block("orderbook spread is too wide for clean execution.");
     }
     if (input.regime === "CHOPPY") {
       return block("choppy regime.");

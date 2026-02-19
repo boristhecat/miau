@@ -356,6 +356,15 @@ export class RecommendationPrinter {
       `${label("StochRSI K")} ${fmt(rec.indicators.stochRsiK)}   ` +
       `${label("StochRSI D")} ${fmt(rec.indicators.stochRsiD)}`
     );
+    write(
+      `${label("OBV Slope(5)")} ${rec.indicators.obvSlope5 !== undefined ? fmt(rec.indicators.obvSlope5) : "n/a"}   ` +
+      `${label("MFI(14)")} ${rec.indicators.mfi14 !== undefined ? fmt(rec.indicators.mfi14) : "n/a"}   ` +
+      `${label("CMF(20)")} ${rec.indicators.cmf20 !== undefined ? fmt(rec.indicators.cmf20) : "n/a"}`
+    );
+    write(
+      `${label("Volume Z(20)")} ${rec.indicators.volumeZScore20 !== undefined ? fmt(rec.indicators.volumeZScore20) : "n/a"}   ` +
+      `${label("CVD Δ%(5)")} ${rec.indicators.cvdDeltaPct5 !== undefined ? fmt(rec.indicators.cvdDeltaPct5) : "n/a"}`
+    );
     write(divider());
 
     write(`${colors.bold}${colors.cyan}CONFIDENCE BREAKDOWN${colors.reset}`);
@@ -380,6 +389,14 @@ export class RecommendationPrinter {
       `${label("Funding")} ${rec.perp.fundingRate}   ` +
       `${label("Funding Avg")} ${rec.perp.fundingRateAvg}   ` +
       `${label("Premium %")} ${rec.perp.premiumPct}`
+    );
+    write(
+      `${label("OI Delta %")} ${rec.perp.openInterestDeltaPct !== undefined ? fmt(rec.perp.openInterestDeltaPct) : "n/a"}   ` +
+      `${label("Spread %")} ${rec.perp.bidAskSpreadPct !== undefined ? fmt(rec.perp.bidAskSpreadPct) : "n/a"}   ` +
+      `${label("Book Imbalance")} ${rec.perp.orderBookImbalance !== undefined ? fmt(rec.perp.orderBookImbalance) : "n/a"}`
+    );
+    write(
+      `${label("Microprice %")} ${rec.perp.microPricePremiumPct !== undefined ? fmt(rec.perp.microPricePremiumPct) : "n/a"}`
     );
     write(
       `${label("Mark Price")} ${rec.perp.markPrice}   ` +

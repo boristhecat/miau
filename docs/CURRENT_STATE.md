@@ -19,6 +19,7 @@ Last updated: 2026-02-18
   - `SYMBOL --expected <minutes>`
   - `SYMBOL --simulate`
   - `rec`, `defaults`, `watch`, `unwatch`, `learn --start|--stop|--stats`, `help`, `exit`
+  - `learn --buckets`
 - AI secondary opinion is included by default for normal trade output when `OPENAI_API_KEY` is configured.
 - AI model selection is persisted in `data/trade-defaults.json` and configurable via `defaults`.
 - AI block now includes structured `agreement` (`AGREE`/`DISAGREE`/`PARTIAL`), `regime` (`TREND`/`RANGE`/`CHOPPY`/`VOLATILE`), and `overruledSignals`.
@@ -30,10 +31,12 @@ Last updated: 2026-02-18
 - `/api/v1/markPrices`
 - `/api/v1/openInterest`
 - `/api/v1/fundingRates`
+- `/api/v1/depth` (optional microstructure features)
 
 ## Recommendation Engine (current)
-- Indicators: RSI(14), EMA(20/50), MACD(12,26,9), ATR(14), ADX(14), Bollinger Bands(20,2), StochRSI, VWAP.
-- Additional context: funding, premium, open interest, recent-candle impulse/breakout context.
+- Indicator engine selection in CLI is `talib-wasm` only (`INDICATOR_ENGINE` must be `talib-wasm` if set).
+- Indicators: RSI(14), EMA(20/50), MACD(12,26,9), ATR(14), ADX(14), Bollinger Bands(20,2), StochRSI, VWAP, OBV slope, MFI(14), CMF(20), volume z-score, short CVD delta proxy.
+- Additional context: funding, premium, open interest (+delta when available), optional orderbook microstructure (spread/imbalance/microprice), recent-candle impulse/breakout context.
 - Market regime classes: `TREND`, `RANGE`, `VOLATILE_SPIKE`, `LOW_LIQ_CHOP`.
 - Signal scoring now includes directional-consensus weighting to reduce false contrarian flips on clear trend structure.
 - Overbought/oversold RSI handling is trend-aware (less aggressive reversal bias when structure strongly confirms continuation).

@@ -43,6 +43,11 @@ interface TopPerpVolumeRow {
   quoteVolume24h: number;
 }
 
+interface DepthRow {
+  bids?: Array<[string | number, string | number]>;
+  asks?: Array<[string | number, string | number]>;
+}
+
 type RawKline =
   | [number | string, number | string, number | string, number | string, number | string, number | string]
   | {
@@ -121,10 +126,11 @@ export class BackpackMarketDataClient implements MarketDataPort {
       throw new Error(`No PERP symbol available for ${params.pair}.`);
     }
 
-    const [markRows, oiRows, fundingRows] = await Promise.all([
+    const [markRows, oiRows, fundingRows, orderBook] = await Promise.all([
       this.httpClient.get<MarkPriceRow[]>("/api/v1/markPrices", { symbol }),
       this.httpClient.get<OpenInterestRow[]>("/api/v1/openInterest", { symbol }),
-      this.httpClient.get<FundingRateRow[]>("/api/v1/fundingRates", { symbol })
+      this.httpClient.get<FundingRateRow[]>("/api/v1/fundingRates", { symbol }),
+      this.tryGetOrderBookFeatures(symbol)
     ]);
 
     const mark = Array.isArray(markRows) ? markRows[0] : undefined;
@@ -135,6 +141,7 @@ export class BackpackMarketDataClient implements MarketDataPort {
     const indexPrice = this.toNumber(mark?.indexPrice, "indexPrice");
     const markPrice = this.toNumber(mark?.markPrice, "markPrice");
     const openInterest = this.toNumber(oi?.openInterest, "openInterest");
+    const openInterestDeltaPct = this.computeOpenInterestDeltaPct(oiRows);
     const fundingValues = fundingSeries
       .map((row) => Number(row.fundingRate))
       .filter((value) => !Number.isNaN(value))
@@ -152,9 +159,14 @@ export class BackpackMarketDataClient implements MarketDataPort {
       fundingRate: this.round(fundingRate),
       fundingRateAvg: this.round(fundingRateAvg),
       openInterest: this.round(openInterest),
+      openInterestDeltaPct:
+        openInterestDeltaPct === undefined ? undefined : this.round(openInterestDeltaPct),
       markPrice: this.round(markPrice),
       indexPrice: this.round(indexPrice),
-      premiumPct: this.round(premiumPct)
+      premiumPct: this.round(premiumPct),
+      bidAskSpreadPct: orderBook?.bidAskSpreadPct,
+      orderBookImbalance: orderBook?.orderBookImbalance,
+      microPricePremiumPct: orderBook?.microPricePremiumPct
     };
   }
 
@@ -262,6 +274,68 @@ export class BackpackMarketDataClient implements MarketDataPort {
 
     const timestamp = row.start ?? row.timestamp;
     return this.makeCandle(timestamp, row.open, row.high, row.low, row.close, row.volume);
+  }
+
+  private async tryGetOrderBookFeatures(symbol: string): Promise<{
+    bidAskSpreadPct: number;
+    orderBookImbalance: number;
+    microPricePremiumPct: number;
+  } | undefined> {
+    try {
+      const payload = await this.httpClient.get<DepthRow>("/api/v1/depth", { symbol, limit: 20 });
+      if (!payload || !Array.isArray(payload.bids) || !Array.isArray(payload.asks)) {
+        return undefined;
+      }
+      const bids = payload.bids
+        .map((row) => ({ price: Number(row[0]), size: Number(row[1]) }))
+        .filter((row) => Number.isFinite(row.price) && Number.isFinite(row.size) && row.price > 0 && row.size > 0);
+      const asks = payload.asks
+        .map((row) => ({ price: Number(row[0]), size: Number(row[1]) }))
+        .filter((row) => Number.isFinite(row.price) && Number.isFinite(row.size) && row.price > 0 && row.size > 0);
+      const bestBid = bids[0];
+      const bestAsk = asks[0];
+      if (!bestBid || !bestAsk) {
+        return undefined;
+      }
+      const mid = (bestBid.price + bestAsk.price) / 2;
+      if (mid <= 0) {
+        return undefined;
+      }
+      const bidDepth = bids.slice(0, 10).reduce((sum, row) => sum + row.price * row.size, 0);
+      const askDepth = asks.slice(0, 10).reduce((sum, row) => sum + row.price * row.size, 0);
+      const depthDenominator = bidDepth + askDepth;
+      const imbalance = depthDenominator <= 1e-8 ? 0 : (bidDepth - askDepth) / depthDenominator;
+      const spreadPct = ((bestAsk.price - bestBid.price) / mid) * 100;
+      const microPrice =
+        (bestAsk.price * bestBid.size + bestBid.price * bestAsk.size) /
+        Math.max(bestBid.size + bestAsk.size, 1e-8);
+      const microPricePremiumPct = ((microPrice - mid) / mid) * 100;
+      return {
+        bidAskSpreadPct: this.round(spreadPct),
+        orderBookImbalance: this.round(imbalance),
+        microPricePremiumPct: this.round(microPricePremiumPct)
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private computeOpenInterestDeltaPct(oiRows: OpenInterestRow[]): number | undefined {
+    if (!Array.isArray(oiRows) || oiRows.length < 2) {
+      return undefined;
+    }
+    const values = oiRows
+      .map((row) => this.safeToNumber(row.openInterest))
+      .filter((value): value is number => value !== undefined && Number.isFinite(value));
+    if (values.length < 2) {
+      return undefined;
+    }
+    const latest = values[0] ?? 0;
+    const previous = values[1] ?? 0;
+    if (Math.abs(previous) <= 1e-8) {
+      return undefined;
+    }
+    return ((latest - previous) / Math.abs(previous)) * 100;
   }
 
   private makeCandle(

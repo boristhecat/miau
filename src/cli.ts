@@ -6,6 +6,7 @@ import { AdaptiveLearningService } from "./application/adaptive-learning-service
 import { EvaluateSimulationUseCase } from "./application/evaluate-simulation-use-case.js";
 import { EvaluateWatchSymbolUseCase } from "./application/evaluate-watch-symbol-use-case.js";
 import { RunLearningCycleUseCase } from "./application/run-learning-cycle-use-case.js";
+import { RunLearningBucketReportUseCase } from "./application/run-learning-bucket-report-use-case.js";
 import { RunRecommendationRankingUseCase } from "./application/run-recommendation-ranking-use-case.js";
 import { intervalToMs, resolveAdaptiveTimeframes, resolveSimulationHorizonMinutes } from "./application/timeframe-policy.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
@@ -16,7 +17,7 @@ import { RecommendationPrinter } from "./adapters/console/recommendation-printer
 import { parseTradingInput, type TradingInput } from "./adapters/console/trading-input-parser.js";
 import { parseWatchCommand, type WatchConfig } from "./adapters/console/watch-command-parser.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
-import { TechnicalIndicatorService } from "./adapters/indicators/technical-indicator-service.js";
+import { createIndicatorService } from "./adapters/indicators/indicator-service-factory.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
 import type { AiAdvice } from "./ports/ai-advisor-port.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
@@ -283,17 +284,19 @@ async function main(): Promise<void> {
     return;
   }
 
-  const httpClient = new AxiosHttpClient("https://api.backpack.exchange");
-  const marketData = new BackpackMarketDataClient(httpClient);
-  const useCase = new GenerateRecommendationUseCase({
-    marketData,
-    indicatorService: new TechnicalIndicatorService(),
-    recommendationEngine: new RecommendationEngine()
-  });
-  const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
-  const learning = new AdaptiveLearningService(learningStore);
-  const printer = new RecommendationPrinter();
-  let tradeDefaults = await loadTradeDefaults();
+  let marketData: BackpackMarketDataClient;
+  let useCase: GenerateRecommendationUseCase;
+  let learning: AdaptiveLearningService;
+  let printer: RecommendationPrinter;
+  let tradeDefaults: TradeDefaults;
+  let aiAdviceUseCase: GenerateAiAdviceUseCase;
+  let aiEnabledByDefault: boolean;
+  let rankingUseCase: RunRecommendationRankingUseCase;
+  let learningBucketReportUseCase: RunLearningBucketReportUseCase;
+  let learningCycleUseCase: RunLearningCycleUseCase;
+  let watchSymbolUseCase: EvaluateWatchSymbolUseCase;
+  let simulationUseCase: EvaluateSimulationUseCase;
+
   const createAiAdviceUseCase = (defaults: TradeDefaults): GenerateAiAdviceUseCase =>
     new GenerateAiAdviceUseCase({
       aiAdvisor: new OpenAiAiAdvisor({
@@ -301,12 +304,33 @@ async function main(): Promise<void> {
         httpClient: new AxiosHttpClient("https://api.openai.com", undefined, { timeoutMs: 45_000 })
       })
     });
-  let aiAdviceUseCase = createAiAdviceUseCase(tradeDefaults);
-  const aiEnabledByDefault = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
-  const rankingUseCase = new RunRecommendationRankingUseCase(useCase, learning, marketData);
-  const learningCycleUseCase = new RunLearningCycleUseCase(logger, useCase, marketData, learning);
-  const watchSymbolUseCase = new EvaluateWatchSymbolUseCase(useCase, learning);
-  const simulationUseCase = new EvaluateSimulationUseCase(marketData);
+
+  try {
+    const httpClient = new AxiosHttpClient("https://api.backpack.exchange");
+    marketData = new BackpackMarketDataClient(httpClient);
+    const indicatorEngine = await createIndicatorService(logger);
+    useCase = new GenerateRecommendationUseCase({
+      marketData,
+      indicatorService: indicatorEngine.service,
+      recommendationEngine: new RecommendationEngine()
+    });
+    const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
+    learning = new AdaptiveLearningService(learningStore);
+    printer = new RecommendationPrinter();
+    tradeDefaults = await loadTradeDefaults();
+    aiAdviceUseCase = createAiAdviceUseCase(tradeDefaults);
+    aiEnabledByDefault = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
+    rankingUseCase = new RunRecommendationRankingUseCase(useCase, learning, marketData);
+    learningBucketReportUseCase = new RunLearningBucketReportUseCase(learning);
+    learningCycleUseCase = new RunLearningCycleUseCase(logger, useCase, marketData, learning);
+    watchSymbolUseCase = new EvaluateWatchSymbolUseCase(useCase, learning);
+    simulationUseCase = new EvaluateSimulationUseCase(marketData);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to initialize runtime dependencies.";
+    logger.error(message);
+    process.exitCode = 1;
+    return;
+  }
 
   if (!cliInput) {
     logger.error("CLI input parsing failed unexpectedly.");
@@ -477,6 +501,31 @@ async function main(): Promise<void> {
           dashboard.latestQueryLines = [`${ui.red}[learn] ${message}${ui.reset}`];
         }
         syncLearningIndicator();
+        requestRender();
+        continue;
+      }
+      if (normalized === "learn --buckets") {
+        try {
+          const report = await learningBucketReportUseCase.execute({ lookbackDays: 14 });
+          const lines = [
+            `${ui.bold}${ui.blue}LEARNING A/B BUCKETS${ui.reset} ${ui.gray}(last ${report.lookbackDays}d)${ui.reset}`,
+            `${ui.gray}timeframe | horizon | samples | wins | losses | win-rate | avg pnl${ui.reset}`
+          ];
+          for (const row of report.rows) {
+            lines.push(
+              `${row.timeframe.padEnd(8)} | ${row.horizonBucket.padEnd(7)} | ${String(row.samples).padStart(7)} | ` +
+                `${String(row.wins).padStart(4)} | ${String(row.losses).padStart(6)} | ` +
+                `${(row.winRate * 100).toFixed(2).padStart(7)}% | ${row.avgPnlUsd >= 0 ? "+" : ""}${row.avgPnlUsd.toFixed(2)}`
+            );
+          }
+          if (report.rows.length === 0) {
+            lines.push(`${ui.gray}No learning samples yet.${ui.reset}`);
+          }
+          dashboard.latestQueryLines = lines;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to read learning bucket stats";
+          dashboard.latestQueryLines = [`${ui.red}[learn] ${message}${ui.reset}`];
+        }
         requestRender();
         continue;
       }
@@ -1040,8 +1089,8 @@ function getInteractiveHelpText(): string {
     "  Remove one watched symbol.",
     "",
     "LEARNING",
-    "- learn --start | learn --stop | learn --stats",
-    "  Control background learning and view aggregate stats.",
+    "- learn --start | learn --stop | learn --stats | learn --buckets",
+    "  Control background learning, aggregate stats, and horizon-bucket A/B report.",
     "",
     "SYSTEM",
     "- help | ?",

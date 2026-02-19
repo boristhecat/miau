@@ -280,6 +280,20 @@
 - [x] Keep only unique decision outputs (`bias` + optional suggested levels + rationale metadata)
 - [x] Update parser/types/tests and derive UI change indicators from remaining fields
 
+## Task: Strengthen market microstructure + validation pipeline (2026-02-19)
+- [x] Add orderbook-derived features (imbalance, spread, microprice premium) to market snapshot
+- [x] Add volume-derived indicators (OBV, MFI, CMF, volume z-score / flow proxy) to indicator snapshot
+- [x] Extend recommendation scoring with volume + orderbook + OI-delta confluence
+- [x] Introduce horizon-bucket A/B report command from persisted learning outcomes
+- [x] Set default indicator engine to `talib-wasm` with adapter-based swap via `INDICATOR_ENGINE`
+- [x] Update tests and docs for new commands/fields and verify build+test
+
+## Task: Post-audit cleanup (2026-02-19)
+- [x] Remove misleading multi-engine indicator naming and legacy alias path
+- [x] Keep indicator initialization explicit to `talib-wasm` only
+- [x] Wrap CLI startup initialization in robust error handling
+- [x] Run test + build after cleanup
+
 ## Goal
 Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that outputs Entry/Stop Loss/Take Profit using Backpack public market data and technical indicators.
 
