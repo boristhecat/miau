@@ -362,3 +362,8 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Blend specific + broader bucket stats in adaptive learning policy with sample-size shrinkage
 - [x] Keep failure-type weighting and strictness gating using best-available recent context
 - [x] Update adaptive learning tests for sparse-bucket fallback behavior and run build+tests
+
+## Task: Fix pending learning insert parameter binding (2026-02-20)
+- [x] Bind optional simulation fields (`mfe/mae/pnl`) safely when absent
+- [x] Add regression coverage for omitted optional fields in SQLite store writes
+- [x] Run tests

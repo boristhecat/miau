@@ -81,4 +81,33 @@ describe("SqliteLearningStore", () => {
     expect(buckets).toHaveLength(1);
     expect(buckets[0]?.samples).toBe(2);
   });
+
+  it("accepts pending outcomes when optional simulation fields are omitted", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "miau-learning-store-"));
+    const dbPath = path.join(tempDir, "learning.sqlite");
+    const store = await createLearningStore(dbPath);
+
+    await expect(
+      store.recordOutcome({
+        pair: "ETH-USD",
+        symbol: "ETH",
+        timeframe: "3m",
+        horizonMinutes: 30,
+        marketRegime: "RANGE",
+        signal: "NO_TRADE",
+        confidence: 54,
+        setupQuality: 51,
+        status: "PENDING"
+      })
+    ).resolves.toBeUndefined();
+
+    const stats = await store.getStats({
+      pair: "ETH-USD",
+      timeframe: "3m",
+      marketRegime: "RANGE",
+      lookbackDays: 14,
+      limit: 10
+    });
+    expect(stats.samples).toBe(0);
+  });
 });

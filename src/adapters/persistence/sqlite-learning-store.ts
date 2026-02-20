@@ -105,6 +105,9 @@ class SqliteLearningStore implements LearningStorePort {
       stopLoss: input.recommendationSnapshot?.stopLoss ?? null,
       takeProfit: input.recommendationSnapshot?.takeProfit ?? null,
       riskRewardRatio: input.recommendationSnapshot?.riskRewardRatio ?? null,
+      maxFavorableExcursionPct: input.maxFavorableExcursionPct ?? null,
+      maxAdverseExcursionPct: input.maxAdverseExcursionPct ?? null,
+      pnlUsd: input.pnlUsd ?? null,
       failureType: input.failureType ?? "NONE",
       directionalCorrect:
         input.directionalCorrect === undefined ? null : input.directionalCorrect ? 1 : 0,
