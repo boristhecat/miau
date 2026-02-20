@@ -367,3 +367,15 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Bind optional simulation fields (`mfe/mae/pnl`) safely when absent
 - [x] Add regression coverage for omitted optional fields in SQLite store writes
 - [x] Run tests
+
+## Task: Include NO_TRADE setups in background learning (2026-02-20)
+- [x] Stop dropping `NO_TRADE` candidates during learning cycle selection
+- [x] Apply counterfactual-friendly gating for `NO_TRADE` candidates (skip confidence floor, keep quality/regime controls)
+- [x] Add regression test proving `NO_TRADE` candidate inclusion
+- [x] Run tests and update state docs
+
+## Task: Full-coverage learning cycle (2026-02-20)
+- [x] Remove pre-gating filters from learning candidate selection so all generated setups are simulated
+- [x] Keep failure handling limited to data/runtime errors only
+- [x] Update learning-cycle tests to reflect no-filter candidate inclusion behavior
+- [x] Update state docs and run full tests

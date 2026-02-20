@@ -149,4 +149,97 @@ describe("RunLearningCycleUseCase", () => {
       { interval: "5m", horizon: 90 }
     ]);
   });
+
+  it("keeps NO_TRADE recommendations as learning candidates for counterfactual simulation", async () => {
+    const recommendationUseCase = {
+      async execute(input: { pair: string }) {
+        return recommendation(input.pair);
+      }
+    } as GenerateRecommendationUseCase;
+
+    const marketData = {
+      async getTopPerpSymbolsByVolumeWithOpenInterest() {
+        return [{ symbol: "BTC", quoteVolume24h: 1000, openInterest: 200 }];
+      }
+    } as MarketDataPort;
+
+    const learning = {
+      async applyPolicy(input: { recommendation: Recommendation }) {
+        return {
+          ...input.recommendation,
+          signal: "NO_TRADE" as const,
+          action: "NO TRADE" as const,
+          confidence: 20,
+          confidenceBreakdown: {
+            ...input.recommendation.confidenceBreakdown,
+            setupQuality: 50
+          }
+        };
+      }
+    } as AdaptiveLearningService;
+
+    const logger = {
+      error() {
+        // no-op
+      }
+    } as LoggerPort;
+
+    const useCase = new RunLearningCycleUseCase(logger, recommendationUseCase, marketData, learning);
+    const result = await useCase.execute({
+      horizonsMinutes: [15],
+      leverage: 20,
+      positionSizeUsd: 250,
+      active: () => true
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.recommendation.signal).toBe("NO_TRADE");
+  });
+
+  it("does not pre-filter low-quality or low-confidence setups in learning cycle", async () => {
+    const recommendationUseCase = {
+      async execute(input: { pair: string }) {
+        return recommendation(input.pair);
+      }
+    } as GenerateRecommendationUseCase;
+
+    const marketData = {
+      async getTopPerpSymbolsByVolumeWithOpenInterest() {
+        return [{ symbol: "BTC", quoteVolume24h: 1000, openInterest: 200 }];
+      }
+    } as MarketDataPort;
+
+    const learning = {
+      async applyPolicy(input: { recommendation: Recommendation }) {
+        return {
+          ...input.recommendation,
+          marketRegime: "LOW_LIQ_CHOP" as const,
+          confidence: 5,
+          confidenceBreakdown: {
+            ...input.recommendation.confidenceBreakdown,
+            setupQuality: 10
+          }
+        };
+      }
+    } as AdaptiveLearningService;
+
+    const logger = {
+      error() {
+        // no-op
+      }
+    } as LoggerPort;
+
+    const useCase = new RunLearningCycleUseCase(logger, recommendationUseCase, marketData, learning);
+    const result = await useCase.execute({
+      horizonsMinutes: [15],
+      leverage: 20,
+      positionSizeUsd: 250,
+      active: () => true
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.recommendation.marketRegime).toBe("LOW_LIQ_CHOP");
+    expect(result.candidates[0]?.recommendation.confidence).toBe(5);
+    expect(result.candidates[0]?.recommendation.confidenceBreakdown.setupQuality).toBe(10);
+  });
 });

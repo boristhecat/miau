@@ -1,7 +1,6 @@
 import type { AdaptiveLearningService } from "./adaptive-learning-service.js";
 import type { GenerateRecommendationUseCase } from "./generate-recommendation-use-case.js";
 import { RankTopOpportunitiesUseCase } from "./rank-top-opportunities-use-case.js";
-import { getLearningGates } from "./learning-gates-policy.js";
 import { resolveAdaptiveTimeframes } from "./timeframe-policy.js";
 import type { LoggerPort } from "../ports/logger-port.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
@@ -52,15 +51,6 @@ export class RunLearningCycleUseCase {
             recommendation,
             timeframe: adaptiveTimeframes.timeframe
           });
-          const gates = getLearningGates(horizonMinutes);
-          if (
-            recommendation.signal === "NO_TRADE" ||
-            recommendation.marketRegime === "LOW_LIQ_CHOP" ||
-            recommendation.confidence < gates.minConfidence ||
-            recommendation.confidenceBreakdown.setupQuality < gates.minSetupQuality
-          ) {
-            continue;
-          }
 
           candidates.push({
             pair,
