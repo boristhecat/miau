@@ -366,7 +366,7 @@ export class BackpackMarketDataClient implements MarketDataPort {
       volume: Number(volume)
     };
 
-    if (Object.values(candle).some((v) => Number.isNaN(v))) {
+    if (Object.values(candle).some((v) => !Number.isFinite(v))) {
       return null;
     }
 
@@ -517,7 +517,7 @@ export class BackpackMarketDataClient implements MarketDataPort {
 
   private toNumber(value: string | number | undefined, label: string): number {
     const parsed = Number(value);
-    if (Number.isNaN(parsed)) {
+    if (!Number.isFinite(parsed)) {
       throw new Error(`Backpack ${label} is missing or invalid.`);
     }
     return parsed;
@@ -525,7 +525,7 @@ export class BackpackMarketDataClient implements MarketDataPort {
 
   private safeToNumber(value: string | number | undefined): number | undefined {
     const parsed = Number(value);
-    if (Number.isNaN(parsed)) {
+    if (!Number.isFinite(parsed)) {
       return undefined;
     }
     return parsed;

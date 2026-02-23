@@ -82,7 +82,7 @@ Interactive screen layout:
 
 Background learning mode:
 - On `learn --start`, the app derives symbols from rec-style ranking and starts background simulations.
-- For each selected symbol it runs horizons: `5, 10, 15, 30, 60, 90` minutes.
+- For each selected symbol it runs horizons: `15, 30, 60, 90` minutes.
 - Use `learn --stop` to stop the runner and cancel pending scheduled simulations.
 
 ### Quick mode

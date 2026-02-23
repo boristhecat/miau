@@ -1,5 +1,21 @@
 # Project Plan
 
+## Task: Findings remediation without trading-logic changes (2026-02-23)
+- [x] Align docs with current runtime behavior (learning horizons)
+- [x] Remove OpenAI error-log test side effect from tracked `data/openai-http-errors.log`
+- [x] Remove unused `learning-gates-policy` module
+- [x] Harden `watch` command parsing to reject unsupported flags instead of silently ignoring them
+- [x] Reduce maintenance risk by extracting CLI dashboard/help/prompt helpers from `src/cli.ts`
+- [x] Reduce throughput risk with bounded-concurrency execution in ranking/learning orchestration
+- [x] Run test + build verification
+
+## Task: Fix long-run `learn` mode talib-wasm OOB runtime trap (2026-02-23)
+- [x] Verify source of `[learn] memory access out of bounds` with isolated stress reproduction
+- [x] Harden talib runtime adapter with safe refresh path (cache reset + listener cleanup)
+- [x] Add proactive refresh scheduling and trap-triggered refresh in indicator service
+- [x] Tighten numeric input validation before wasm calls
+- [x] Run tests + build and document root cause in response
+
 ## Task: Document architecture (2026-02-13)
 - [x] Capture current clean-architecture boundaries and dependency rules
 - [x] Document runtime flows (interactive mode, rec mode, simulation path)

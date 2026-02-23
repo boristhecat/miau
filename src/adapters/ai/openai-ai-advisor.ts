@@ -27,11 +27,11 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
   private readonly httpClient: HttpClient;
   private readonly errorLogFilePath: string;
 
-  constructor(input?: { apiKey?: string; model?: string; httpClient?: HttpClient }) {
+  constructor(input?: { apiKey?: string; model?: string; httpClient?: HttpClient; errorLogFilePath?: string }) {
     this.apiKey = input?.apiKey ?? process.env.OPENAI_API_KEY ?? "";
     this.model = input?.model ?? process.env.MIAU_AI_MODEL ?? "gpt-5-mini";
     this.httpClient = input?.httpClient ?? new AxiosHttpClient("https://api.openai.com");
-    this.errorLogFilePath = path.join(process.cwd(), "data", "openai-http-errors.log");
+    this.errorLogFilePath = input?.errorLogFilePath ?? path.join(process.cwd(), "data", "openai-http-errors.log");
   }
 
   async advise(input: AiAdviceRequest): Promise<AiAdvice> {

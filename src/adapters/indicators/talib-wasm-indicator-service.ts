@@ -1,91 +1,141 @@
 import type { Candle, IndicatorSnapshot } from "../../domain/types.js";
 import type { IndicatorCalculatorPort } from "../../ports/indicator-calculator-port.js";
-import { getTalibWasm, type TalibResult } from "./talib-wasm-runtime.js";
+import {
+  ensureTalibHealthyOnError,
+  getTalibWasm,
+  isTalibBoundsTrap,
+  isTalibRefreshInFlight,
+  scheduleTalibWasmRefresh,
+  type TalibResult
+} from "./talib-wasm-runtime.js";
+
+const TALIB_REFRESH_INTERVAL_CALCULATIONS = 300;
+let calculationsSinceRefresh = 0;
 
 export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
   calculate(candles: Candle[]): IndicatorSnapshot {
     if (candles.length < 60) {
       throw new Error("At least 60 candles are required to compute indicators reliably.");
     }
+    this.assertFiniteCandles(candles);
+    this.maybeScheduleTalibRefresh();
 
-    const talib = getTalibWasm();
-    const closes = candles.map((c) => c.close);
-    const highs = candles.map((c) => c.high);
-    const lows = candles.map((c) => c.low);
-    const volumes = candles.map((c) => c.volume);
+    try {
+      const talib = getTalibWasm();
+      const closes = candles.map((c) => c.close);
+      const highs = candles.map((c) => c.high);
+      const lows = candles.map((c) => c.low);
+      const volumes = candles.map((c) => c.volume);
 
-    const rsi = this.lastFromResult(talib.RSI({ inReal: closes, optInTimePeriod: 14 }), "outReal", "RSI");
-    const ema20 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: 20 }), "outReal", "EMA20");
-    const ema50 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: 50 }), "outReal", "EMA50");
-    const macd = talib.MACD({ inReal: closes, optInFastPeriod: 12, optInSlowPeriod: 26, optInSignalPeriod: 9 });
-    this.assertSuccess(macd, "MACD");
-    const atr = this.lastFromResult(
-      talib.ATR({ High: highs, Low: lows, Close: closes, optInTimePeriod: 14 }),
-      "outReal",
-      "ATR"
-    );
-    const adx = this.lastFromResult(
-      talib.ADX({ High: highs, Low: lows, Close: closes, optInTimePeriod: 14 }),
-      "outReal",
-      "ADX"
-    );
-    const bb = talib.BBANDS({ inReal: closes, optInTimePeriod: 20, optInDeviationsup: 2, optInDeviationsdown: 2 });
-    this.assertSuccess(bb, "BBANDS");
-    const stochRsi = talib.STOCHRSI({
-      inReal: closes,
-      optInTimePeriod: 14,
-      optInFast_KPeriod: 3,
-      optInFast_DPeriod: 3
-    });
-    this.assertSuccess(stochRsi, "STOCHRSI");
-    const mfi = this.lastFromResult(
-      talib.MFI({ High: highs, Low: lows, Close: closes, Volume: volumes, optInTimePeriod: 14 }),
-      "outReal",
-      "MFI"
-    );
-    const obv = talib.OBV({ inReal: closes, Volume: volumes });
-    this.assertSuccess(obv, "OBV");
+      const rsi = this.lastFromResult(talib.RSI({ inReal: closes, optInTimePeriod: 14 }), "outReal", "RSI");
+      const ema20 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: 20 }), "outReal", "EMA20");
+      const ema50 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: 50 }), "outReal", "EMA50");
+      const macd = talib.MACD({ inReal: closes, optInFastPeriod: 12, optInSlowPeriod: 26, optInSignalPeriod: 9 });
+      this.assertSuccess(macd, "MACD");
+      const atr = this.lastFromResult(
+        talib.ATR({ High: highs, Low: lows, Close: closes, optInTimePeriod: 14 }),
+        "outReal",
+        "ATR"
+      );
+      const adx = this.lastFromResult(
+        talib.ADX({ High: highs, Low: lows, Close: closes, optInTimePeriod: 14 }),
+        "outReal",
+        "ADX"
+      );
+      const bb = talib.BBANDS({ inReal: closes, optInTimePeriod: 20, optInDeviationsup: 2, optInDeviationsdown: 2 });
+      this.assertSuccess(bb, "BBANDS");
+      const stochRsi = talib.STOCHRSI({
+        inReal: closes,
+        optInTimePeriod: 14,
+        optInFast_KPeriod: 3,
+        optInFast_DPeriod: 3
+      });
+      this.assertSuccess(stochRsi, "STOCHRSI");
+      const mfi = this.lastFromResult(
+        talib.MFI({ High: highs, Low: lows, Close: closes, Volume: volumes, optInTimePeriod: 14 }),
+        "outReal",
+        "MFI"
+      );
+      const obv = talib.OBV({ inReal: closes, Volume: volumes });
+      this.assertSuccess(obv, "OBV");
 
-    const latestMacd = this.lastFromArray(this.extractArray(macd, "outMACD", "MACD"), "MACD");
-    const latestMacdSignal = this.lastFromArray(this.extractArray(macd, "outMACDSignal", "MACD signal"), "MACD signal");
-    const latestMacdHist = this.lastFromArray(this.extractArray(macd, "outMACDHist", "MACD histogram"), "MACD histogram");
-    const latestBbUpper = this.lastFromArray(this.extractArray(bb, "outRealUpperBand", "BB upper"), "BB upper");
-    const latestBbMiddle = this.lastFromArray(this.extractArray(bb, "outRealMiddleBand", "BB middle"), "BB middle");
-    const latestBbLower = this.lastFromArray(this.extractArray(bb, "outRealLowerBand", "BB lower"), "BB lower");
-    const latestStochRsiK = this.lastFromArray(this.extractArray(stochRsi, "outFastK", "StochRSI K"), "StochRSI K");
-    const latestStochRsiD = this.lastFromArray(this.extractArray(stochRsi, "outFastD", "StochRSI D"), "StochRSI D");
+      const latestMacd = this.lastFromArray(this.extractArray(macd, "outMACD", "MACD"), "MACD");
+      const latestMacdSignal = this.lastFromArray(this.extractArray(macd, "outMACDSignal", "MACD signal"), "MACD signal");
+      const latestMacdHist = this.lastFromArray(this.extractArray(macd, "outMACDHist", "MACD histogram"), "MACD histogram");
+      const latestBbUpper = this.lastFromArray(this.extractArray(bb, "outRealUpperBand", "BB upper"), "BB upper");
+      const latestBbMiddle = this.lastFromArray(this.extractArray(bb, "outRealMiddleBand", "BB middle"), "BB middle");
+      const latestBbLower = this.lastFromArray(this.extractArray(bb, "outRealLowerBand", "BB lower"), "BB lower");
+      const latestStochRsiK = this.lastFromArray(this.extractArray(stochRsi, "outFastK", "StochRSI K"), "StochRSI K");
+      const latestStochRsiD = this.lastFromArray(this.extractArray(stochRsi, "outFastD", "StochRSI D"), "StochRSI D");
 
-    const vwap = this.computeVwap(candles);
-    const obvSeries = this.extractArray(obv, "outReal", "OBV");
-    const obvSlope5 = this.computeObvSlope(obvSeries, 5);
-    const cmf20 = this.computeCmf(candles, 20);
-    const volumeZScore20 = this.computeVolumeZScore(candles, 20);
-    const cvdDeltaPct5 = this.computeCvdDeltaPct(candles, 5);
-    const recentCandleContext = this.computeRecentCandleContext(candles);
+      const vwap = this.computeVwap(candles);
+      const obvSeries = this.extractArray(obv, "outReal", "OBV");
+      const obvSlope5 = this.computeObvSlope(obvSeries, 5);
+      const cmf20 = this.computeCmf(candles, 20);
+      const volumeZScore20 = this.computeVolumeZScore(candles, 20);
+      const cvdDeltaPct5 = this.computeCvdDeltaPct(candles, 5);
+      const recentCandleContext = this.computeRecentCandleContext(candles);
 
-    return {
-      rsi14: this.round(rsi),
-      ema20: this.round(ema20),
-      ema50: this.round(ema50),
-      macd: this.round(latestMacd),
-      macdSignal: this.round(latestMacdSignal),
-      macdHistogram: this.round(latestMacdHist),
-      atr14: this.round(atr),
-      adx14: this.round(adx),
-      bbUpper: this.round(latestBbUpper),
-      bbMiddle: this.round(latestBbMiddle),
-      bbLower: this.round(latestBbLower),
-      stochRsiK: this.round(latestStochRsiK),
-      stochRsiD: this.round(latestStochRsiD),
-      vwap: this.round(vwap),
-      obv: this.round(this.lastFromArray(obvSeries, "OBV")),
-      obvSlope5: this.round(obvSlope5),
-      mfi14: this.round(mfi),
-      cmf20: this.round(cmf20),
-      volumeZScore20: this.round(volumeZScore20),
-      cvdDeltaPct5: this.round(cvdDeltaPct5),
-      recentCandleContext
-    };
+      return {
+        rsi14: this.round(rsi),
+        ema20: this.round(ema20),
+        ema50: this.round(ema50),
+        macd: this.round(latestMacd),
+        macdSignal: this.round(latestMacdSignal),
+        macdHistogram: this.round(latestMacdHist),
+        atr14: this.round(atr),
+        adx14: this.round(adx),
+        bbUpper: this.round(latestBbUpper),
+        bbMiddle: this.round(latestBbMiddle),
+        bbLower: this.round(latestBbLower),
+        stochRsiK: this.round(latestStochRsiK),
+        stochRsiD: this.round(latestStochRsiD),
+        vwap: this.round(vwap),
+        obv: this.round(this.lastFromArray(obvSeries, "OBV")),
+        obvSlope5: this.round(obvSlope5),
+        mfi14: this.round(mfi),
+        cmf20: this.round(cmf20),
+        volumeZScore20: this.round(volumeZScore20),
+        cvdDeltaPct5: this.round(cvdDeltaPct5),
+        recentCandleContext
+      };
+    } catch (error) {
+      ensureTalibHealthyOnError(error);
+      if (isTalibBoundsTrap(error)) {
+        throw new Error("talib-wasm runtime trap: memory access out of bounds. Refresh scheduled; retry.");
+      }
+      throw error;
+    }
+  }
+
+  private maybeScheduleTalibRefresh(): void {
+    calculationsSinceRefresh += 1;
+    if (calculationsSinceRefresh < TALIB_REFRESH_INTERVAL_CALCULATIONS) {
+      return;
+    }
+    calculationsSinceRefresh = 0;
+    if (!isTalibRefreshInFlight()) {
+      scheduleTalibWasmRefresh();
+    }
+  }
+
+  private assertFiniteCandles(candles: Candle[]): void {
+    for (let index = 0; index < candles.length; index += 1) {
+      const candle = candles[index];
+      if (!candle) {
+        throw new Error(`Invalid candle data at index ${index}: candle is missing.`);
+      }
+      if (
+        !Number.isFinite(candle.timestamp) ||
+        !Number.isFinite(candle.open) ||
+        !Number.isFinite(candle.high) ||
+        !Number.isFinite(candle.low) ||
+        !Number.isFinite(candle.close) ||
+        !Number.isFinite(candle.volume)
+      ) {
+        throw new Error(`Invalid candle data at index ${index}: non-finite numeric field.`);
+      }
+    }
   }
 
   private assertSuccess(result: TalibResult, label: string): void {

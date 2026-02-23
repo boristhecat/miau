@@ -31,6 +31,22 @@ export function parseWatchCommand(raw: string): WatchConfig {
   }
 
   const base = parseTradingInput(queryTokens.join(" "));
+  const unsupportedOptions: string[] = [];
+  if (base.customValues) {
+    unsupportedOptions.push("--custom");
+  }
+  if (base.runSimulation) {
+    unsupportedOptions.push("--simulate");
+  }
+  if (base.expectedRangeHorizon !== undefined) {
+    unsupportedOptions.push("--expected");
+  }
+  if (unsupportedOptions.length > 0) {
+    throw new Error(
+      `Unsupported watch option(s): ${unsupportedOptions.join(", ")}. ` +
+        "Use: watch <SYMBOL> [--every <minutes>] [--horizon <minutes>] [long|short] [minutes]"
+    );
+  }
 
   return {
     symbol: base.symbol,

@@ -19,4 +19,10 @@ describe("parseWatchCommand", () => {
     expect(() => parseWatchCommand("watch btc --every abc")).toThrow("Invalid --every value");
     expect(() => parseWatchCommand("watch btc --every 0")).toThrow("Invalid --every value");
   });
+
+  it("rejects unsupported watch query flags", () => {
+    expect(() => parseWatchCommand("watch btc --simulate")).toThrow("Unsupported watch option(s): --simulate");
+    expect(() => parseWatchCommand("watch btc --custom")).toThrow("Unsupported watch option(s): --custom");
+    expect(() => parseWatchCommand("watch btc --expected 60")).toThrow("Unsupported watch option(s): --expected");
+  });
 });
