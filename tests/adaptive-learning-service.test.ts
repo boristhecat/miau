@@ -280,7 +280,10 @@ describe("AdaptiveLearningService", () => {
     });
 
     expect(rec.signal).toBe("LONG");
+    expect(rec.stopLoss).toBeLessThan(99);
+    expect(rec.riskRewardRatio).toBeLessThan(2);
     expect(rec.rationale.some((line) => line.includes("tight-stop"))).toBe(true);
+    expect(rec.rationale.some((line) => line.includes("widened stop"))).toBe(true);
   });
 
   it("uses broader fallback buckets with shrinkage when pair bucket is sparse", async () => {

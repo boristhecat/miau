@@ -14,6 +14,7 @@ export interface LearningPolicy {
   confidenceDelta: number;
   minConfidence: number;
   minSetupQuality: number;
+  stopWideningFactor: number;
   note?: string;
   sampleSize: number;
   active: boolean;
@@ -85,6 +86,7 @@ export class AdaptiveLearningService {
         confidenceDelta: 0,
         minConfidence: 45,
         minSetupQuality: 52,
+        stopWideningFactor: 0,
         sampleSize: specific.samples,
         active: false
       };
@@ -105,16 +107,27 @@ export class AdaptiveLearningService {
     const tightStopFailures = failureContext.recentOutcomes.filter(
       (outcome) => outcome.status === "FAILURE" && outcome.failureType === "STOP_TOO_TIGHT_REBOUND"
     ).length;
+    const failureCount = failureContext.recentOutcomes.filter((outcome) => outcome.status === "FAILURE").length;
+    const tightStopRate = failureCount > 0 ? tightStopFailures / failureCount : 0;
+    const stopWideningFactor =
+      tightStopFailures >= 2
+        ? clamp(
+            (tightStopRate - 0.28) * 0.42 * clamp(effectiveSamples / 80, 0.3, 1),
+            0,
+            0.16
+          )
+        : 0;
     const strictnessBump = recentFailures >= 4 ? 3 : 0;
 
     return {
       confidenceDelta,
       minConfidence: clamp(minConfidence + strictnessBump, 35, 70),
       minSetupQuality: clamp(minSetupQuality + strictnessBump, 40, 75),
+      stopWideningFactor,
       sampleSize: specific.samples,
       active: true,
       note:
-        `learning win ${Math.round(weightedWinRate * 100)}% (specific ${Math.round(specific.winRate * 100)}%, blended ${Math.round(blendedWinRate * 100)}%, tight-stop ${tightStopFailures}) / avg ${blendedAvgPnlUsd.toFixed(2)} USDC (specific ${specific.samples}, effective ${effectiveSamples}, shrink ${Math.round((1 - shrinkage) * 100)}%)`
+        `learning win ${Math.round(weightedWinRate * 100)}% (specific ${Math.round(specific.winRate * 100)}%, blended ${Math.round(blendedWinRate * 100)}%, tight-stop ${tightStopFailures}) / avg ${blendedAvgPnlUsd.toFixed(2)} USDC (specific ${specific.samples}, effective ${effectiveSamples}, shrink ${Math.round((1 - shrinkage) * 100)}%, sl+${Math.round(stopWideningFactor * 100)}%)`
     };
   }
 
@@ -134,6 +147,14 @@ export class AdaptiveLearningService {
     rec.confidence = clamp(rec.confidence + policy.confidenceDelta, 1, 99);
     if (policy.note) {
       rec.rationale.unshift(`Learning: ${policy.note}.`);
+    }
+    if (policy.stopWideningFactor > 0 && rec.signal !== "NO_TRADE") {
+      const applied = applyStopWidening(rec, policy.stopWideningFactor);
+      if (applied) {
+        rec.rationale.unshift(
+          `Learning: widened stop by ${Math.round(policy.stopWideningFactor * 100)}% from tight-stop rebound history.`
+        );
+      }
     }
 
     if (rec.signal !== "NO_TRADE") {
@@ -297,4 +318,66 @@ function weightedMean(values: number[], weights: number[]): number {
     return 0;
   }
   return weightedSum / totalWeight;
+}
+
+function applyStopWidening(rec: Recommendation, factor: number): boolean {
+  if (factor <= 0 || rec.signal === "NO_TRADE") {
+    return false;
+  }
+  const stopDistance = Math.abs(rec.entry - rec.stopLoss);
+  const widenedDistance = stopDistance * (1 + factor);
+  if (!Number.isFinite(widenedDistance) || widenedDistance <= 0) {
+    return false;
+  }
+
+  if (rec.signal === "LONG") {
+    rec.stopLoss = rec.entry - widenedDistance;
+  } else {
+    rec.stopLoss = rec.entry + widenedDistance;
+  }
+  rec.riskRewardRatio = computeRiskReward(rec.entry, rec.stopLoss, rec.takeProfit);
+  recomputePnlMetrics(rec);
+  return true;
+}
+
+function computeRiskReward(entry: number, stopLoss: number, takeProfit: number): number {
+  const risk = Math.abs(entry - stopLoss);
+  const reward = Math.abs(takeProfit - entry);
+  if (risk <= 0) {
+    return 0;
+  }
+  return reward / risk;
+}
+
+function recomputePnlMetrics(rec: Recommendation): void {
+  if (rec.signal === "NO_TRADE" || !rec.leverage || !rec.positionSizeUsd || rec.entry <= 0) {
+    return;
+  }
+  const notional = rec.leverage * rec.positionSizeUsd;
+  const slReturn =
+    rec.signal === "LONG"
+      ? (rec.stopLoss - rec.entry) / rec.entry
+      : (rec.entry - rec.stopLoss) / rec.entry;
+  const tpReturn =
+    rec.signal === "LONG"
+      ? (rec.takeProfit - rec.entry) / rec.entry
+      : (rec.entry - rec.takeProfit) / rec.entry;
+  rec.estimatedPnLAtStopLoss = round(notional * slReturn);
+  rec.estimatedPnLAtTakeProfit = round(notional * tpReturn);
+
+  const roundTripCostRate = 0.0014;
+  const totalCosts = notional * roundTripCostRate;
+  const netTp = (rec.estimatedPnLAtTakeProfit ?? 0) - totalCosts;
+  const netSl = (rec.estimatedPnLAtStopLoss ?? 0) - totalCosts;
+  rec.netEstimatedPnLAtTakeProfit = round(netTp);
+  rec.netEstimatedPnLAtStopLoss = round(netSl);
+  rec.netRiskRewardRatio = round(Math.abs(netSl) > 0 ? Math.abs(netTp / netSl) : 0);
+  const winProbability = Math.min(0.95, Math.max(0.05, rec.confidence / 100));
+  const expectedValueUsd = winProbability * netTp + (1 - winProbability) * netSl;
+  rec.expectedValueUsd = round(expectedValueUsd);
+  rec.expectedValuePerMarginPct = rec.positionSizeUsd > 0 ? round((expectedValueUsd / rec.positionSizeUsd) * 100) : undefined;
+}
+
+function round(value: number): number {
+  return Number(value.toFixed(4));
 }

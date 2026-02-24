@@ -47,7 +47,16 @@ export function applyObjectiveTargeting(request: ObjectiveTargetingRequest): Obj
     providedObjective ?? deriveObjectiveFromHorizon({ entry: request.entry, atr: request.atr, baseInterval: request.baseInterval, horizon: request.horizon, notionalUsd });
   const tpFraction = resolvedObjectiveUsdc / notionalUsd;
   const rr = defaultRiskRewardForObjective(resolvedObjectiveUsdc);
-  const slFraction = tpFraction / rr;
+  const requestedSlFraction = tpFraction / rr;
+  const horizon = request.horizon ?? defaultHorizonForObjective(resolvedObjectiveUsdc);
+  const horizonMinutes = parseHorizonMinutes(horizon);
+  const minSlFraction = minimumStopFraction({
+    entry: request.entry,
+    atr: request.atr,
+    horizonMinutes
+  });
+  const slFraction = Math.max(requestedSlFraction, minSlFraction);
+  const effectiveRr = tpFraction / Math.max(slFraction, 1e-8);
 
   const targetTpPct = tpFraction * 100;
   const targetSlPct = slFraction * 100;
@@ -57,8 +66,6 @@ export function applyObjectiveTargeting(request: ObjectiveTargetingRequest): Obj
   const stopLoss =
     request.signal === "LONG" ? request.entry * (1 - slFraction) : request.entry * (1 + slFraction);
 
-  const horizon = request.horizon ?? defaultHorizonForObjective(resolvedObjectiveUsdc);
-  const horizonMinutes = parseHorizonMinutes(horizon);
   const horizonLabel = `${horizonMinutes}m`;
   const baseIntervalMinutes = parseDurationToMinutes(request.baseInterval);
   const horizonCandles = toCandleCount(horizonMinutes, baseIntervalMinutes);
@@ -81,12 +88,20 @@ export function applyObjectiveTargeting(request: ObjectiveTargetingRequest): Obj
     targetTpFraction: round(tpFraction, 6),
     targetTpPct: round(targetTpPct, 4),
     targetSlPct: round(targetSlPct, 4),
-    rr: round(rr, 4),
+    rr: round(effectiveRr, 4),
     takeProfit: round(takeProfit, 4),
     stopLoss: round(stopLoss, 4),
     expectedPnlAtTakeProfit: round(resolvedObjectiveUsdc, 4),
     expectedPnlAtStopLoss: round(-(notionalUsd * slFraction), 4),
-    plausibilityWarning
+    plausibilityWarning:
+      requestedSlFraction < minSlFraction
+        ? [
+            plausibilityWarning,
+            `SL floor applied for ${horizonLabel}: widened from ${(requestedSlFraction * 100).toFixed(3)}% to ${(minSlFraction * 100).toFixed(3)}% to reduce stop-out noise.`
+          ]
+            .filter((value): value is string => Boolean(value))
+            .join(" ")
+        : plausibilityWarning
   };
 }
 
@@ -169,4 +184,14 @@ function round(value: number, digits: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function minimumStopFraction(input: { entry: number; atr: number; horizonMinutes: number }): number {
+  if (input.entry <= 0) {
+    return 0.0015;
+  }
+  const atrFraction = Math.max(0, input.atr / input.entry);
+  const atrMultiple = input.horizonMinutes <= 30 ? 0.42 : input.horizonMinutes <= 90 ? 0.38 : 0.34;
+  const regimeFloor = input.horizonMinutes <= 30 ? 0.0018 : input.horizonMinutes <= 90 ? 0.0015 : 0.0012;
+  return Math.max(regimeFloor, atrFraction * atrMultiple);
 }

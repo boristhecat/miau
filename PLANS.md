@@ -379,3 +379,10 @@ Initialize a minimal, clean-architecture TypeScript CLI (`miau-trader`) that out
 - [x] Keep failure handling limited to data/runtime errors only
 - [x] Update learning-cycle tests to reflect no-filter candidate inclusion behavior
 - [x] Update state docs and run full tests
+
+## Task: Reduce tight-stop stopouts with deterministic + learned widening (2026-02-20)
+- [x] Add deterministic minimum SL distance floor in objective targeting to avoid ultra-tight stops in low-vol conditions
+- [x] Add learning-driven stop widening factor from tight-stop rebound failure rate
+- [x] Recompute recommendation risk/pnl metrics after learning stop widening adjustments
+- [x] Add/adjust tests for targeting floors and adaptive widening behavior
+- [x] Update state docs and run full tests

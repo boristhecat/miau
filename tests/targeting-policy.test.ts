@@ -144,4 +144,20 @@ describe("targeting-policy", () => {
     });
     expect(result.plausibilityWarning).toBeDefined();
   });
+
+  it("applies a minimum SL floor when objective-derived stop is unrealistically tight", () => {
+    const result = applyObjectiveTargeting({
+      signal: "LONG",
+      entry: 100,
+      atr: 0.01,
+      baseInterval: "1m",
+      leverage: 10,
+      positionSizeUsd: 250,
+      objectiveUsdc: 5,
+      horizon: "15"
+    });
+
+    expect(result.targetSlPct).toBeGreaterThan(0.14);
+    expect(result.plausibilityWarning).toContain("SL floor applied");
+  });
 });

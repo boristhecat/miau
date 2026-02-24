@@ -1179,3 +1179,1353 @@
   }
 }
 
+{
+  "timestamp": "2026-02-19T09:08:47.529Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:08:47.534Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:16:58.885Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:16:58.902Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:17:07.498Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:17:07.527Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:25:58.610Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:25:58.634Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:55:16.054Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:55:16.084Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:55:50.436Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T09:55:50.460Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T18:42:14.303Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T18:42:14.313Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T18:42:27.338Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T18:42:27.348Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T18:47:10.424Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T18:47:10.442Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T19:59:07.815Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T19:59:07.839Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T20:44:06.386Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-19T20:44:06.395Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-20T09:22:28.862Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-20T09:22:28.925Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-20T11:57:01.779Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-20T11:57:01.785Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-20T12:11:27.851Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-20T12:11:27.868Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-21T08:26:46.343Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:229:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+
+{
+  "timestamp": "2026-02-21T08:26:46.368Z",
+  "request": {
+    "url": "/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ***redacted***"
+    },
+    "body": {
+      "model": "gpt-5-mini",
+      "reasoning_effort": "low",
+      "max_completion_tokens": 1024,
+      "response_format": {
+        "type": "json_object"
+      },
+      "messages": [
+        {
+          "role": "system",
+          "contentChars": 220,
+          "contentPreview": "You are a cautious crypto assistant. Return compact JSON only with keys: bias, confidenceBand, suggestedEntry, suggestedStopLoss, suggestedTakeProfit, agreement, regime, overruledSignals, reasons, invalidation, riskNote."
+        },
+        {
+          "role": "user",
+          "contentChars": 1375,
+          "contentPreview": "Analyze this trading snapshot and provide a secondary opinion.\nRules:\n- Keep reasons simple for average crypto traders.\n- Be conservative when setup quality is weak.\n- Compare your view with the model signal and state agreement clearly.\n- D"
+        }
+      ]
+    }
+  },
+  "error": {
+    "name": "Error",
+    "message": "Request failed with status code 400",
+    "stack": "Error: Request failed with status code 400\n    at /Users/hanna/Documents/miau/tests/openai-ai-advisor.test.ts:272:22\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runFiles (file:///Users/hanna/Documents/miau/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)",
+    "response": {
+      "status": 400,
+      "data": {
+        "error": {
+          "message": "The model `gpt-5-mini` does not exist or you do not have access to it."
+        }
+      }
+    },
+    "axiosConfig": {}
+  }
+}
+

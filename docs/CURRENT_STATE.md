@@ -44,6 +44,7 @@ Last updated: 2026-02-19
 - Guard behavior is less binary:
   - Pullback-extension blocks are stricter on short horizons and weaker setups.
   - Breakout follow-through failure blocks only when it conflicts with the trade direction; otherwise it is advisory.
+- Objective targeting includes a minimum stop-distance floor to avoid unrealistically tight SL placement in low-volatility conditions.
 
 ## Output / Confidence
 - Confidence is deterministic (`0..100`) and blended with setup-quality scoring.
@@ -59,6 +60,7 @@ Last updated: 2026-02-19
 - Background learning currently evaluates horizons: `15m`, `30m`, `60m`, `90m`.
 - Background learning keeps `NO_TRADE` setups as counterfactual simulation candidates and no longer pre-filters by quality/confidence/regime; all generated setups are simulated so learning can weight outcomes post hoc.
 - Learning policy uses hierarchical fallback with shrinkage: specific `(pair,timeframe,regime)` stats blend with `(pair,timeframe)`, `(timeframe,regime)`, and global buckets to avoid unstable sparse-sample behavior.
+- Learning policy applies adaptive stop widening for live recommendations when tight-stop rebound failures are elevated in recent outcomes.
 - Each learning row persists both policy-friendly scalar fields and a full recommendation snapshot JSON (indicators, market context, confidence breakdown, rationale, and trade levels) for future offline analysis tasks.
 - AI advisory is excluded from learning generation/evaluation; learning uses deterministic engine + simulation outcomes only.
 
