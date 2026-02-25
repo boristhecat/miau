@@ -578,6 +578,40 @@ describe("RecommendationEngine", () => {
     expect(shortHorizon.expectedRangeHorizonMinutes).toBe(15);
   });
 
+  it("uses explicit expected-range horizon instead of resolved objective horizon minutes", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 58,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 10,
+      macdSignal: 8,
+      macdHistogram: 2,
+      atr14: 140,
+      adx14: 28,
+      bbUpper: 51000,
+      bbMiddle: 50000,
+      bbLower: 49000,
+      stochRsiK: 58,
+      stochRsiD: 50,
+      vwap: 50300
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50000,
+      indicators,
+      perp: basePerp,
+      leverage: 20,
+      positionSizeUsd: 250,
+      objectiveHorizon: "15",
+      expectedRangeHorizon: "240",
+      baseInterval: "1m"
+    });
+
+    expect(rec.expectedRangeHorizonMinutes).toBe(240);
+    expect(rec.expectedRangeCandles).toBe(240);
+  });
+
   it("reduces EMA-led short-timeframe conviction without fast confirmations", () => {
     const indicators: IndicatorSnapshot = {
       rsi14: 50,

@@ -254,7 +254,7 @@ export class RecommendationEngine {
       marketRegime,
       baseInterval: baseInterval ?? "1m",
       objectiveHorizon: expectedRangeHorizon ?? objectiveHorizon,
-      objectiveHorizonMinutes: objectiveContext?.horizonMinutes
+      objectiveHorizonMinutes: expectedRangeHorizon === undefined ? objectiveContext?.horizonMinutes : undefined
     });
 
     return {

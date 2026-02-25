@@ -1,5 +1,9 @@
 # Project Plan
 
+## Task: Fix `--expected` horizon precedence (2026-02-25)
+- [x] Ensure expected-range queries honor the explicit `--expected <minutes>` value even when default objective horizon is set
+- [x] Add regression test for expected-range override vs objective-horizon defaults
+
 ## Task: Findings remediation without trading-logic changes (2026-02-23)
 - [x] Align docs with current runtime behavior (learning horizons)
 - [x] Remove OpenAI error-log test side effect from tracked `data/openai-http-errors.log`
