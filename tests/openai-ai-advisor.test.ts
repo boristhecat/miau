@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { OpenAiAiAdvisor } from "../src/adapters/ai/openai-ai-advisor.js";
 import type { HttpClient } from "../src/adapters/http/http-client.js";
 import type { AiAdviceRequest } from "../src/ports/ai-advisor-port.js";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 class FakeHttpClient implements HttpClient {
   public postResponse: unknown = {};
@@ -66,6 +68,8 @@ const baseRequest: AiAdviceRequest = {
   keyRationale: ["trend healthy", "momentum positive"]
 };
 
+const TEST_ERROR_LOG_FILE_PATH = path.join(tmpdir(), `miau-openai-ai-advisor-${process.pid}.log`);
+
 describe("OpenAiAiAdvisor", () => {
   it("parses agreement/regime/overruledSignals from JSON response", async () => {
     const httpClient = new FakeHttpClient();
@@ -88,7 +92,12 @@ describe("OpenAiAiAdvisor", () => {
         }
       ]
     };
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     const advice = await advisor.advise(baseRequest);
 
@@ -131,7 +140,12 @@ describe("OpenAiAiAdvisor", () => {
         }
       ]
     };
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     const advice = await advisor.advise(baseRequest);
 
@@ -163,7 +177,11 @@ describe("OpenAiAiAdvisor", () => {
         }
       ]
     };
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow("AI response agreement is invalid.");
   });
@@ -189,7 +207,12 @@ describe("OpenAiAiAdvisor", () => {
         }
       ]
     };
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     const advice = await advisor.advise(baseRequest);
     expect(advice.suggestedEntry).toBeUndefined();
@@ -218,7 +241,12 @@ describe("OpenAiAiAdvisor", () => {
         }
       ]
     };
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     const advice = await advisor.advise(baseRequest);
     expect(advice.suggestedEntry).toBeUndefined();
@@ -238,7 +266,12 @@ describe("OpenAiAiAdvisor", () => {
       }
     };
     httpClient.postQueue = [apiError];
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow(
       "OpenAI API 400: Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
@@ -260,7 +293,12 @@ describe("OpenAiAiAdvisor", () => {
         }
       ]
     };
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow(
       "AI response was empty. finish_reason=length refusal=Safety refusal"
@@ -281,7 +319,12 @@ describe("OpenAiAiAdvisor", () => {
       }
     };
     httpClient.postQueue = [apiError];
-    const advisor = new OpenAiAiAdvisor({ apiKey: "test-key", model: "gpt-5-mini", httpClient });
+    const advisor = new OpenAiAiAdvisor({
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      httpClient,
+      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+    });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow(
       "OpenAI API 400: The model `gpt-5-mini` does not exist or you do not have access to it."

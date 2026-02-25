@@ -41,4 +41,16 @@ describe("TalibWasmIndicatorService", () => {
     expect(snapshot.cvdDeltaPct5).toBeDefined();
     expect(Number.isFinite(snapshot.cmf20 ?? Number.NaN)).toBe(true);
   });
+
+  it("rejects non-finite candle values before wasm execution", () => {
+    const candles = makeCandles(120);
+    candles[10] = {
+      ...candles[10]!,
+      close: Number.POSITIVE_INFINITY
+    };
+
+    expect(() => new TalibWasmIndicatorService().calculate(candles)).toThrow(
+      "Invalid candle data at index 10: non-finite numeric field."
+    );
+  });
 });

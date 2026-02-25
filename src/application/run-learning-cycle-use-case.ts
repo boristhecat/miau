@@ -2,6 +2,7 @@ import type { AdaptiveLearningService } from "./adaptive-learning-service.js";
 import type { GenerateRecommendationUseCase } from "./generate-recommendation-use-case.js";
 import { RankTopOpportunitiesUseCase } from "./rank-top-opportunities-use-case.js";
 import { resolveAdaptiveTimeframes } from "./timeframe-policy.js";
+import { mapWithConcurrency } from "./map-with-concurrency.js";
 import type { LoggerPort } from "../ports/logger-port.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { Recommendation } from "../domain/types.js";
@@ -30,38 +31,52 @@ export class RunLearningCycleUseCase {
   }): Promise<{ symbols: string[]; candidates: LearningSimulationCandidate[] }> {
     const symbols = await this.getLearningSymbols();
     const candidates: LearningSimulationCandidate[] = [];
+    const horizonConcurrency = 2;
 
     for (const symbol of symbols) {
+      if (!input.active()) {
+        return { symbols, candidates };
+      }
       const pair = `${symbol}-USD`;
-      for (const horizonMinutes of input.horizonsMinutes) {
-        if (!input.active()) {
-          return { symbols, candidates };
-        }
-        try {
-          const adaptiveTimeframes = resolveAdaptiveTimeframes(String(horizonMinutes));
-          let recommendation = await this.recommendationUseCase.execute({
-            pair,
-            interval: adaptiveTimeframes.timeframe,
-            biasInterval: adaptiveTimeframes.biasTimeframe,
-            leverage: input.leverage,
-            positionSizeUsd: input.positionSizeUsd,
-            objectiveHorizon: String(horizonMinutes)
-          });
-          recommendation = await this.learning.applyPolicy({
-            recommendation,
-            timeframe: adaptiveTimeframes.timeframe
-          });
+      const perSymbol = await mapWithConcurrency(
+        input.horizonsMinutes,
+        horizonConcurrency,
+        async (horizonMinutes): Promise<LearningSimulationCandidate | null> => {
+          if (!input.active()) {
+            return null;
+          }
+          try {
+            const adaptiveTimeframes = resolveAdaptiveTimeframes(String(horizonMinutes));
+            let recommendation = await this.recommendationUseCase.execute({
+              pair,
+              interval: adaptiveTimeframes.timeframe,
+              biasInterval: adaptiveTimeframes.biasTimeframe,
+              leverage: input.leverage,
+              positionSizeUsd: input.positionSizeUsd,
+              objectiveHorizon: String(horizonMinutes)
+            });
+            recommendation = await this.learning.applyPolicy({
+              recommendation,
+              timeframe: adaptiveTimeframes.timeframe
+            });
 
-          candidates.push({
-            pair,
-            recommendation,
-            interval: adaptiveTimeframes.timeframe,
-            horizonMinutes,
-            openedAtMs: Date.now()
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Learning cycle candidate failed";
-          this.logger.error(`[learn] ${message}`);
+            return {
+              pair,
+              recommendation,
+              interval: adaptiveTimeframes.timeframe,
+              horizonMinutes,
+              openedAtMs: Date.now()
+            };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Learning cycle candidate failed";
+            this.logger.error(`[learn] ${message}`);
+            return null;
+          }
+        }
+      );
+      for (const candidate of perSymbol) {
+        if (candidate) {
+          candidates.push(candidate);
         }
       }
     }
