@@ -24,24 +24,6 @@ Rules:
 - Adapters implement ports.
 
 ## Requirements
-### CLI usage
-- Start app with: `miau-trader` (interactive mode).
-- Interactive single-symbol input uses base symbol (e.g. `BTC`), not pair format.
-- Supported interactive query format:
-  - `SYMBOL [<minutes>] [long|short] [--custom] [--horizon <minutes>] [--expected <minutes>] [--simulate]`
-- Ranking mode is triggered in-app via `rec`.
-- Output: recommendation levels, signal/action, rationale, and **confidence %**.
-- Console output should be **colored and structured**.
-- Default output is compact trade levels; AI secondary opinion is included by default when `OPENAI_API_KEY` is configured.
-
-### Indicators
-Use established indicator library (prefer `technicalindicators` unless there’s a strong reason).
-Use at least:
-- RSI(14)
-- EMA(20), EMA(50)
-- MACD(12,26,9)
-- ATR(14)
-
 ### Confidence score
 Produce a deterministic percentage 0..100 based on indicator confluence.
 Also output short rationale bullets explaining the score.
