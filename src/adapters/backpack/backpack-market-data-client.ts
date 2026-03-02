@@ -62,6 +62,7 @@ type RawKline =
 
 export class BackpackMarketDataClient implements MarketDataPort {
   private readonly symbolCache = new Map<string, string[]>();
+  private readonly openInterestCache = new Map<string, { openInterest: number; expiresAtMs: number }>();
 
   constructor(private readonly httpClient: HttpClient) {}
 
@@ -179,22 +180,34 @@ export class BackpackMarketDataClient implements MarketDataPort {
     Array<{ symbol: string; quoteVolume24h: number; openInterest: number }>
   > {
     const ranked = await this.getTopPerpVolumeRows(limit);
-    const withOi = await Promise.all(
-      ranked.map(async (row) => {
-        const oiRows = await this.httpClient.get<OpenInterestRow[]>("/api/v1/openInterest", {
-          symbol: row.symbol
-        });
-        const oi = Array.isArray(oiRows) ? oiRows[0] : undefined;
-        const openInterest = this.toNumber(oi?.openInterest, "openInterest");
-        return {
-          symbol: row.base,
-          quoteVolume24h: this.round(row.quoteVolume24h),
-          openInterest: this.round(openInterest)
-        };
-      })
-    );
+    const withOi = await mapWithConcurrency(ranked, 4, async (row) => {
+      const openInterest = await this.getOpenInterest(row.symbol);
+      return {
+        symbol: row.base,
+        quoteVolume24h: this.round(row.quoteVolume24h),
+        openInterest: this.round(openInterest)
+      };
+    });
 
     return withOi;
+  }
+
+  private async getOpenInterest(symbol: string): Promise<number> {
+    const cached = this.openInterestCache.get(symbol);
+    const now = Date.now();
+    if (cached && cached.expiresAtMs > now) {
+      return cached.openInterest;
+    }
+    const oiRows = await this.httpClient.get<OpenInterestRow[]>("/api/v1/openInterest", {
+      symbol
+    });
+    const oi = Array.isArray(oiRows) ? oiRows[0] : undefined;
+    const openInterest = this.toNumber(oi?.openInterest, "openInterest");
+    this.openInterestCache.set(symbol, {
+      openInterest,
+      expiresAtMs: now + 15_000
+    });
+    return openInterest;
   }
 
   private async getTopPerpVolumeRows(limit: number): Promise<TopPerpVolumeRow[]> {
@@ -534,4 +547,31 @@ export class BackpackMarketDataClient implements MarketDataPort {
   private round(value: number): number {
     return Number(value.toFixed(8));
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+  const width = Math.max(1, Math.floor(concurrency));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const runWorker = async (): Promise<void> => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= items.length) {
+        return;
+      }
+      results[currentIndex] = await mapper(items[currentIndex] as T, currentIndex);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(width, items.length) }, () => runWorker()));
+  return results;
 }

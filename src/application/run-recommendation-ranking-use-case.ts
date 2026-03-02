@@ -1,5 +1,10 @@
 import type { AdaptiveLearningService } from "./adaptive-learning-service.js";
-import { RankTopOpportunitiesUseCase, type RecommendationGenerator, type TopOpportunitiesResult } from "./rank-top-opportunities-use-case.js";
+import {
+  RankTopOpportunitiesUseCase,
+  type RecommendationGenerator,
+  type SymbolUniverseProvider,
+  type TopOpportunitiesResult
+} from "./rank-top-opportunities-use-case.js";
 import { resolveAdaptiveTimeframes } from "./timeframe-policy.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
 
@@ -15,11 +20,17 @@ export interface RecommendationRankingResult {
   opportunities: TopOpportunitiesResult;
 }
 
+export type RankTopOpportunitiesFactory = (
+  recommendationGenerator: RecommendationGenerator,
+  symbolUniverseProvider: SymbolUniverseProvider
+) => Pick<RankTopOpportunitiesUseCase, "execute">;
+
 export class RunRecommendationRankingUseCase {
   constructor(
     private readonly recommendationUseCase: RecommendationGenerator,
     private readonly learning: AdaptiveLearningService,
-    private readonly marketData: MarketDataPort
+    private readonly marketData: MarketDataPort,
+    private readonly rankTopOpportunitiesFactory: RankTopOpportunitiesFactory
   ) {}
 
   async execute(input: { defaults: RankingDefaults; top?: number; universeLimit?: number }): Promise<RecommendationRankingResult> {
@@ -38,7 +49,7 @@ export class RunRecommendationRankingUseCase {
       }
     };
 
-    const rankUseCase = new RankTopOpportunitiesUseCase(learningAwareGenerator, this.marketData);
+    const rankUseCase = this.rankTopOpportunitiesFactory(learningAwareGenerator, this.marketData);
     const opportunities = await rankUseCase.execute({
       symbols: selected.map((item) => item.symbol),
       interval: adaptiveTimeframes.timeframe,

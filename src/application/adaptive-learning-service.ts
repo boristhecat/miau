@@ -2,13 +2,13 @@ import type { Recommendation } from "../domain/types.js";
 import type {
   LearningBucketRow,
   LearningOutcomeRecord,
-  LearningRecommendationSnapshot,
   LearningOverview,
   LearningOutcomeSummary,
   LearningStorePort,
   OutcomeFailureType,
   OutcomeStatus
 } from "../ports/learning-store-port.js";
+import { toLearningRecommendationSnapshot } from "./recommendation-mappers.js";
 
 export interface LearningPolicy {
   confidenceDelta: number;
@@ -135,7 +135,7 @@ export class AdaptiveLearningService {
     recommendation: Recommendation;
     timeframe: string;
   }): Promise<Recommendation> {
-    const rec = input.recommendation;
+    const rec = cloneRecommendation(input.recommendation);
     const policy = await this.getPolicy({
       pair: rec.pair,
       timeframe: input.timeframe,
@@ -183,27 +183,7 @@ export class AdaptiveLearningService {
     pnlUsd?: number;
   }): Promise<void> {
     const symbol = input.recommendation.pair.split("-")[0] ?? input.recommendation.pair;
-    const recommendationSnapshot: LearningRecommendationSnapshot = {
-      analysisInterval: input.recommendation.analysisInterval,
-      analysisBiasInterval: input.recommendation.analysisBiasInterval,
-      modelSignal: input.recommendation.modelSignal,
-      requestedDirection: input.recommendation.requestedDirection,
-      qualityVerdict: input.recommendation.qualityVerdict,
-      setupGrade: input.recommendation.setupGrade,
-      entry: input.recommendation.entry,
-      stopLoss: input.recommendation.stopLoss,
-      takeProfit: input.recommendation.takeProfit,
-      riskRewardRatio: input.recommendation.riskRewardRatio,
-      expectedLow: input.recommendation.expectedLow,
-      expectedHigh: input.recommendation.expectedHigh,
-      objectiveHorizon: input.recommendation.objectiveHorizon,
-      objectiveHorizonMinutes: input.recommendation.objectiveHorizonMinutes,
-      objectiveHorizonCandles: input.recommendation.objectiveHorizonCandles,
-      confidenceBreakdown: input.recommendation.confidenceBreakdown,
-      indicators: input.recommendation.indicators as unknown as Record<string, unknown>,
-      perp: input.recommendation.perp as unknown as Record<string, unknown>,
-      rationale: [...input.recommendation.rationale]
-    };
+    const recommendationSnapshot = toLearningRecommendationSnapshot(input.recommendation);
     const record: LearningOutcomeRecord = {
       pair: input.recommendation.pair,
       symbol,
@@ -230,27 +210,7 @@ export class AdaptiveLearningService {
     horizonMinutes: number;
   }): Promise<void> {
     const symbol = input.recommendation.pair.split("-")[0] ?? input.recommendation.pair;
-    const recommendationSnapshot: LearningRecommendationSnapshot = {
-      analysisInterval: input.recommendation.analysisInterval,
-      analysisBiasInterval: input.recommendation.analysisBiasInterval,
-      modelSignal: input.recommendation.modelSignal,
-      requestedDirection: input.recommendation.requestedDirection,
-      qualityVerdict: input.recommendation.qualityVerdict,
-      setupGrade: input.recommendation.setupGrade,
-      entry: input.recommendation.entry,
-      stopLoss: input.recommendation.stopLoss,
-      takeProfit: input.recommendation.takeProfit,
-      riskRewardRatio: input.recommendation.riskRewardRatio,
-      expectedLow: input.recommendation.expectedLow,
-      expectedHigh: input.recommendation.expectedHigh,
-      objectiveHorizon: input.recommendation.objectiveHorizon,
-      objectiveHorizonMinutes: input.recommendation.objectiveHorizonMinutes,
-      objectiveHorizonCandles: input.recommendation.objectiveHorizonCandles,
-      confidenceBreakdown: input.recommendation.confidenceBreakdown,
-      indicators: input.recommendation.indicators as unknown as Record<string, unknown>,
-      perp: input.recommendation.perp as unknown as Record<string, unknown>,
-      rationale: [...input.recommendation.rationale]
-    };
+    const recommendationSnapshot = toLearningRecommendationSnapshot(input.recommendation);
     const record: LearningOutcomeRecord = {
       pair: input.recommendation.pair,
       symbol,
@@ -265,6 +225,21 @@ export class AdaptiveLearningService {
     };
     await this.store.recordOutcome(record);
   }
+}
+
+function cloneRecommendation(recommendation: Recommendation): Recommendation {
+  return {
+    ...recommendation,
+    confidenceBreakdown: { ...recommendation.confidenceBreakdown },
+    rationale: [...recommendation.rationale],
+    indicators: recommendation.indicators.recentCandleContext
+      ? {
+          ...recommendation.indicators,
+          recentCandleContext: { ...recommendation.indicators.recentCandleContext }
+        }
+      : { ...recommendation.indicators },
+    perp: { ...recommendation.perp }
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {

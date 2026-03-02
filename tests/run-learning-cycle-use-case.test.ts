@@ -3,7 +3,6 @@ import { RunLearningCycleUseCase } from "../src/application/run-learning-cycle-u
 import type { GenerateRecommendationUseCase } from "../src/application/generate-recommendation-use-case.js";
 import type { AdaptiveLearningService } from "../src/application/adaptive-learning-service.js";
 import type { LoggerPort } from "../src/ports/logger-port.js";
-import type { MarketDataPort } from "../src/ports/market-data-port.js";
 import type { Recommendation } from "../src/domain/types.js";
 
 function recommendation(pair: string): Recommendation {
@@ -82,12 +81,6 @@ describe("RunLearningCycleUseCase", () => {
       }
     } as GenerateRecommendationUseCase;
 
-    const marketData = {
-      async getTopPerpSymbolsByVolumeWithOpenInterest() {
-        return [{ symbol: "BTC", quoteVolume24h: 1000, openInterest: 200 }];
-      }
-    } as MarketDataPort;
-
     const learning = {
       async applyPolicy(input: { recommendation: Recommendation; timeframe: string }) {
         applyPolicyCalls.push({ timeframe: input.timeframe, pair: input.recommendation.pair });
@@ -101,7 +94,18 @@ describe("RunLearningCycleUseCase", () => {
       }
     } as LoggerPort;
 
-    const useCase = new RunLearningCycleUseCase(logger, recommendationUseCase, marketData, learning);
+    const learningSymbolSelector = {
+      async execute() {
+        return ["BTC"];
+      }
+    };
+
+    const useCase = new RunLearningCycleUseCase(
+      logger,
+      recommendationUseCase,
+      learning,
+      learningSymbolSelector
+    );
     const result = await useCase.execute({
       horizonsMinutes: [5, 30, 90],
       leverage: 33,
@@ -157,12 +161,6 @@ describe("RunLearningCycleUseCase", () => {
       }
     } as GenerateRecommendationUseCase;
 
-    const marketData = {
-      async getTopPerpSymbolsByVolumeWithOpenInterest() {
-        return [{ symbol: "BTC", quoteVolume24h: 1000, openInterest: 200 }];
-      }
-    } as MarketDataPort;
-
     const learning = {
       async applyPolicy(input: { recommendation: Recommendation }) {
         return {
@@ -184,7 +182,11 @@ describe("RunLearningCycleUseCase", () => {
       }
     } as LoggerPort;
 
-    const useCase = new RunLearningCycleUseCase(logger, recommendationUseCase, marketData, learning);
+    const useCase = new RunLearningCycleUseCase(logger, recommendationUseCase, learning, {
+      async execute() {
+        return ["BTC"];
+      }
+    });
     const result = await useCase.execute({
       horizonsMinutes: [15],
       leverage: 20,
@@ -202,12 +204,6 @@ describe("RunLearningCycleUseCase", () => {
         return recommendation(input.pair);
       }
     } as GenerateRecommendationUseCase;
-
-    const marketData = {
-      async getTopPerpSymbolsByVolumeWithOpenInterest() {
-        return [{ symbol: "BTC", quoteVolume24h: 1000, openInterest: 200 }];
-      }
-    } as MarketDataPort;
 
     const learning = {
       async applyPolicy(input: { recommendation: Recommendation }) {
@@ -229,7 +225,11 @@ describe("RunLearningCycleUseCase", () => {
       }
     } as LoggerPort;
 
-    const useCase = new RunLearningCycleUseCase(logger, recommendationUseCase, marketData, learning);
+    const useCase = new RunLearningCycleUseCase(logger, recommendationUseCase, learning, {
+      async execute() {
+        return ["BTC"];
+      }
+    });
     const result = await useCase.execute({
       horizonsMinutes: [15],
       leverage: 20,

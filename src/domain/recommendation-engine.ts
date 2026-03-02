@@ -1,22 +1,15 @@
-import type {
-  ConfidenceBreakdown,
-  IndicatorSnapshot,
-  MarketRegime,
-  PerpMarketSnapshot,
-  Recommendation,
-  SetupGrade,
-  Signal,
-  TradeAction
-} from "./types.js";
+import type { MarketRegime, Recommendation, Signal } from "./types.js";
 import { applyObjectiveTargeting } from "./targeting-policy.js";
-import { resolveIndicatorWeightProfile, type WeightChannel } from "./indicator-weight-policy.js";
 import { applyTradeGuards } from "./recommendation-guards.js";
+import { RecommendationSignalEvaluator } from "./recommendation-signal-evaluator.js";
+import { RecommendationSetupAssessor } from "./recommendation-setup-assessor.js";
+import { RecommendationTradeCalculator } from "./recommendation-trade-calculator.js";
 
 interface BuildRecommendationInput {
   pair: string;
   lastPrice: number;
-  indicators: IndicatorSnapshot;
-  perp: PerpMarketSnapshot;
+  indicators: import("./types.js").IndicatorSnapshot;
+  perp: import("./types.js").PerpMarketSnapshot;
   forcedDirection?: "LONG" | "SHORT";
   biasTrend?: Signal;
   biasInterval?: string;
@@ -32,26 +25,11 @@ interface BuildRecommendationInput {
   baseInterval?: string;
 }
 
-interface RegimeContext {
-  marketRegime: MarketRegime;
-  regime: "TRADEABLE" | "CHOPPY";
-  rationale: string[];
-}
-
-interface SetupAssessment {
-  setupQuality: number;
-  setupGrade: SetupGrade;
-  factorScores: {
-    location: number;
-    trigger: number;
-    microstructure: number;
-    regime: number;
-    riskEfficiency: number;
-    friction: number;
-  };
-}
-
 export class RecommendationEngine {
+  private readonly signalEvaluator = new RecommendationSignalEvaluator();
+  private readonly setupAssessor = new RecommendationSetupAssessor();
+  private readonly tradeCalculator = new RecommendationTradeCalculator();
+
   build(input: BuildRecommendationInput): Recommendation {
     const {
       pair,
@@ -72,6 +50,8 @@ export class RecommendationEngine {
       expectedRangeHorizon,
       baseInterval
     } = input;
+    const resolvedBaseInterval = baseInterval ?? "1m";
+
     const {
       signal,
       confidence: baseConfidence,
@@ -83,14 +63,15 @@ export class RecommendationEngine {
       breakoutValidationFailed,
       breakoutFailureDirection,
       confidenceBreakdown
-    } = this.evaluate(
+    } = this.signalEvaluator.evaluate(
       indicators,
       perp,
       lastPrice,
       biasTrend,
       biasInterval,
-      baseInterval ?? "1m"
+      resolvedBaseInterval
     );
+
     let confidence = baseConfidence;
     const modelSignal = signal;
     const tradeSignal: Exclude<Signal, "NO_TRADE"> = forcedDirection ?? signal;
@@ -102,9 +83,9 @@ export class RecommendationEngine {
     }
 
     const atr = indicators.atr14;
-    const atrPct = this.computeAtrPct(indicators);
-    const atrProfile = this.getAtrProfile(atrPct, marketRegime);
-    let entry = lastPrice;
+    const atrPct = this.signalEvaluator.computeAtrPct(indicators);
+    const atrProfile = this.tradeCalculator.getAtrProfile(atrPct, marketRegime as MarketRegime);
+    const entry = lastPrice;
     let stopLoss = lastPrice;
     let takeProfit = lastPrice;
 
@@ -120,9 +101,6 @@ export class RecommendationEngine {
       if (takeProfit >= entry) {
         takeProfit = lastPrice - atrProfile.tpFallbackAtrMultiplier * atr;
       }
-    } else {
-      stopLoss = entry;
-      takeProfit = entry;
     }
 
     let objectiveContext:
@@ -150,7 +128,7 @@ export class RecommendationEngine {
         signal: tradeSignal,
         entry,
         atr,
-        baseInterval: baseInterval ?? "1m",
+        baseInterval: resolvedBaseInterval,
         leverage,
         positionSizeUsd,
         objectiveUsdc,
@@ -173,14 +151,14 @@ export class RecommendationEngine {
         expectedPnlAtStopLoss: objectiveTargets.expectedPnlAtStopLoss
       };
     } else {
-      stopLoss = this.applyStopLossOverride({
+      stopLoss = this.tradeCalculator.applyStopLossOverride({
         signal: tradeSignal,
         entry,
         current: stopLoss,
         slPct,
         slUsd
       });
-      takeProfit = this.applyTakeProfitOverride({
+      takeProfit = this.tradeCalculator.applyTakeProfitOverride({
         signal: tradeSignal,
         entry,
         current: takeProfit,
@@ -189,9 +167,9 @@ export class RecommendationEngine {
       });
     }
 
-    this.validateLevels(tradeSignal, entry, stopLoss, takeProfit);
+    this.tradeCalculator.validateLevels(tradeSignal, entry, stopLoss, takeProfit);
 
-    const pnl = this.computeEstimatedPnL({
+    const pnl = this.tradeCalculator.computeEstimatedPnL({
       signal: tradeSignal,
       entry,
       stopLoss,
@@ -199,10 +177,10 @@ export class RecommendationEngine {
       leverage,
       positionSizeUsd
     });
-    const riskRewardRatio = this.computeRiskReward(entry, stopLoss, takeProfit);
+    const riskRewardRatio = this.tradeCalculator.computeRiskReward(entry, stopLoss, takeProfit);
     const estimatedPnLAtStopLoss = objectiveContext?.expectedPnlAtStopLoss ?? pnl?.atStopLoss;
     const estimatedPnLAtTakeProfit = objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit;
-    const setupAssessment = this.assessSetupQuality({
+    const setupAssessment = this.setupAssessor.assess({
       signal: tradeSignal,
       indicators,
       perp,
@@ -217,10 +195,11 @@ export class RecommendationEngine {
       positionSizeUsd
     });
     confidenceBreakdown.setupQuality = setupAssessment.setupQuality;
-    confidence = Math.round(this.clamp(confidence * 0.55 + setupAssessment.setupQuality * 0.45, 1, 99));
+    confidence = Math.round(clamp(confidence * 0.55 + setupAssessment.setupQuality * 0.45, 1, 99));
     rationale.push(
       `Setup grade ${setupAssessment.setupGrade}: loc ${setupAssessment.factorScores.location} / trig ${setupAssessment.factorScores.trigger} / micro ${setupAssessment.factorScores.microstructure} / regime ${setupAssessment.factorScores.regime} / risk ${setupAssessment.factorScores.riskEfficiency} / friction ${setupAssessment.factorScores.friction}.`
     );
+
     const guardResult = applyTradeGuards({
       signal: tradeSignal,
       forcedDirection,
@@ -230,7 +209,7 @@ export class RecommendationEngine {
       pullbackExtended,
       breakoutValidationFailed,
       breakoutFailureDirection,
-      interval: baseInterval ?? "1m",
+      interval: resolvedBaseInterval,
       setupGrade: setupAssessment.setupGrade,
       setupQuality: confidenceBreakdown.setupQuality,
       confidence,
@@ -238,9 +217,10 @@ export class RecommendationEngine {
       bidAskSpreadPct: perp.bidAskSpreadPct,
       rationale
     });
+
     const finalSignal = guardResult.signal;
-    const action = this.toAction(finalSignal, confidence, regime);
-    const executionStats = this.computeExecutionStats({
+    const action = this.tradeCalculator.toAction(finalSignal, confidence, regime);
+    const executionStats = this.tradeCalculator.computeExecutionStats({
       signal: finalSignal,
       leverage,
       positionSizeUsd,
@@ -248,11 +228,11 @@ export class RecommendationEngine {
       estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtStopLoss,
       estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit
     });
-    const expectedRange = this.estimateExpectedRange({
+    const expectedRange = this.tradeCalculator.estimateExpectedRange({
       entry,
       atr,
       marketRegime,
-      baseInterval: baseInterval ?? "1m",
+      baseInterval: resolvedBaseInterval,
       objectiveHorizon: expectedRangeHorizon ?? objectiveHorizon,
       objectiveHorizonMinutes: expectedRangeHorizon === undefined ? objectiveContext?.horizonMinutes : undefined
     });
@@ -266,20 +246,18 @@ export class RecommendationEngine {
       action,
       regime,
       marketRegime,
-      entry: this.round(entry),
-      expectedLow: this.round(expectedRange.low),
-      expectedHigh: this.round(expectedRange.high),
+      entry: round(entry),
+      expectedLow: round(expectedRange.low),
+      expectedHigh: round(expectedRange.high),
       expectedRangeHorizonMinutes: expectedRange.horizonMinutes,
       expectedRangeCandles: expectedRange.candles,
-      stopLoss: this.round(stopLoss),
-      takeProfit: this.round(takeProfit),
+      stopLoss: round(stopLoss),
+      takeProfit: round(takeProfit),
       leverage,
       positionSizeUsd,
-      estimatedPnLAtStopLoss:
-        finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtStopLoss,
-      estimatedPnLAtTakeProfit:
-        finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit,
-      riskRewardRatio: this.round(riskRewardRatio),
+      estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtStopLoss,
+      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit,
+      riskRewardRatio: round(riskRewardRatio),
       setupGrade: setupAssessment.setupGrade,
       objectiveUsdc: objectiveContext?.objectiveUsdc,
       objectiveHorizon: objectiveContext?.horizon,
@@ -303,991 +281,13 @@ export class RecommendationEngine {
       perp
     };
   }
-
-  private evaluate(
-    indicators: IndicatorSnapshot,
-    perp: PerpMarketSnapshot,
-    lastPrice: number,
-    biasTrend?: Signal,
-    biasInterval?: string,
-    baseInterval = "1m"
-  ): {
-    signal: Exclude<Signal, "NO_TRADE">;
-    confidence: number;
-    confidenceBreakdown: ConfidenceBreakdown;
-    rationale: string[];
-    marketRegime: MarketRegime;
-    impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
-    pullbackExtended: boolean;
-    breakoutValidationFailed: boolean;
-    breakoutFailureDirection: "UP" | "DOWN" | "NONE";
-    regime: "TRADEABLE" | "CHOPPY";
-  } {
-    let longScore = 0;
-    let shortScore = 0;
-    const rationale: string[] = [];
-    const intervalMinutes = this.parseIntervalToMinutes(baseInterval);
-    const shortHorizon = intervalMinutes <= 15;
-    const regimeContext = this.classifyRegime(indicators, lastPrice);
-    rationale.push(...regimeContext.rationale);
-    let regime = regimeContext.regime;
-    const marketRegime = regimeContext.marketRegime;
-    const weightProfile = resolveIndicatorWeightProfile({
-      intervalMinutes,
-      marketRegime
-    });
-    const w = (channel: WeightChannel, points: number): number => points * weightProfile.multipliers[channel];
-    rationale.push(
-      `Weight profile ${weightProfile.horizonBucket}/${marketRegime}: trend x${weightProfile.multipliers.trend.toFixed(2)}, momentum x${weightProfile.multipliers.momentum.toFixed(2)}, flow x${weightProfile.multipliers.flow.toFixed(2)}, micro x${weightProfile.multipliers.microstructure.toFixed(2)}.`
-    );
-    let impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE" = "NONE";
-    let pullbackExtended = false;
-    let breakoutValidationFailed = false;
-    let breakoutFailureDirection: "UP" | "DOWN" | "NONE" = "NONE";
-
-    const emaTrendWeight = shortHorizon ? 17 : 28;
-    if (indicators.ema20 > indicators.ema50) {
-      longScore += w("trend", emaTrendWeight);
-      rationale.push("EMA20 is above EMA50 (bullish trend).");
-    } else {
-      shortScore += w("trend", emaTrendWeight);
-      rationale.push("EMA20 is below EMA50 (bearish trend).");
-    }
-
-    if (indicators.adx14 >= 25) {
-      if (indicators.ema20 >= indicators.ema50) {
-        longScore += w("trend", 10);
-      } else {
-        shortScore += w("trend", 10);
-      }
-      rationale.push("ADX confirms a strong trend regime.");
-    } else if (indicators.adx14 < 18) {
-      rationale.push("ADX is very low; trend conviction is weak.");
-    } else {
-      rationale.push("ADX indicates a moderate trend regime.");
-    }
-
-    if (indicators.macdHistogram > 0 && indicators.macd > indicators.macdSignal) {
-      longScore += w("momentum", 18);
-      rationale.push("MACD momentum is positive.");
-    } else if (indicators.macdHistogram < 0 && indicators.macd < indicators.macdSignal) {
-      shortScore += w("momentum", 18);
-      rationale.push("MACD momentum is negative.");
-    } else {
-      rationale.push("MACD momentum is mixed.");
-    }
-
-    if (indicators.rsi14 > 55 && indicators.rsi14 < 70) {
-      longScore += w("momentum", 4);
-      rationale.push("RSI supports continuation to the upside.");
-    } else if (indicators.rsi14 < 45 && indicators.rsi14 > 30) {
-      shortScore += w("momentum", 4);
-      rationale.push("RSI supports continuation to the downside.");
-    } else if (indicators.rsi14 >= 70) {
-      const confirmedBullTrend =
-        marketRegime === "TREND" &&
-        indicators.ema20 >= indicators.ema50 &&
-        lastPrice >= indicators.vwap &&
-        indicators.macdHistogram > 0;
-      if (confirmedBullTrend) {
-        longScore += w("momentum", 2);
-        rationale.push("RSI is overbought but trend structure is bullish; continuation is favored over reversal.");
-      } else {
-        shortScore += w("meanReversion", 5);
-        rationale.push("RSI is overbought; upside may be exhausted.");
-      }
-    } else if (indicators.rsi14 <= 30) {
-      const confirmedBearTrend =
-        marketRegime === "TREND" &&
-        indicators.ema20 <= indicators.ema50 &&
-        lastPrice <= indicators.vwap &&
-        indicators.macdHistogram < 0;
-      if (confirmedBearTrend) {
-        shortScore += w("momentum", 2);
-        rationale.push("RSI is oversold but trend structure is bearish; continuation is favored over reversal.");
-      } else {
-        longScore += w("meanReversion", 5);
-        rationale.push("RSI is oversold; rebound risk is elevated.");
-      }
-    } else {
-      rationale.push("RSI is neutral.");
-    }
-
-    if (indicators.stochRsiK > indicators.stochRsiD && indicators.stochRsiK < 80) {
-      longScore += w("momentum", 3);
-      rationale.push("StochRSI timing is aligned for long continuation.");
-    } else if (indicators.stochRsiK < indicators.stochRsiD && indicators.stochRsiK > 20) {
-      shortScore += w("momentum", 3);
-      rationale.push("StochRSI timing is aligned for short continuation.");
-    } else {
-      rationale.push("StochRSI timing is neutral.");
-    }
-
-    if (lastPrice >= indicators.vwap) {
-      longScore += w("flow", 10);
-      rationale.push("Price is above VWAP (intraday buyer control).");
-    } else {
-      shortScore += w("flow", 10);
-      rationale.push("Price is below VWAP (intraday seller control).");
-    }
-
-    if (lastPrice > indicators.bbUpper) {
-      shortScore += w("meanReversion", 3);
-      rationale.push("Price is stretched above Bollinger upper band.");
-    } else if (lastPrice < indicators.bbLower) {
-      longScore += w("meanReversion", 3);
-      rationale.push("Price is stretched below Bollinger lower band.");
-    } else {
-      rationale.push("Price is inside Bollinger bands.");
-    }
-
-    if (perp.fundingRate > 0.00005 && perp.fundingRateAvg > 0) {
-      shortScore += w("flow", 4);
-      rationale.push("Funding is persistently positive (long crowding risk).");
-    } else if (perp.fundingRate < -0.00005 && perp.fundingRateAvg < 0) {
-      longScore += w("flow", 4);
-      rationale.push("Funding is persistently negative (short crowding risk).");
-    } else {
-      rationale.push("Funding is neutral.");
-    }
-
-    if (perp.premiumPct > 0.15) {
-      shortScore += w("flow", 4);
-      rationale.push("Mark trades at a premium to index (possible long overheating).");
-    } else if (perp.premiumPct < -0.15) {
-      longScore += w("flow", 4);
-      rationale.push("Mark trades at a discount to index (possible short exhaustion).");
-    } else {
-      rationale.push("Mark/index premium is balanced.");
-    }
-
-    if (perp.orderBookImbalance !== undefined) {
-      if (perp.orderBookImbalance >= 0.08) {
-        longScore += w("microstructure", 8);
-        rationale.push("Orderbook imbalance favors bids.");
-      } else if (perp.orderBookImbalance <= -0.08) {
-        shortScore += w("microstructure", 8);
-        rationale.push("Orderbook imbalance favors asks.");
-      } else {
-        rationale.push("Orderbook imbalance is neutral.");
-      }
-    }
-
-    if (perp.microPricePremiumPct !== undefined) {
-      if (perp.microPricePremiumPct > 0.01) {
-        longScore += w("microstructure", 3);
-        rationale.push("Microprice sits above mid; near-term pressure is bid-led.");
-      } else if (perp.microPricePremiumPct < -0.01) {
-        shortScore += w("microstructure", 3);
-        rationale.push("Microprice sits below mid; near-term pressure is ask-led.");
-      }
-    }
-
-    if (perp.openInterestDeltaPct !== undefined) {
-      if (perp.openInterestDeltaPct > 0.35 && indicators.macdHistogram > 0) {
-        longScore += w("flow", 3);
-        rationale.push("Open interest is expanding alongside bullish momentum.");
-      } else if (perp.openInterestDeltaPct > 0.35 && indicators.macdHistogram < 0) {
-        shortScore += w("flow", 3);
-        rationale.push("Open interest is expanding alongside bearish momentum.");
-      } else if (perp.openInterestDeltaPct < -0.35) {
-        longScore -= w("flow", 2);
-        shortScore -= w("flow", 2);
-        rationale.push("Open interest is fading; follow-through conviction is reduced.");
-      }
-    }
-
-    if (biasTrend) {
-      if (biasTrend === "LONG") {
-        longScore += w("trend", 16);
-        rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bullish.`);
-      } else {
-        shortScore += w("trend", 16);
-        rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bearish.`);
-      }
-    }
-
-    const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
-    const impulseMomentumThreshold = this.clamp(0.2 + atrPct * 0.14, 0.22, 0.45);
-    const vwapDistanceThresholdPct = this.clamp(0.02 + atrPct * 0.01, 0.02, 0.06);
-    const recent = indicators.recentCandleContext;
-    if (recent) {
-      const upImpulse =
-        recent.momentumPct3 >= impulseMomentumThreshold &&
-        recent.bullishCloseRatio5 >= 0.6 &&
-        (recent.breakoutDirection === "UP" || recent.rangeExpansionRatio >= 1.25);
-      const downImpulse =
-        recent.momentumPct3 <= -impulseMomentumThreshold &&
-        recent.bearishCloseRatio5 >= 0.6 &&
-        (recent.breakoutDirection === "DOWN" || recent.rangeExpansionRatio >= 1.25);
-
-      if (upImpulse) {
-        impulseBias = "UP_IMPULSE";
-        longScore += w("momentum", 12);
-        shortScore -= w("momentum", 10);
-        rationale.push("Recent candles show a bullish impulse (momentum + close skew + expansion/breakout).");
-      } else if (downImpulse) {
-        impulseBias = "DOWN_IMPULSE";
-        shortScore += w("momentum", 12);
-        longScore -= w("momentum", 10);
-        rationale.push("Recent candles show a bearish impulse (momentum + close skew + expansion/breakout).");
-      } else {
-        rationale.push("Recent candle impulse is neutral.");
-      }
-
-      if (recent.breakoutDirection === "UP") {
-        const validated = recent.momentumPct3 >= impulseMomentumThreshold * 0.9 && recent.bullishCloseRatio5 >= 0.6;
-        if (validated) {
-          longScore += w("momentum", 6);
-          rationale.push("Breakout check: upside breakout has follow-through confirmation.");
-        } else {
-          shortScore += w("momentum", 4);
-          breakoutValidationFailed = true;
-          breakoutFailureDirection = "UP";
-          rationale.push("Breakout check: upside breakout lacks follow-through; fade risk increased.");
-        }
-      } else if (recent.breakoutDirection === "DOWN") {
-        const validated = recent.momentumPct3 <= -impulseMomentumThreshold * 0.9 && recent.bearishCloseRatio5 >= 0.6;
-        if (validated) {
-          shortScore += w("momentum", 6);
-          rationale.push("Breakout check: downside breakout has follow-through confirmation.");
-        } else {
-          longScore += w("momentum", 4);
-          breakoutValidationFailed = true;
-          breakoutFailureDirection = "DOWN";
-          rationale.push("Breakout check: downside breakout lacks follow-through; fade risk increased.");
-        }
-      }
-    }
-
-    const bullishStructureSignals = [
-      indicators.ema20 >= indicators.ema50,
-      lastPrice >= indicators.vwap,
-      indicators.macdHistogram > 0 && indicators.macd >= indicators.macdSignal,
-      (recent?.momentumPct3 ?? 0) > 0,
-      recent?.breakoutDirection === "UP"
-    ].filter(Boolean).length;
-    const bearishStructureSignals = [
-      indicators.ema20 <= indicators.ema50,
-      lastPrice <= indicators.vwap,
-      indicators.macdHistogram < 0 && indicators.macd <= indicators.macdSignal,
-      (recent?.momentumPct3 ?? 0) < 0,
-      recent?.breakoutDirection === "DOWN"
-    ].filter(Boolean).length;
-    if (shortHorizon && bullishStructureSignals >= 4 && bearishStructureSignals <= 1) {
-      longScore += w("consensus", 10);
-      shortScore -= w("consensus", 14);
-      rationale.push("Directional consensus: bullish structure dominates trend, momentum, and flow inputs.");
-    } else if (shortHorizon && bearishStructureSignals >= 4 && bullishStructureSignals <= 1) {
-      shortScore += w("consensus", 10);
-      longScore -= w("consensus", 14);
-      rationale.push("Directional consensus: bearish structure dominates trend, momentum, and flow inputs.");
-    }
-
-    if (atrPct < 0.8) {
-      longScore += w("volatility", 3);
-      shortScore += w("volatility", 3);
-      rationale.push("ATR indicates controlled intraday volatility.");
-    } else {
-      rationale.push("ATR indicates elevated volatility; execution risk rises.");
-    }
-
-    if (indicators.mfi14 !== undefined) {
-      if (indicators.mfi14 >= 55 && indicators.mfi14 < 80) {
-        longScore += w("flow", 4);
-        rationale.push("MFI confirms buying pressure.");
-      } else if (indicators.mfi14 <= 45 && indicators.mfi14 > 20) {
-        shortScore += w("flow", 4);
-        rationale.push("MFI confirms selling pressure.");
-      } else if (indicators.mfi14 >= 80) {
-        shortScore += w("meanReversion", 2);
-        rationale.push("MFI is overbought; exhaustion risk rises.");
-      } else if (indicators.mfi14 <= 20) {
-        longScore += w("meanReversion", 2);
-        rationale.push("MFI is oversold; rebound risk rises.");
-      }
-    }
-
-    if (indicators.cmf20 !== undefined) {
-      if (indicators.cmf20 >= 0.08) {
-        longScore += w("flow", 4);
-        rationale.push("CMF indicates sustained accumulation.");
-      } else if (indicators.cmf20 <= -0.08) {
-        shortScore += w("flow", 4);
-        rationale.push("CMF indicates sustained distribution.");
-      }
-    }
-
-    if (indicators.obvSlope5 !== undefined) {
-      if (indicators.obvSlope5 > 0.02) {
-        longScore += w("flow", 3);
-        rationale.push("OBV slope is rising.");
-      } else if (indicators.obvSlope5 < -0.02) {
-        shortScore += w("flow", 3);
-        rationale.push("OBV slope is falling.");
-      }
-    }
-
-    if (indicators.volumeZScore20 !== undefined && indicators.cvdDeltaPct5 !== undefined) {
-      const expansion = indicators.volumeZScore20 >= 1;
-      if (expansion && indicators.cvdDeltaPct5 > 10) {
-        longScore += w("flow", 4);
-        rationale.push("Volume expansion aligns with positive flow delta.");
-      } else if (expansion && indicators.cvdDeltaPct5 < -10) {
-        shortScore += w("flow", 4);
-        rationale.push("Volume expansion aligns with negative flow delta.");
-      }
-    }
-
-    if (marketRegime === "TREND") {
-      if (indicators.ema20 >= indicators.ema50) {
-        longScore += w("trend", 8);
-      } else {
-        shortScore += w("trend", 8);
-      }
-      rationale.push("Regime model favors trend-follow continuation.");
-    } else if (marketRegime === "RANGE") {
-      if (lastPrice <= indicators.bbLower) {
-        longScore += w("meanReversion", 8);
-        rationale.push("Range regime: price is at lower band, favoring mean reversion long.");
-      } else if (lastPrice >= indicators.bbUpper) {
-        shortScore += w("meanReversion", 8);
-        rationale.push("Range regime: price is at upper band, favoring mean reversion short.");
-      } else {
-        longScore -= w("meanReversion", 2);
-        shortScore -= w("meanReversion", 2);
-        rationale.push("Range regime but entry is mid-band; edge is limited.");
-      }
-    } else if (marketRegime === "VOLATILE_SPIKE") {
-      longScore -= w("volatility", 4);
-      shortScore -= w("volatility", 4);
-      rationale.push("Volatility spike regime: reduce conviction until expansion settles.");
-    }
-
-    const emaSpreadPct = Math.abs(indicators.ema20 - indicators.ema50) / Math.max(lastPrice, 1) * 100;
-    if (shortHorizon && emaSpreadPct < 0.08) {
-      longScore -= w("fastFilters", 8);
-      shortScore -= w("fastFilters", 8);
-      rationale.push("Short-horizon filter: EMA spread is tight; likely chop around crossover.");
-    }
-
-    const bullishFastConfirmations = [
-      indicators.macdHistogram > 0 && indicators.macd > indicators.macdSignal,
-      lastPrice > indicators.vwap,
-      indicators.rsi14 > 52,
-      (indicators.recentCandleContext?.momentumPct3 ?? 0) > 0
-    ].filter(Boolean).length;
-    const bearishFastConfirmations = [
-      indicators.macdHistogram < 0 && indicators.macd < indicators.macdSignal,
-      lastPrice < indicators.vwap,
-      indicators.rsi14 < 48,
-      (indicators.recentCandleContext?.momentumPct3 ?? 0) < 0
-    ].filter(Boolean).length;
-    const emaTrendDirection: Exclude<Signal, "NO_TRADE"> = indicators.ema20 >= indicators.ema50 ? "LONG" : "SHORT";
-    if (shortHorizon) {
-      if (emaTrendDirection === "LONG" && bullishFastConfirmations === 0) {
-        longScore -= w("fastFilters", 12);
-        rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a long.");
-      }
-      if (emaTrendDirection === "SHORT" && bearishFastConfirmations === 0) {
-        shortScore -= w("fastFilters", 12);
-        rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a short.");
-      }
-    }
-
-    const diff = Math.abs(longScore - shortScore);
-    let signal: Exclude<Signal, "NO_TRADE">;
-    let confidence: number;
-
-    if (longScore > shortScore) {
-      signal = "LONG";
-    } else if (shortScore > longScore) {
-      signal = "SHORT";
-    } else {
-      signal = indicators.ema20 >= indicators.ema50 ? "LONG" : "SHORT";
-      rationale.push("Scores are tied; trend direction used as tie-breaker.");
-    }
-
-    if (diff >= 15) {
-      confidence = Math.min(100, 50 + diff);
-    } else {
-      confidence = Math.max(35, 45 + diff);
-      rationale.push("Indicator confluence is weak; confidence is reduced.");
-    }
-
-    if (regime === "CHOPPY") {
-      confidence = Math.max(25, confidence - 18);
-      rationale.push("Regime filter reduced confidence due to intraday chop risk.");
-    }
-
-    const vwapDistancePct = Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1) * 100;
-    if (vwapDistancePct < vwapDistanceThresholdPct) {
-      regime = "CHOPPY";
-      confidence = Math.max(25, confidence - 12);
-      rationale.push("VWAP filter: price is too close to VWAP; intraday direction is not clean.");
-    }
-
-    if (marketRegime === "TREND") {
-      const extensionAtr = Math.abs(lastPrice - indicators.ema20) / Math.max(indicators.atr14, 1e-8);
-      if (extensionAtr > 1.35) {
-        pullbackExtended = true;
-        confidence = Math.max(25, confidence - 10);
-        rationale.push("Pullback filter: price is extended from EMA20; wait for pullback entry.");
-      }
-    }
-
-    const confidenceBreakdown = this.computeConfidenceBreakdown({
-      indicators,
-      marketRegime,
-      impulseBias,
-      biasTrend,
-      breakoutValidationFailed,
-      pullbackExtended
-    });
-    confidence = Math.round(this.clamp(confidence * 0.62 + confidenceBreakdown.setupQuality * 0.38, 1, 99));
-
-    return {
-      signal,
-      confidence,
-      confidenceBreakdown,
-      rationale,
-      regime,
-      marketRegime,
-      impulseBias,
-      pullbackExtended,
-      breakoutValidationFailed,
-      breakoutFailureDirection
-    };
-  }
-
-  private computeAtrPct(indicators: IndicatorSnapshot): number {
-    return (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
-  }
-
-  private classifyRegime(indicators: IndicatorSnapshot, lastPrice: number): RegimeContext {
-    const atrPct = this.computeAtrPct(indicators);
-    const spread = indicators.ema20 - indicators.ema50;
-    const spreadPct = Math.abs(spread) / Math.max(lastPrice, 1) * 100;
-    const bandWidthPct = Math.abs(indicators.bbUpper - indicators.bbLower) / Math.max(lastPrice, 1) * 100;
-    const nearVwapThreshold = this.clamp(0.02 + atrPct * 0.01, 0.02, 0.06);
-    const nearVwap = Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1) * 100 < nearVwapThreshold;
-
-    if (atrPct < 0.12 && bandWidthPct < 0.35) {
-      return {
-        marketRegime: "LOW_LIQ_CHOP",
-        regime: "CHOPPY",
-        rationale: ["Regime classifier: low-liquidity chop (compressed range + very low ATR)."]
-      };
-    }
-    if (atrPct > 1.2 || bandWidthPct > 2.2) {
-      return {
-        marketRegime: "VOLATILE_SPIKE",
-        regime: "TRADEABLE",
-        rationale: ["Regime classifier: volatility spike (expanded range and elevated ATR)."]
-      };
-    }
-    if (indicators.adx14 >= 22 && spreadPct >= 0.12 && !nearVwap) {
-      return {
-        marketRegime: "TREND",
-        regime: "TRADEABLE",
-        rationale: ["Regime classifier: trend (ADX + EMA spread + price displacement)."]
-      };
-    }
-    return {
-      marketRegime: "RANGE",
-      regime: "TRADEABLE",
-      rationale: ["Regime classifier: range (no persistent trend edge detected)."]
-    };
-  }
-
-  private computeConfidenceBreakdown(input: {
-    indicators: IndicatorSnapshot;
-    marketRegime: MarketRegime;
-    impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
-    biasTrend?: Signal;
-    breakoutValidationFailed: boolean;
-    pullbackExtended: boolean;
-  }): ConfidenceBreakdown {
-    const atrPct = this.computeAtrPct(input.indicators);
-    const emaSpreadPct =
-      Math.abs(input.indicators.ema20 - input.indicators.ema50) / Math.max(input.indicators.ema20, 1) * 100;
-    const trend = this.clamp(
-      35 +
-        input.indicators.adx14 * 1.1 +
-        emaSpreadPct * 40 +
-        (input.marketRegime === "TREND" ? 12 : input.marketRegime === "RANGE" ? -4 : 0),
-      0,
-      100
-    );
-    const momentum = this.clamp(
-      45 +
-        Math.abs(input.indicators.macdHistogram) * 2.2 +
-        (input.indicators.rsi14 > 55 || input.indicators.rsi14 < 45 ? 8 : -5) +
-        (input.impulseBias === "NONE" ? 0 : 12),
-      0,
-      100
-    );
-    const volatility = this.clamp(100 - Math.abs(atrPct - 0.65) * 70, 0, 100);
-    const vwapDistancePct =
-      Math.abs(input.indicators.ema20 - input.indicators.vwap) / Math.max(input.indicators.vwap, 1) * 100;
-    const structure = this.clamp(
-      45 +
-        vwapDistancePct * 130 +
-        (input.breakoutValidationFailed ? -18 : 8) +
-        (input.pullbackExtended ? -10 : 0),
-      0,
-      100
-    );
-    const context = this.clamp(
-      50 +
-        (Math.abs(input.indicators.macdHistogram) > 0.2 ? 8 : -4) +
-        (input.biasTrend ? 6 : 0) +
-        ((input.indicators.mfi14 ?? 50) > 55 || (input.indicators.mfi14 ?? 50) < 45 ? 4 : -2) +
-        (Math.abs(input.indicators.cmf20 ?? 0) > 0.06 ? 4 : 0) +
-        (input.marketRegime === "LOW_LIQ_CHOP" ? -20 : 0) +
-        (input.marketRegime === "VOLATILE_SPIKE" ? -8 : 0),
-      0,
-      100
-    );
-    const setupQuality = this.clamp(
-      trend * 0.28 + momentum * 0.24 + volatility * 0.16 + structure * 0.2 + context * 0.12,
-      0,
-      100
-    );
-    return {
-      trend: this.round(trend),
-      momentum: this.round(momentum),
-      volatility: this.round(volatility),
-      structure: this.round(structure),
-      context: this.round(context),
-      setupQuality: this.round(setupQuality)
-    };
-  }
-
-  private assessSetupQuality(input: {
-    signal: Exclude<Signal, "NO_TRADE">;
-    indicators: IndicatorSnapshot;
-    perp: PerpMarketSnapshot;
-    marketRegime: MarketRegime;
-    entry: number;
-    stopLoss: number;
-    takeProfit: number;
-    riskRewardRatio: number;
-    baseSetupQuality: number;
-    estimatedPnLAtTakeProfit?: number;
-    leverage?: number;
-    positionSizeUsd?: number;
-  }): SetupAssessment {
-    const atr = Math.max(input.indicators.atr14, 1e-8);
-    const recent = input.indicators.recentCandleContext;
-    const extensionAtr = Math.abs(input.entry - input.indicators.ema20) / atr;
-    const location = (() => {
-      if (input.marketRegime === "LOW_LIQ_CHOP") return 20;
-      if (input.marketRegime === "VOLATILE_SPIKE") return 40;
-      if (input.marketRegime === "RANGE") {
-        const nearestBandDistance = Math.min(
-          Math.abs(input.entry - input.indicators.bbLower),
-          Math.abs(input.indicators.bbUpper - input.entry)
-        );
-        return this.clamp(100 - (nearestBandDistance / (atr * 1.6)) * 100, 0, 100);
-      }
-      return this.clamp(100 - extensionAtr * 55, 0, 100);
-    })();
-
-    const trigger = (() => {
-      if (!recent) return 55;
-      if (input.signal === "LONG") {
-        if (recent.breakoutDirection === "UP" && recent.momentumPct3 > 0 && recent.bullishCloseRatio5 >= 0.6) {
-          return 84;
-        }
-        if (recent.breakoutDirection === "DOWN") {
-          return 24;
-        }
-        return this.clamp(50 + recent.momentumPct3 * 90 + (recent.bullishCloseRatio5 - 0.5) * 35, 0, 100);
-      }
-      if (recent.breakoutDirection === "DOWN" && recent.momentumPct3 < 0 && recent.bearishCloseRatio5 >= 0.6) {
-        return 84;
-      }
-      if (recent.breakoutDirection === "UP") {
-        return 24;
-      }
-      return this.clamp(50 - recent.momentumPct3 * 90 + (recent.bearishCloseRatio5 - 0.5) * 35, 0, 100);
-    })();
-
-    const microstructure = (() => {
-      let score = 50;
-      if (input.signal === "LONG") {
-        if (input.perp.fundingRate > 0.00005) score -= 10;
-        if (input.perp.premiumPct > 0.15) score -= 10;
-        if (input.perp.fundingRate < -0.00005) score += 8;
-        if (input.perp.premiumPct < -0.15) score += 8;
-        if ((input.perp.orderBookImbalance ?? 0) > 0.08) score += 10;
-        if ((input.perp.orderBookImbalance ?? 0) < -0.08) score -= 10;
-        if ((input.perp.microPricePremiumPct ?? 0) > 0.01) score += 6;
-        if ((input.perp.microPricePremiumPct ?? 0) < -0.01) score -= 6;
-      } else {
-        if (input.perp.fundingRate < -0.00005) score -= 10;
-        if (input.perp.premiumPct < -0.15) score -= 10;
-        if (input.perp.fundingRate > 0.00005) score += 8;
-        if (input.perp.premiumPct > 0.15) score += 8;
-        if ((input.perp.orderBookImbalance ?? 0) < -0.08) score += 10;
-        if ((input.perp.orderBookImbalance ?? 0) > 0.08) score -= 10;
-        if ((input.perp.microPricePremiumPct ?? 0) < -0.01) score += 6;
-        if ((input.perp.microPricePremiumPct ?? 0) > 0.01) score -= 6;
-      }
-      if ((input.perp.bidAskSpreadPct ?? 0) > 0.08) score -= 12;
-      if ((input.perp.openInterestDeltaPct ?? 0) > 0.35) score += 4;
-      if ((input.perp.openInterestDeltaPct ?? 0) < -0.35) score -= 6;
-      return this.clamp(score, 0, 100);
-    })();
-
-    const regime = (() => {
-      if (input.marketRegime === "LOW_LIQ_CHOP") return 15;
-      if (input.marketRegime === "VOLATILE_SPIKE") return 45;
-      if (input.marketRegime === "RANGE") return 58;
-      const trendAligned =
-        (input.signal === "LONG" && input.indicators.ema20 >= input.indicators.ema50) ||
-        (input.signal === "SHORT" && input.indicators.ema20 <= input.indicators.ema50);
-      return trendAligned ? 82 : 34;
-    })();
-
-    const riskEfficiency = (() => {
-      const slAtr = Math.abs(input.entry - input.stopLoss) / atr;
-      const tpAtr = Math.abs(input.takeProfit - input.entry) / atr;
-      return this.clamp(45 + (input.riskRewardRatio - 1) * 25 - Math.max(0, slAtr - 1.4) * 20 - Math.max(0, tpAtr - 2.5) * 15, 0, 100);
-    })();
-
-    const friction = (() => {
-      if (
-        input.leverage === undefined ||
-        input.positionSizeUsd === undefined ||
-        input.estimatedPnLAtTakeProfit === undefined
-      ) {
-        return 55;
-      }
-      const notional = input.leverage * input.positionSizeUsd;
-      const costs = notional * 0.0014;
-      const gross = Math.abs(input.estimatedPnLAtTakeProfit);
-      if (gross <= 1e-8) {
-        return 20;
-      }
-      const burden = this.clamp(costs / gross, 0, 2);
-      return this.clamp(100 - burden * 120, 5, 100);
-    })();
-
-    const setupQuality = this.round(
-      this.clamp(
-        input.baseSetupQuality * 0.4 +
-          location * 0.14 +
-          trigger * 0.14 +
-          microstructure * 0.1 +
-          regime * 0.1 +
-          riskEfficiency * 0.08 +
-          friction * 0.04,
-        0,
-        100
-      )
-    );
-    const setupGrade = this.toSetupGrade(setupQuality);
-    return {
-      setupQuality,
-      setupGrade,
-      factorScores: {
-        location: this.round(location),
-        trigger: this.round(trigger),
-        microstructure: this.round(microstructure),
-        regime: this.round(regime),
-        riskEfficiency: this.round(riskEfficiency),
-        friction: this.round(friction)
-      }
-    };
-  }
-
-  private toSetupGrade(setupQuality: number): SetupGrade {
-    if (setupQuality >= 78) return "A";
-    if (setupQuality >= 64) return "B";
-    if (setupQuality >= 52) return "C";
-    return "D";
-  }
-
-  private getAtrProfile(atrPct: number, marketRegime: MarketRegime): {
-    slAtrMultiplier: number;
-    tpAtrMultiplier: number;
-    tpFallbackAtrMultiplier: number;
-  } {
-    if (marketRegime === "LOW_LIQ_CHOP") {
-      return {
-        slAtrMultiplier: 0.9,
-        tpAtrMultiplier: 1.2,
-        tpFallbackAtrMultiplier: 1.1
-      };
-    }
-    if (marketRegime === "TREND") {
-      return {
-        slAtrMultiplier: 1.1,
-        tpAtrMultiplier: 2.4,
-        tpFallbackAtrMultiplier: 2.1
-      };
-    }
-    if (marketRegime === "RANGE") {
-      return {
-        slAtrMultiplier: 1.0,
-        tpAtrMultiplier: 1.6,
-        tpFallbackAtrMultiplier: 1.4
-      };
-    }
-    if (marketRegime === "VOLATILE_SPIKE") {
-      return {
-        slAtrMultiplier: 1.6,
-        tpAtrMultiplier: 2.2,
-        tpFallbackAtrMultiplier: 2.0
-      };
-    }
-
-    if (atrPct < 0.18) {
-      return {
-        slAtrMultiplier: 1.0,
-        tpAtrMultiplier: 1.5,
-        tpFallbackAtrMultiplier: 1.35
-      };
-    }
-    if (atrPct > 1.0) {
-      return {
-        slAtrMultiplier: 1.45,
-        tpAtrMultiplier: 2.4,
-        tpFallbackAtrMultiplier: 2.2
-      };
-    }
-    return {
-      slAtrMultiplier: 1.2,
-      tpAtrMultiplier: 2.0,
-      tpFallbackAtrMultiplier: 1.8
-    };
-  }
-
-  private round(value: number): number {
-    return Number(value.toFixed(4));
-  }
-
-  private clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-  }
-
-  private applyStopLossOverride(input: {
-    signal: Exclude<Signal, "NO_TRADE">;
-    entry: number;
-    current: number;
-    slPct?: number;
-    slUsd?: number;
-  }): number {
-    if (input.slPct !== undefined) {
-      const move = input.entry * (input.slPct / 100);
-      return input.signal === "LONG" ? input.entry - move : input.entry + move;
-    }
-    if (input.slUsd !== undefined) {
-      return input.signal === "LONG" ? input.entry - input.slUsd : input.entry + input.slUsd;
-    }
-    return input.current;
-  }
-
-  private applyTakeProfitOverride(input: {
-    signal: Exclude<Signal, "NO_TRADE">;
-    entry: number;
-    current: number;
-    tpPct?: number;
-    tpUsd?: number;
-  }): number {
-    if (input.tpPct !== undefined) {
-      const move = input.entry * (input.tpPct / 100);
-      return input.signal === "LONG" ? input.entry + move : input.entry - move;
-    }
-    if (input.tpUsd !== undefined) {
-      return input.signal === "LONG" ? input.entry + input.tpUsd : input.entry - input.tpUsd;
-    }
-    return input.current;
-  }
-
-  private validateLevels(signal: Exclude<Signal, "NO_TRADE">, entry: number, stopLoss: number, takeProfit: number): void {
-    if (signal === "LONG") {
-      if (!(stopLoss < entry)) {
-        throw new Error("Invalid stop loss for LONG: stop loss must be below entry.");
-      }
-      if (!(takeProfit > entry)) {
-        throw new Error("Invalid take profit for LONG: take profit must be above entry.");
-      }
-      return;
-    }
-
-    if (!(stopLoss > entry)) {
-      throw new Error("Invalid stop loss for SHORT: stop loss must be above entry.");
-    }
-    if (!(takeProfit < entry)) {
-      throw new Error("Invalid take profit for SHORT: take profit must be below entry.");
-    }
-  }
-
-  private computeEstimatedPnL(input: {
-    signal: Signal;
-    entry: number;
-    stopLoss: number;
-    takeProfit: number;
-    leverage?: number;
-    positionSizeUsd?: number;
-  }): { atStopLoss: number; atTakeProfit: number } | undefined {
-    const { leverage, positionSizeUsd } = input;
-    if (!leverage || !positionSizeUsd) {
-      return undefined;
-    }
-    if (leverage <= 0 || positionSizeUsd <= 0 || input.entry <= 0) {
-      return undefined;
-    }
-    if (input.signal === "NO_TRADE") {
-      return undefined;
-    }
-
-    const notional = leverage * positionSizeUsd;
-    const slReturn =
-      input.signal === "LONG"
-        ? (input.stopLoss - input.entry) / input.entry
-        : (input.entry - input.stopLoss) / input.entry;
-    const tpReturn =
-      input.signal === "LONG"
-        ? (input.takeProfit - input.entry) / input.entry
-        : (input.entry - input.takeProfit) / input.entry;
-
-    return {
-      atStopLoss: this.round(notional * slReturn),
-      atTakeProfit: this.round(notional * tpReturn)
-    };
-  }
-
-  private estimateExpectedRange(input: {
-    entry: number;
-    atr: number;
-    marketRegime: MarketRegime;
-    baseInterval: string;
-    objectiveHorizon?: string;
-    objectiveHorizonMinutes?: number;
-  }): { low: number; high: number; horizonMinutes: number; candles: number } {
-    const horizonMinutes = this.resolveHorizonMinutes(input.objectiveHorizon, input.objectiveHorizonMinutes);
-    const intervalMinutes = this.parseIntervalToMinutes(input.baseInterval);
-    const candles = Math.max(1, Math.round(horizonMinutes / Math.max(intervalMinutes, 1)));
-    const regimeMultiplier =
-      input.marketRegime === "VOLATILE_SPIKE"
-        ? 1.35
-        : input.marketRegime === "TREND"
-          ? 1.2
-          : input.marketRegime === "LOW_LIQ_CHOP"
-            ? 0.85
-            : 1.0;
-    // Heuristic: ATR * sqrt(time) gives a practical expected move envelope.
-    const move = Math.max(input.atr * Math.sqrt(candles) * regimeMultiplier, input.entry * 0.0005);
-    return {
-      low: Math.max(0, input.entry - move),
-      high: input.entry + move,
-      horizonMinutes,
-      candles
-    };
-  }
-
-  private resolveHorizonMinutes(rawHorizon?: string, resolvedMinutes?: number): number {
-    if (resolvedMinutes !== undefined && Number.isFinite(resolvedMinutes) && resolvedMinutes > 0) {
-      return Math.round(resolvedMinutes);
-    }
-    if (rawHorizon && /^\d+$/.test(rawHorizon.trim())) {
-      const parsed = Number(rawHorizon);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        return Math.round(parsed);
-      }
-    }
-    return 15;
-  }
-
-  private computeExecutionStats(input: {
-    signal: Signal;
-    leverage?: number;
-    positionSizeUsd?: number;
-    confidence: number;
-    estimatedPnLAtStopLoss?: number;
-    estimatedPnLAtTakeProfit?: number;
-  }):
-    | {
-        netEstimatedPnLAtStopLoss: number;
-        netEstimatedPnLAtTakeProfit: number;
-        netRiskRewardRatio: number;
-        expectedValueUsd: number;
-        expectedValuePerMarginPct?: number;
-      }
-    | undefined {
-    if (
-      input.signal === "NO_TRADE" ||
-      input.leverage === undefined ||
-      input.positionSizeUsd === undefined ||
-      input.estimatedPnLAtStopLoss === undefined ||
-      input.estimatedPnLAtTakeProfit === undefined
-    ) {
-      return undefined;
-    }
-
-    const notional = input.positionSizeUsd * input.leverage;
-    if (notional <= 0) {
-      return undefined;
-    }
-
-    // Assumption: intraday perp execution realism with round-trip taker + slippage costs.
-    const roundTripCostRate = 0.0014; // 0.14%
-    const totalCosts = notional * roundTripCostRate;
-    const netTp = input.estimatedPnLAtTakeProfit - totalCosts;
-    const netSl = input.estimatedPnLAtStopLoss - totalCosts;
-    const winProbability = Math.min(0.95, Math.max(0.05, input.confidence / 100));
-    const expectedValueUsd = winProbability * netTp + (1 - winProbability) * netSl;
-    const netRiskRewardRatio = Math.abs(netSl) > 0 ? Math.abs(netTp / netSl) : 0;
-    const expectedValuePerMarginPct =
-      input.positionSizeUsd > 0 ? (expectedValueUsd / input.positionSizeUsd) * 100 : undefined;
-
-    return {
-      netEstimatedPnLAtStopLoss: this.round(netSl),
-      netEstimatedPnLAtTakeProfit: this.round(netTp),
-      netRiskRewardRatio: this.round(netRiskRewardRatio),
-      expectedValueUsd: this.round(expectedValueUsd),
-      expectedValuePerMarginPct:
-        expectedValuePerMarginPct === undefined ? undefined : this.round(expectedValuePerMarginPct)
-    };
-  }
-
-  private computeRiskReward(entry: number, stopLoss: number, takeProfit: number): number {
-    const risk = Math.abs(entry - stopLoss);
-    const reward = Math.abs(takeProfit - entry);
-    if (risk <= 0) {
-      return 0;
-    }
-    return reward / risk;
-  }
-
-  private parseIntervalToMinutes(interval: string): number {
-    const normalized = interval.trim().toLowerCase();
-    const match = normalized.match(/^(\d+)([mhd])$/);
-    if (!match) {
-      return 1;
-    }
-    const amount = Number(match[1]);
-    const unit = match[2];
-    if (Number.isNaN(amount) || amount <= 0) {
-      return 1;
-    }
-    if (unit === "m") return amount;
-    if (unit === "h") return amount * 60;
-    return amount * 60 * 24;
-  }
-
-  private toAction(
-    signal: Signal,
-    _confidence: number,
-    _regime: "TRADEABLE" | "CHOPPY"
-  ): TradeAction {
-    if (signal === "NO_TRADE") {
-      return "NO TRADE";
-    }
-    return signal;
-  }
 }
+
+function round(value: number): number {
+  return Number(value.toFixed(4));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+

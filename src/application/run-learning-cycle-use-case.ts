@@ -1,10 +1,9 @@
 import type { AdaptiveLearningService } from "./adaptive-learning-service.js";
 import type { GenerateRecommendationUseCase } from "./generate-recommendation-use-case.js";
-import { RankTopOpportunitiesUseCase } from "./rank-top-opportunities-use-case.js";
+import type { SelectLearningSymbolsUseCase } from "./select-learning-symbols-use-case.js";
 import { resolveAdaptiveTimeframes } from "./timeframe-policy.js";
 import { mapWithConcurrency } from "./map-with-concurrency.js";
 import type { LoggerPort } from "../ports/logger-port.js";
-import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { Recommendation } from "../domain/types.js";
 
 export interface LearningSimulationCandidate {
@@ -19,8 +18,8 @@ export class RunLearningCycleUseCase {
   constructor(
     private readonly logger: LoggerPort,
     private readonly recommendationUseCase: GenerateRecommendationUseCase,
-    private readonly marketData: MarketDataPort,
-    private readonly learning: AdaptiveLearningService
+    private readonly learning: AdaptiveLearningService,
+    private readonly learningSymbolSelector: Pick<SelectLearningSymbolsUseCase, "execute">
   ) {}
 
   async execute(input: {
@@ -29,7 +28,7 @@ export class RunLearningCycleUseCase {
     positionSizeUsd: number;
     active: () => boolean;
   }): Promise<{ symbols: string[]; candidates: LearningSimulationCandidate[] }> {
-    const symbols = await this.getLearningSymbols();
+    const symbols = await this.learningSymbolSelector.execute({ universeLimit: 15, top: 5 });
     const candidates: LearningSimulationCandidate[] = [];
     const horizonConcurrency = 2;
 
@@ -82,19 +81,5 @@ export class RunLearningCycleUseCase {
     }
 
     return { symbols, candidates };
-  }
-
-  private async getLearningSymbols(): Promise<string[]> {
-    const rankUseCase = new RankTopOpportunitiesUseCase(this.recommendationUseCase, this.marketData);
-    const selected = await this.marketData.getTopPerpSymbolsByVolumeWithOpenInterest(15);
-    const result = await rankUseCase.execute({
-      symbols: selected.map((item) => item.symbol),
-      top: 5
-    });
-    const ranked = result.ranked.map((row) => row.symbol);
-    if (ranked.length > 0) {
-      return ranked;
-    }
-    return selected.slice(0, 5).map((item) => item.symbol);
   }
 }

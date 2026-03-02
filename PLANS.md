@@ -1,5 +1,20 @@
 # Project Plan
 
+## Task: Remove `learn --buckets` command alias (2026-02-25)
+- [x] Remove interactive `learn --buckets` command handling
+- [x] Update interactive help and docs to use `learn --stats` only
+- [x] Run build + test verification
+
+## Task: Architectural review remediation (2026-02-25)
+- [x] Split `src/cli.ts` into a thin composition root and extracted interactive/session runner services
+- [x] Decompose `src/domain/recommendation-engine.ts` into focused domain collaborators while preserving outputs
+- [x] Reduce `Recommendation` cross-layer coupling via explicit mappers/derived DTO shaping at boundaries
+- [x] Make learning policy application return non-mutated recommendations and deduplicate learning snapshot mapping
+- [x] Remove hidden use-case instantiation by introducing injected collaborators for ranking/learning symbol selection
+- [x] Add bounded concurrency and caching to Backpack open-interest enrichment in volume ranking
+- [x] Centralize AI HTTP failure logging ownership (avoid duplicate CLI+adapter logging)
+- [x] Run test + build verification
+
 ## Task: Fix `--expected` horizon precedence (2026-02-25)
 - [x] Ensure expected-range queries honor the explicit `--expected <minutes>` value even when default objective horizon is set
 - [x] Add regression test for expected-range override vs objective-horizon defaults
