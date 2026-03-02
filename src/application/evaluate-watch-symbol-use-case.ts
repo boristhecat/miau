@@ -41,7 +41,7 @@ export class EvaluateWatchSymbolUseCase {
       recommendation,
       timeframe: adaptiveTimeframes.timeframe
     });
-    recommendation.confidence = input.calibration(pair, recommendation.confidence);
+    recommendation = { ...recommendation, confidence: input.calibration(pair, recommendation.confidence) };
 
     const guardReason =
       recommendation.signal === "NO_TRADE"

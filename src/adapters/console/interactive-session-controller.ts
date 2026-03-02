@@ -1,73 +1,59 @@
-import { AdaptiveLearningService } from "../../application/adaptive-learning-service.js";
-import { GenerateAiAdviceUseCase } from "../../application/generate-ai-advice-use-case.js";
-import { GenerateRecommendationUseCase } from "../../application/generate-recommendation-use-case.js";
-import { RunLearningBucketReportUseCase } from "../../application/run-learning-bucket-report-use-case.js";
-import { RunLearningCycleUseCase } from "../../application/run-learning-cycle-use-case.js";
-import { RunRecommendationRankingUseCase } from "../../application/run-recommendation-ranking-use-case.js";
-import { ScheduleSimulationUseCase } from "../../application/schedule-simulation-use-case.js";
 import { SessionPerformanceService } from "../../application/session-performance-service.js";
 import { resolveAdaptiveTimeframes, resolveSimulationHorizonMinutes } from "../../application/timeframe-policy.js";
+import type {
+  IAdaptiveLearningService,
+  IGenerateAiAdviceUseCase,
+  IGenerateRecommendationUseCase,
+  ILearningBucketReportUseCase,
+  ILearningCycleUseCase,
+  IRankingUseCase,
+  ISimulationScheduler,
+  IWatchSymbolUseCase
+} from "../../application/use-case-interfaces.js";
 import type { AiAdvice } from "../../ports/ai-advisor-port.js";
 import { type TradeDefaults } from "../persistence/trade-defaults-store.js";
 import { ConsoleLogger } from "./console-logger.js";
 import {
   getInteractiveHelpText,
   renderDashboard,
+  renderLearningReportLines,
   renderSimulationResultLines,
   type DashboardState,
   type WatchRow,
   ui
 } from "./interactive-console-view.js";
+import { LearningRunnerController, LEARN_HORIZONS_MINUTES, LEARN_CYCLE_INTERVAL_MINUTES } from "./learning-runner-controller.js";
+import { WatchManager } from "./watch-manager.js";
 import { RecommendationPrinter } from "./recommendation-printer.js";
 import { parseTradingInput, type TradingInput } from "./trading-input-parser.js";
-import { parseWatchCommand, type WatchConfig } from "./watch-command-parser.js";
-import { EvaluateWatchSymbolUseCase } from "../../application/evaluate-watch-symbol-use-case.js";
+import { parseWatchCommand } from "./watch-command-parser.js";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-interface LearningRunnerState {
-  active: boolean;
-  cycleRunning: boolean;
-  intervalId?: NodeJS.Timeout;
-  pendingTimers: Set<NodeJS.Timeout>;
-  symbols: string[];
-}
-
-const LEARN_HORIZONS_MINUTES = [15, 30, 60, 90] as const;
-const LEARN_CYCLE_INTERVAL_MINUTES = 10;
-
 export interface InteractiveSessionDeps {
   logger: ConsoleLogger;
-  useCase: GenerateRecommendationUseCase;
-  learning: AdaptiveLearningService;
+  useCase: IGenerateRecommendationUseCase;
+  learning: IAdaptiveLearningService;
   printer: RecommendationPrinter;
-  rankingUseCase: RunRecommendationRankingUseCase;
-  learningBucketReportUseCase: RunLearningBucketReportUseCase;
-  learningCycleUseCase: RunLearningCycleUseCase;
-  watchSymbolUseCase: EvaluateWatchSymbolUseCase;
-  simulationScheduler: ScheduleSimulationUseCase;
+  rankingUseCase: IRankingUseCase;
+  learningBucketReportUseCase: ILearningBucketReportUseCase;
+  learningCycleUseCase: ILearningCycleUseCase;
+  watchSymbolUseCase: IWatchSymbolUseCase;
+  simulationScheduler: ISimulationScheduler;
   refreshIndicatorRuntime: () => Promise<void>;
   tradeDefaults: TradeDefaults;
   saveTradeDefaults: (defaults: TradeDefaults) => Promise<void>;
-  aiAdviceUseCase: GenerateAiAdviceUseCase;
-  createAiAdviceUseCase: (defaults: TradeDefaults) => GenerateAiAdviceUseCase;
+  aiAdviceUseCase: IGenerateAiAdviceUseCase;
   aiEnabledByDefault: boolean;
 }
 
 export async function runInteractiveSession(deps: InteractiveSessionDeps): Promise<void> {
   const rl = readline.createInterface({ input, output });
   const tracker = new SessionPerformanceService();
-  const watchIntervals = new Map<string, NodeJS.Timeout>();
-  const watchSignatures = new Map<string, string>();
-  const watchRunning = new Set<string>();
-  const learningRunner: LearningRunnerState = {
-    active: false,
-    cycleRunning: false,
-    pendingTimers: new Set<NodeJS.Timeout>(),
-    symbols: []
-  };
+  const watchManager = new WatchManager();
+  const learningRunner = new LearningRunnerController();
   const dashboard: DashboardState = {
-    watchRows: new Map<string, WatchRow>(),
+    watchRows: watchManager.getRows(),
     latestQueryLines: [],
     learning: {
       active: false,
@@ -76,12 +62,15 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
       pendingSimulations: 0
     }
   };
+
   const syncLearningIndicator = (): void => {
-    dashboard.learning.active = learningRunner.active;
-    dashboard.learning.cycleRunning = learningRunner.cycleRunning;
-    dashboard.learning.symbolsCount = learningRunner.symbols.length;
-    dashboard.learning.pendingSimulations = learningRunner.pendingTimers.size;
+    const state = learningRunner.state;
+    dashboard.learning.active = state.active;
+    dashboard.learning.cycleRunning = state.cycleRunning;
+    dashboard.learning.symbolsCount = state.symbols.length;
+    dashboard.learning.pendingSimulations = state.pendingSimulationsCount;
   };
+
   let isPrompting = false;
   let pendingRender = false;
   const requestRender = (): void => {
@@ -93,7 +82,7 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
   };
 
   let tradeDefaults = deps.tradeDefaults;
-  let aiAdviceUseCase = deps.aiAdviceUseCase;
+  const aiAdviceUseCase = deps.aiAdviceUseCase;
 
   try {
     renderDashboard(dashboard);
@@ -133,7 +122,6 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
           isPrompting = false;
           tradeDefaults = updatedDefaults;
           await deps.saveTradeDefaults(tradeDefaults);
-          aiAdviceUseCase = deps.createAiAdviceUseCase(tradeDefaults);
           dashboard.latestQueryLines = [
             `${ui.green}[defaults] saved.${ui.reset}`,
             `${ui.gray}leverage:${ui.reset} ${tradeDefaults.leverage}`,
@@ -153,59 +141,41 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
         break;
       }
       if (normalized === "learn --start") {
-        if (learningRunner.active) {
+        if (learningRunner.isActive()) {
           dashboard.latestQueryLines = [`${ui.yellow}[learn] already running.${ui.reset}`];
           syncLearningIndicator();
           requestRender();
           continue;
         }
-        learningRunner.active = true;
         dashboard.latestQueryLines = [
           `${ui.green}[learn] started background learning.${ui.reset}`,
           `${ui.gray}horizons:${ui.reset} ${LEARN_HORIZONS_MINUTES.join(", ")} minutes`,
           `${ui.gray}cycle:${ui.reset} every ${LEARN_CYCLE_INTERVAL_MINUTES} minutes`
         ];
-        syncLearningIndicator();
-        requestRender();
-        learningRunner.intervalId = setInterval(() => {
-          void runLearningCycle({
+        learningRunner.start(
+          {
             learningCycleUseCase: deps.learningCycleUseCase,
             logger: deps.logger,
             learning: deps.learning,
-            runner: learningRunner,
-            tracker,
             simulationScheduler: deps.simulationScheduler,
+            tracker,
             defaults: tradeDefaults,
-            refreshIndicatorRuntime: deps.refreshIndicatorRuntime,
-            onStateChanged: () => {
-              syncLearningIndicator();
-              requestRender();
-            }
-          });
-        }, LEARN_CYCLE_INTERVAL_MINUTES * 60_000);
-        void runLearningCycle({
-          learningCycleUseCase: deps.learningCycleUseCase,
-          logger: deps.logger,
-          learning: deps.learning,
-          runner: learningRunner,
-          tracker,
-          simulationScheduler: deps.simulationScheduler,
-          defaults: tradeDefaults,
-          refreshIndicatorRuntime: deps.refreshIndicatorRuntime,
-          onStateChanged: () => {
+            refreshIndicatorRuntime: deps.refreshIndicatorRuntime
+          },
+          () => {
             syncLearningIndicator();
             requestRender();
           }
-        });
+        );
         syncLearningIndicator();
         requestRender();
         continue;
       }
       if (normalized === "learn --stop") {
-        if (!learningRunner.active) {
+        if (!learningRunner.isActive()) {
           dashboard.latestQueryLines = [`${ui.yellow}[learn] not running.${ui.reset}`];
         } else {
-          stopLearningRunner(learningRunner);
+          learningRunner.stop();
           dashboard.latestQueryLines = [`${ui.green}[learn] stopped.${ui.reset}`];
         }
         syncLearningIndicator();
@@ -221,7 +191,7 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
           dashboard.latestQueryLines = renderLearningReportLines({
             overview,
             lookbackDays: 14,
-            learningModeRunning: learningRunner.active,
+            learningModeRunning: learningRunner.isActive(),
             bucketReport: report
           });
         } catch (error) {
@@ -234,38 +204,25 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
       }
       if (normalized.startsWith("unwatch ")) {
         const symbol = normalized.replace(/^unwatch\s+/, "").trim().toUpperCase();
-        dashboard.latestQueryLines = [stopWatchSymbol(symbol, watchIntervals, watchSignatures, dashboard)];
+        const msg = watchManager.remove(symbol);
+        dashboard.latestQueryLines = [`${ui.green}[watch]${ui.reset} ${msg}`];
         requestRender();
         continue;
       }
       if (normalized.startsWith("watch ")) {
         try {
           const watchConfig = parseWatchCommand(raw);
-          const key = watchConfig.symbol.toUpperCase();
-          stopWatchSymbol(key, watchIntervals, watchSignatures, dashboard);
-          const timer = setInterval(() => {
-            void runWatchIteration({
-              key,
-              watchSymbolUseCase: deps.watchSymbolUseCase,
-              tracker,
-              watchConfig,
-              watchSignatures,
-              watchRunning,
-              watchRows: dashboard.watchRows,
-              requestRender
-            });
-          }, watchConfig.everyMinutes * 60_000);
-          watchIntervals.set(key, timer);
-          await runWatchIteration({
-            key,
-            watchSymbolUseCase: deps.watchSymbolUseCase,
-            tracker,
+          watchManager.add(
             watchConfig,
-            watchSignatures,
-            watchRunning,
-            watchRows: dashboard.watchRows,
-            requestRender
-          });
+            deps.watchSymbolUseCase,
+            tracker,
+            () => {
+              requestRender();
+            },
+            (_symbol, _err) => {
+              // errors already reflected in watchRows
+            }
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : "Invalid watch command";
           dashboard.latestQueryLines = [`${ui.red}[error] ${message}${ui.reset}`];
@@ -334,10 +291,13 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
           timeframe: interval
         });
         const calibration = tracker.applyConfidenceCalibration(pair, recommendation.confidence);
-        recommendation.confidence = calibration.confidence;
-        if (calibration.note) {
-          recommendation.rationale.unshift(`Calibration: ${calibration.note}.`);
-        }
+        recommendation = {
+          ...recommendation,
+          confidence: calibration.confidence,
+          rationale: calibration.note
+            ? [`Calibration: ${calibration.note}.`, ...recommendation.rationale]
+            : recommendation.rationale
+        };
         let aiWarning: string | undefined;
         let aiAdvice: AiAdvice | undefined;
         if (deps.aiEnabledByDefault && tradeInput.expectedRangeHorizon === undefined) {
@@ -424,164 +384,15 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
     renderDashboard(dashboard);
     process.exitCode = 1;
   } finally {
-    stopLearningRunner(learningRunner);
+    learningRunner.stop();
     syncLearningIndicator();
-    for (const timer of watchIntervals.values()) {
-      clearInterval(timer);
-    }
+    watchManager.stopAll();
     rl.close();
   }
 }
 
-function renderLearningStatsLines(input: {
-  overview: {
-    totalSamples: number;
-    wins: number;
-    losses: number;
-    winRate: number;
-    avgPnlUsd: number;
-  };
-  lookbackDays: number;
-  learningModeRunning: boolean;
-}): string[] {
-  const { overview } = input;
-  const winRatePct = (overview.winRate * 100).toFixed(2);
-  const avgPnl = `${overview.avgPnlUsd >= 0 ? "+" : ""}${overview.avgPnlUsd.toFixed(2)} USDC`;
-  const avgPnlColor = overview.avgPnlUsd >= 0 ? ui.green : ui.red;
-  const modeColor = input.learningModeRunning ? ui.green : ui.gray;
-
-  return [
-    `${ui.bold}${ui.blue}LEARNING STATS${ui.reset} ${ui.gray}(last ${input.lookbackDays}d)${ui.reset}`,
-    `${ui.gray}${"─".repeat(78)}${ui.reset}`,
-    `${ui.bold}mode:${ui.reset} ${modeColor}${input.learningModeRunning ? "RUNNING" : "STOPPED"}${ui.reset}  ` +
-      `${ui.gray}|${ui.reset} ${ui.bold}samples:${ui.reset} ${overview.totalSamples}  ` +
-      `${ui.gray}|${ui.reset} ${ui.green}wins:${overview.wins}${ui.reset}  ` +
-      `${ui.red}losses:${overview.losses}${ui.reset}`,
-    `${ui.bold}win rate:${ui.reset} ${
-      overview.winRate >= 0.55 ? ui.green : overview.winRate >= 0.45 ? ui.yellow : ui.red
-    }${winRatePct}%${ui.reset}  ` +
-      `${ui.gray}|${ui.reset} ${ui.bold}avg pnl:${ui.reset} ${avgPnlColor}${avgPnl}${ui.reset}`,
-    `${ui.gray}${"─".repeat(78)}${ui.reset}`
-  ];
-}
-
-function renderLearningReportLines(input: {
-  overview: {
-    totalSamples: number;
-    wins: number;
-    losses: number;
-    winRate: number;
-    avgPnlUsd: number;
-  };
-  lookbackDays: number;
-  learningModeRunning: boolean;
-  bucketReport: {
-    lookbackDays: number;
-    rows: Array<{
-      timeframe: string;
-      horizonBucket: string;
-      samples: number;
-      wins: number;
-      losses: number;
-      winRate: number;
-      avgPnlUsd: number;
-    }>;
-  };
-}): string[] {
-  return [
-    ...renderLearningStatsLines({
-      overview: input.overview,
-      lookbackDays: input.lookbackDays,
-      learningModeRunning: input.learningModeRunning
-    }),
-    "",
-    ...renderLearningBucketsLines(input.bucketReport)
-  ];
-}
-
-function renderLearningBucketsLines(input: {
-  lookbackDays: number;
-  rows: Array<{
-    timeframe: string;
-    horizonBucket: string;
-    samples: number;
-    wins: number;
-    losses: number;
-    winRate: number;
-    avgPnlUsd: number;
-  }>;
-}): string[] {
-  const lines: string[] = [
-    `${ui.bold}${ui.blue}LEARNING A/B BUCKETS${ui.reset} ${ui.gray}(last ${input.lookbackDays}d)${ui.reset}`
-  ];
-  if (input.rows.length === 0) {
-    lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
-    lines.push(`${ui.gray}No learning samples yet.${ui.reset}`);
-    return lines;
-  }
-
-  const header =
-    `${padRight("TF", 8)} ${padRight("HORIZON", 9)} ${padLeft("SAMPLES", 7)} ${padLeft("W", 4)} ${padLeft("L", 4)} ` +
-    `${padLeft("WIN%", 8)} ${padLeft("AVG PNL", 12)}`;
-  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
-  lines.push(`${ui.gray}${header}${ui.reset}`);
-  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
-
-  let totalSamples = 0;
-  let totalWins = 0;
-  let totalLosses = 0;
-  let weightedWinNumerator = 0;
-  let weightedPnlNumerator = 0;
-
-  for (const row of input.rows) {
-    totalSamples += row.samples;
-    totalWins += row.wins;
-    totalLosses += row.losses;
-    weightedWinNumerator += row.winRate * row.samples;
-    weightedPnlNumerator += row.avgPnlUsd * row.samples;
-
-    const winRatePct = row.winRate * 100;
-    const winRateColor = winRatePct >= 55 ? ui.green : winRatePct >= 45 ? ui.yellow : ui.red;
-    const pnlColor = row.avgPnlUsd >= 0 ? ui.green : ui.red;
-    const avgPnlText = `${row.avgPnlUsd >= 0 ? "+" : ""}${row.avgPnlUsd.toFixed(2)}`;
-    const rowPrefix =
-      `${ui.cyan}${padRight(row.timeframe, 8)}${ui.reset} ` +
-      `${ui.gray}${padRight(row.horizonBucket, 9)}${ui.reset} ` +
-      `${padLeft(String(row.samples), 7)} ${padLeft(String(row.wins), 4)} ${padLeft(String(row.losses), 4)} `;
-    const rowSuffix =
-      `${winRateColor}${padLeft(winRatePct.toFixed(2), 7)}%${ui.reset} ` +
-      `${pnlColor}${padLeft(avgPnlText, 12)}${ui.reset}`;
-    lines.push(`${rowPrefix}${rowSuffix}`);
-  }
-
-  const totalWinRatePct = totalSamples > 0 ? (weightedWinNumerator / totalSamples) * 100 : 0;
-  const totalAvgPnl = totalSamples > 0 ? weightedPnlNumerator / totalSamples : 0;
-  const totalPnlText = `${totalAvgPnl >= 0 ? "+" : ""}${totalAvgPnl.toFixed(2)}`;
-  const totalPnlColor = totalAvgPnl >= 0 ? ui.green : ui.red;
-  const totalWinColor = totalWinRatePct >= 55 ? ui.green : totalWinRatePct >= 45 ? ui.yellow : ui.red;
-
-  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
-  lines.push(
-    `${ui.bold}${padRight("TOTAL", 8)} ${padRight("-", 9)} ${padLeft(String(totalSamples), 7)} ${padLeft(
-      String(totalWins),
-      4
-    )} ${padLeft(String(totalLosses), 4)} ${totalWinColor}${padLeft(totalWinRatePct.toFixed(2), 7)}%${ui.reset} ` +
-      `${totalPnlColor}${padLeft(totalPnlText, 12)}${ui.reset}`
-  );
-  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
-  return lines;
-}
-
-function padLeft(value: string, width: number): string {
-  return value.length >= width ? value : value.padStart(width);
-}
-
-function padRight(value: string, width: number): string {
-  return value.length >= width ? value : value.padEnd(width);
-}
-
 async function runRecommendationRanking(input: {
-  rankingUseCase: RunRecommendationRankingUseCase;
+  rankingUseCase: IRankingUseCase;
   defaults: TradeDefaults;
 }): Promise<string[]> {
   const lines: string[] = [];
@@ -639,171 +450,6 @@ async function runRecommendationRanking(input: {
   }
   write("");
   return lines;
-}
-
-async function runLearningCycle(input: {
-  learningCycleUseCase: RunLearningCycleUseCase;
-  logger: ConsoleLogger;
-  learning: AdaptiveLearningService;
-  runner: LearningRunnerState;
-  simulationScheduler: ScheduleSimulationUseCase;
-  tracker: SessionPerformanceService;
-  defaults: Pick<TradeDefaults, "leverage" | "positionSizeUsd">;
-  refreshIndicatorRuntime: () => Promise<void>;
-  onStateChanged?: () => void;
-}): Promise<void> {
-  if (!input.runner.active || input.runner.cycleRunning) {
-    return;
-  }
-  input.runner.cycleRunning = true;
-  input.onStateChanged?.();
-  try {
-    try {
-      await input.refreshIndicatorRuntime();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown talib refresh error";
-      input.logger.error(`[learn] talib refresh failed: ${message}`);
-    }
-    const cycle = await input.learningCycleUseCase.execute({
-      horizonsMinutes: LEARN_HORIZONS_MINUTES,
-      leverage: input.defaults.leverage,
-      positionSizeUsd: input.defaults.positionSizeUsd,
-      active: () => input.runner.active
-    });
-    input.runner.symbols = cycle.symbols;
-    input.onStateChanged?.();
-
-    for (const candidate of cycle.candidates) {
-      if (!input.runner.active) {
-        return;
-      }
-      input.simulationScheduler.schedule({
-        recommendation: candidate.recommendation,
-        interval: candidate.interval,
-        horizonMinutes: candidate.horizonMinutes,
-        openedAtMs: candidate.openedAtMs,
-        timerRegistry: input.runner.pendingTimers,
-        onResult: async (result) => {
-          input.tracker.recordSimulation(candidate.pair, result.status, candidate.interval);
-          await input.learning.recordSimulationOutcome({
-            recommendation: candidate.recommendation,
-            timeframe: candidate.interval,
-            horizonMinutes: candidate.horizonMinutes,
-            status: result.status,
-            failureType: result.failureType,
-            directionalCorrect: result.directionalCorrect,
-            maxFavorableExcursionPct: result.maxFavorableExcursionPct,
-            maxAdverseExcursionPct: result.maxAdverseExcursionPct,
-            pnlUsd: result.pnlUsd
-          });
-        }
-      });
-      input.onStateChanged?.();
-    }
-  } finally {
-    input.runner.cycleRunning = false;
-    input.onStateChanged?.();
-  }
-}
-
-function stopLearningRunner(runner: LearningRunnerState): void {
-  runner.active = false;
-  if (runner.intervalId) {
-    clearInterval(runner.intervalId);
-    runner.intervalId = undefined;
-  }
-  for (const timer of runner.pendingTimers.values()) {
-    clearTimeout(timer);
-  }
-  runner.pendingTimers.clear();
-  runner.cycleRunning = false;
-}
-
-async function runWatchIteration(input: {
-  key: string;
-  watchSymbolUseCase: EvaluateWatchSymbolUseCase;
-  tracker: SessionPerformanceService;
-  watchConfig: WatchConfig;
-  watchSignatures: Map<string, string>;
-  watchRunning: Set<string>;
-  watchRows: Map<string, WatchRow>;
-  requestRender: () => void;
-}): Promise<void> {
-  if (input.watchRunning.has(input.key)) {
-    return;
-  }
-  input.watchRunning.add(input.key);
-  try {
-    const pair = `${input.watchConfig.symbol}-USD`;
-    const cooldownRemainingMs = input.tracker.getCooldownRemainingMs(pair);
-    const cooldownAdvisory =
-      cooldownRemainingMs > 0
-        ? `Session cooldown ${Math.ceil(cooldownRemainingMs / 60_000)}m (recent simulated failure)`
-        : undefined;
-
-    const evaluated = await input.watchSymbolUseCase.execute({
-      symbol: input.watchConfig.symbol,
-      objectiveHorizon: input.watchConfig.input.objectiveHorizon ?? "15",
-      requestedDirection: input.watchConfig.input.requestedDirection,
-      leverage: input.watchConfig.input.leverage ?? 20,
-      positionSizeUsd: input.watchConfig.input.positionSizeUsd ?? 250,
-      cooldownAdvisory,
-      calibration: (pairKey, confidence) => input.tracker.applyConfidenceCalibration(pairKey, confidence).confidence
-    });
-
-    if (input.watchSignatures.get(input.key) === evaluated.signature) {
-      const current = input.watchRows.get(input.key);
-      if (current) {
-        input.watchRows.set(input.key, {
-          ...current,
-          updatedAtMs: Date.now()
-        });
-        input.requestRender();
-      }
-      return;
-    }
-    input.watchSignatures.set(input.key, evaluated.signature);
-    input.watchRows.set(input.key, {
-      symbol: input.key,
-      signal: evaluated.signal,
-      regime: evaluated.regime,
-      confidence: evaluated.confidence,
-      setupQuality: evaluated.setupQuality,
-      reason: evaluated.reason,
-      updatedAtMs: Date.now()
-    });
-    input.requestRender();
-  } catch (error) {
-    input.watchRows.set(input.key, {
-      symbol: input.key,
-      signal: "NO_TRADE",
-      regime: "ERROR",
-      confidence: undefined,
-      setupQuality: undefined,
-      reason: error instanceof Error ? error.message : "Watch iteration failed",
-      updatedAtMs: Date.now()
-    });
-    input.requestRender();
-  } finally {
-    input.watchRunning.delete(input.key);
-  }
-}
-
-function stopWatchSymbol(
-  symbol: string,
-  watchIntervals: Map<string, NodeJS.Timeout>,
-  watchSignatures: Map<string, string>,
-  dashboard: DashboardState
-): string {
-  const timer = watchIntervals.get(symbol);
-  if (!timer) {
-    return `${ui.yellow}[watch]${ui.reset} ${symbol} was not active.`;
-  }
-  clearInterval(timer);
-  watchIntervals.delete(symbol);
-  watchSignatures.delete(symbol);
-  dashboard.watchRows.delete(symbol);
-  return `${ui.green}[watch]${ui.reset} Stopped ${symbol}.`;
 }
 
 function formatSessionCooldownAdvisory(input: {

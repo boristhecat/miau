@@ -1,4 +1,5 @@
 import type { MarketRegime, SetupGrade, Signal } from "./types.js";
+import { parseIntervalToMinutes } from "./interval-utils.js";
 
 export function applyTradeGuards(input: {
   signal: Exclude<Signal, "NO_TRADE">;
@@ -15,17 +16,18 @@ export function applyTradeGuards(input: {
   confidence: number;
   riskRewardRatio: number;
   bidAskSpreadPct?: number;
-  rationale: string[];
-}): { signal: Signal; blocked: boolean } {
+  rationale: readonly string[];
+}): { signal: Signal; blocked: boolean; rationale: readonly string[] } {
   const intervalMinutes = parseIntervalToMinutes(input.interval);
   const forceActive = input.forcedDirection !== undefined;
-  const block = (message: string): { signal: Signal; blocked: boolean } => {
+  const accumulated: string[] = [...input.rationale];
+  const block = (message: string): { signal: Signal; blocked: boolean; rationale: readonly string[] } => {
     if (forceActive) {
-      input.rationale.push(`Guard advisory: ${message}`);
-      return { signal: input.signal, blocked: true };
+      accumulated.push(`Guard advisory: ${message}`);
+      return { signal: input.signal, blocked: true, rationale: accumulated };
     }
-    input.rationale.push(`No-trade guard: ${message}`);
-    return { signal: "NO_TRADE", blocked: true };
+    accumulated.push(`No-trade guard: ${message}`);
+    return { signal: "NO_TRADE", blocked: true, rationale: accumulated };
   };
   if (input.signal === "SHORT" && input.impulseBias === "UP_IMPULSE") {
     return block("avoid fading a strong recent bullish impulse.");
@@ -38,7 +40,7 @@ export function applyTradeGuards(input: {
     if (strictExtensionBlock) {
       return block("trend entry is extended; wait for pullback.");
     }
-    input.rationale.push("Guard advisory: trend entry is extended; continuation allowed only due to strong setup.");
+    accumulated.push("Guard advisory: trend entry is extended; continuation allowed only due to strong setup.");
   }
   if (input.breakoutValidationFailed) {
     const breakoutFailureAgainstSignal =
@@ -47,7 +49,7 @@ export function applyTradeGuards(input: {
     if (breakoutFailureAgainstSignal) {
       return block("breakout failed follow-through validation in trade direction.");
     }
-    input.rationale.push("Guard advisory: breakout follow-through warning detected, but directional edge still dominates.");
+    accumulated.push("Guard advisory: breakout follow-through warning detected, but directional edge still dominates.");
   }
   if (input.marketRegime === "LOW_LIQ_CHOP") {
     return block("low-liquidity chop regime.");
@@ -79,21 +81,5 @@ export function applyTradeGuards(input: {
   if (intervalMinutes <= 10 && input.setupQuality < 60) {
     return block("setup quality below short-timeframe threshold (60).");
   }
-  return { signal: input.signal, blocked: false };
-}
-
-function parseIntervalToMinutes(interval: string): number {
-  const normalized = interval.trim().toLowerCase();
-  const match = normalized.match(/^(\d+)([mhd])$/);
-  if (!match) {
-    return 1;
-  }
-  const amount = Number(match[1]);
-  const unit = match[2];
-  if (Number.isNaN(amount) || amount <= 0) {
-    return 1;
-  }
-  if (unit === "m") return amount;
-  if (unit === "h") return amount * 60;
-  return amount * 60 * 24;
+  return { signal: input.signal, blocked: false, rationale: accumulated };
 }

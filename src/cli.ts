@@ -2,7 +2,6 @@
 
 import { AdaptiveLearningService } from "./application/adaptive-learning-service.js";
 import { EvaluateWatchSymbolUseCase } from "./application/evaluate-watch-symbol-use-case.js";
-import { GenerateAiAdviceUseCase } from "./application/generate-ai-advice-use-case.js";
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
 import { RunLearningBucketReportUseCase } from "./application/run-learning-bucket-report-use-case.js";
 import { RunLearningCycleUseCase } from "./application/run-learning-cycle-use-case.js";
@@ -11,7 +10,7 @@ import { ScheduleSimulationUseCase } from "./application/schedule-simulation-use
 import { SelectLearningSymbolsUseCase } from "./application/select-learning-symbols-use-case.js";
 import { EvaluateSimulationUseCase } from "./application/evaluate-simulation-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
-import { OpenAiAiAdvisor } from "./adapters/ai/openai-ai-advisor.js";
+import { ReconfigurableAiAdviceService } from "./adapters/ai/reconfigurable-ai-advice-service.js";
 import { parseCliInput, getUsageText } from "./adapters/console/cli-input-parser.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { runInteractiveSession } from "./adapters/console/interactive-session-controller.js";
@@ -20,7 +19,7 @@ import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
 import { createIndicatorService } from "./adapters/indicators/indicator-service-factory.js";
 import { refreshTalibWasm } from "./adapters/indicators/talib-wasm-runtime.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
-import { JsonTradeDefaultsStore, type TradeDefaults } from "./adapters/persistence/trade-defaults-store.js";
+import { JsonTradeDefaultsStore } from "./adapters/persistence/trade-defaults-store.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
 import path from "node:path";
@@ -38,14 +37,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  const createAiAdviceUseCase = (defaults: TradeDefaults): GenerateAiAdviceUseCase =>
-    new GenerateAiAdviceUseCase({
-      aiAdvisor: new OpenAiAiAdvisor({
-        model: defaults.aiModel,
-        httpClient: new AxiosHttpClient("https://api.openai.com", undefined, { timeoutMs: 45_000 })
-      })
-    });
-
   try {
     const httpClient = new AxiosHttpClient("https://api.backpack.exchange");
     const marketData = new BackpackMarketDataClient(httpClient);
@@ -60,7 +51,7 @@ async function main(): Promise<void> {
     const printer = new RecommendationPrinter();
     const tradeDefaultsStore = new JsonTradeDefaultsStore();
     const tradeDefaults = await tradeDefaultsStore.load();
-    const aiAdviceUseCase = createAiAdviceUseCase(tradeDefaults);
+    const aiAdviceService = new ReconfigurableAiAdviceService("https://api.openai.com", tradeDefaults.aiModel);
     const aiEnabledByDefault = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
 
     const baseRanker = new RankTopOpportunitiesUseCase(recommendationUseCase, marketData);
@@ -94,9 +85,11 @@ async function main(): Promise<void> {
       simulationScheduler,
       refreshIndicatorRuntime: refreshTalibWasm,
       tradeDefaults,
-      saveTradeDefaults: (defaults) => tradeDefaultsStore.save(defaults),
-      aiAdviceUseCase,
-      createAiAdviceUseCase,
+      saveTradeDefaults: async (defaults) => {
+        await tradeDefaultsStore.save(defaults);
+        aiAdviceService.setModel(defaults.aiModel);
+      },
+      aiAdviceUseCase: aiAdviceService,
       aiEnabledByDefault
     });
   } catch (error) {

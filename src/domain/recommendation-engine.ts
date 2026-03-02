@@ -194,7 +194,7 @@ export class RecommendationEngine {
       leverage,
       positionSizeUsd
     });
-    confidenceBreakdown.setupQuality = setupAssessment.setupQuality;
+    const finalConfidenceBreakdown = { ...confidenceBreakdown, setupQuality: setupAssessment.setupQuality };
     confidence = Math.round(clamp(confidence * 0.55 + setupAssessment.setupQuality * 0.45, 1, 99));
     rationale.push(
       `Setup grade ${setupAssessment.setupGrade}: loc ${setupAssessment.factorScores.location} / trig ${setupAssessment.factorScores.trigger} / micro ${setupAssessment.factorScores.microstructure} / regime ${setupAssessment.factorScores.regime} / risk ${setupAssessment.factorScores.riskEfficiency} / friction ${setupAssessment.factorScores.friction}.`
@@ -211,7 +211,7 @@ export class RecommendationEngine {
       breakoutFailureDirection,
       interval: resolvedBaseInterval,
       setupGrade: setupAssessment.setupGrade,
-      setupQuality: confidenceBreakdown.setupQuality,
+      setupQuality: finalConfidenceBreakdown.setupQuality,
       confidence,
       riskRewardRatio,
       bidAskSpreadPct: perp.bidAskSpreadPct,
@@ -239,6 +239,8 @@ export class RecommendationEngine {
 
     return {
       pair,
+      analysisInterval: resolvedBaseInterval,
+      analysisBiasInterval: biasInterval,
       signal: finalSignal,
       modelSignal,
       requestedDirection: forcedDirection,
@@ -275,8 +277,8 @@ export class RecommendationEngine {
       expectedValueUsd: executionStats?.expectedValueUsd,
       expectedValuePerMarginPct: executionStats?.expectedValuePerMarginPct,
       confidence,
-      confidenceBreakdown,
-      rationale,
+      confidenceBreakdown: finalConfidenceBreakdown,
+      rationale: guardResult.rationale,
       indicators,
       perp
     };
@@ -290,4 +292,3 @@ function round(value: number): number {
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
-

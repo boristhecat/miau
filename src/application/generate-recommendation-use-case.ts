@@ -2,6 +2,7 @@ import type { Recommendation } from "../domain/types.js";
 import type { IndicatorCalculatorPort } from "../ports/indicator-calculator-port.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { RecommendationPolicyPort } from "../ports/recommendation-policy-port.js";
+import { inferBiasTrend } from "../domain/recommendation-signal-evaluator.js";
 
 interface UseCaseDeps {
   marketData: MarketDataPort;
@@ -51,11 +52,11 @@ export class GenerateRecommendationUseCase {
             limit
           });
     const biasIndicators = this.deps.indicatorService.calculate(biasCandles);
-    const biasTrend = biasIndicators.ema20 >= biasIndicators.ema50 ? "LONG" : "SHORT";
+    const biasTrend = inferBiasTrend(biasIndicators);
     const lastPrice = candles[candles.length - 1]!.close;
     const perp = await this.deps.marketData.getPerpSnapshot({ pair: input.pair });
 
-    const recommendation = this.deps.recommendationEngine.build({
+    return this.deps.recommendationEngine.build({
       pair: input.pair,
       lastPrice,
       indicators,
@@ -73,8 +74,5 @@ export class GenerateRecommendationUseCase {
       biasTrend,
       biasInterval
     });
-    recommendation.analysisInterval = interval;
-    recommendation.analysisBiasInterval = biasInterval;
-    return recommendation;
   }
 }

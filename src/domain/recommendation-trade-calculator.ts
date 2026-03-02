@@ -1,4 +1,5 @@
 import type { MarketRegime, Signal, TradeAction } from "./types.js";
+import { parseIntervalToMinutes } from "./interval-utils.js";
 
 export class RecommendationTradeCalculator {
   getAtrProfile(
@@ -235,6 +236,50 @@ export class RecommendationTradeCalculator {
     return reward / risk;
   }
 
+  rebuildAfterStopChange(
+    rec: import("./types.js").Recommendation,
+    newStopLoss: number
+  ): Partial<import("./types.js").Recommendation> {
+    const newRiskReward = this.computeRiskReward(rec.entry, newStopLoss, rec.takeProfit);
+    const patch: Partial<import("./types.js").Recommendation> = {
+      stopLoss: newStopLoss,
+      riskRewardRatio: newRiskReward
+    };
+    if (rec.signal === "NO_TRADE" || !rec.leverage || !rec.positionSizeUsd || rec.entry <= 0) {
+      return patch;
+    }
+    const notional = rec.leverage * rec.positionSizeUsd;
+    const slReturn =
+      rec.signal === "LONG"
+        ? (newStopLoss - rec.entry) / rec.entry
+        : (rec.entry - newStopLoss) / rec.entry;
+    const tpReturn =
+      rec.signal === "LONG"
+        ? (rec.takeProfit - rec.entry) / rec.entry
+        : (rec.entry - rec.takeProfit) / rec.entry;
+    const estimatedPnLAtStopLoss = this.round(notional * slReturn);
+    const estimatedPnLAtTakeProfit = this.round(notional * tpReturn);
+
+    const roundTripCostRate = 0.0014;
+    const totalCosts = notional * roundTripCostRate;
+    const netTp = estimatedPnLAtTakeProfit - totalCosts;
+    const netSl = estimatedPnLAtStopLoss - totalCosts;
+    const winProbability = Math.min(0.95, Math.max(0.05, rec.confidence / 100));
+    const expectedValueUsd = winProbability * netTp + (1 - winProbability) * netSl;
+
+    return {
+      ...patch,
+      estimatedPnLAtStopLoss,
+      estimatedPnLAtTakeProfit,
+      netEstimatedPnLAtStopLoss: this.round(netSl),
+      netEstimatedPnLAtTakeProfit: this.round(netTp),
+      netRiskRewardRatio: this.round(Math.abs(netSl) > 0 ? Math.abs(netTp / netSl) : 0),
+      expectedValueUsd: this.round(expectedValueUsd),
+      expectedValuePerMarginPct:
+        rec.positionSizeUsd > 0 ? this.round((expectedValueUsd / rec.positionSizeUsd) * 100) : undefined
+    };
+  }
+
   toAction(signal: Signal, _confidence: number, _regime: "TRADEABLE" | "CHOPPY"): TradeAction {
     if (signal === "NO_TRADE") {
       return "NO TRADE";
@@ -256,19 +301,7 @@ export class RecommendationTradeCalculator {
   }
 
   private parseIntervalToMinutes(interval: string): number {
-    const normalized = interval.trim().toLowerCase();
-    const match = normalized.match(/^(\d+)([mhd])$/);
-    if (!match) {
-      return 1;
-    }
-    const amount = Number(match[1]);
-    const unit = match[2];
-    if (Number.isNaN(amount) || amount <= 0) {
-      return 1;
-    }
-    if (unit === "m") return amount;
-    if (unit === "h") return amount * 60;
-    return amount * 60 * 24;
+    return parseIntervalToMinutes(interval);
   }
 
   private round(value: number): number {

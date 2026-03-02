@@ -1,5 +1,6 @@
 import type { ConfidenceBreakdown, IndicatorSnapshot, MarketRegime, PerpMarketSnapshot, Signal } from "./types.js";
 import { resolveIndicatorWeightProfile, type WeightChannel } from "./indicator-weight-policy.js";
+import { parseIntervalToMinutes as parseInterval } from "./interval-utils.js";
 
 interface RegimeContext {
   marketRegime: MarketRegime;
@@ -18,6 +19,10 @@ export interface SignalEvaluationResult {
   breakoutValidationFailed: boolean;
   breakoutFailureDirection: "UP" | "DOWN" | "NONE";
   regime: "TRADEABLE" | "CHOPPY";
+}
+
+export function inferBiasTrend(biasIndicators: IndicatorSnapshot): "LONG" | "SHORT" {
+  return biasIndicators.ema20 >= biasIndicators.ema50 ? "LONG" : "SHORT";
 }
 
 export class RecommendationSignalEvaluator {
@@ -581,19 +586,7 @@ export class RecommendationSignalEvaluator {
   }
 
   private parseIntervalToMinutes(interval: string): number {
-    const normalized = interval.trim().toLowerCase();
-    const match = normalized.match(/^(\d+)([mhd])$/);
-    if (!match) {
-      return 1;
-    }
-    const amount = Number(match[1]);
-    const unit = match[2];
-    if (Number.isNaN(amount) || amount <= 0) {
-      return 1;
-    }
-    if (unit === "m") return amount;
-    if (unit === "h") return amount * 60;
-    return amount * 60 * 24;
+    return parseInterval(interval);
   }
 }
 

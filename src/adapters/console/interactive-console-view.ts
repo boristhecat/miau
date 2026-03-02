@@ -24,7 +24,7 @@ export interface WatchRow {
 }
 
 export interface DashboardState {
-  watchRows: Map<string, WatchRow>;
+  watchRows: ReadonlyMap<string, WatchRow>;
   latestQueryLines: string[];
   learning: {
     active: boolean;
@@ -81,9 +81,14 @@ export function renderDashboard(state: DashboardState): void {
     console.log(`${ui.gray}No active watches. Use: watch BTC --every 0.5${ui.reset}`);
   } else {
     const rows = [...state.watchRows.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
-    const longCount = rows.filter((row) => row.signal === "LONG").length;
-    const shortCount = rows.filter((row) => row.signal === "SHORT").length;
-    const noTradeCount = rows.filter((row) => row.signal === "NO_TRADE").length;
+    let longCount = 0;
+    let shortCount = 0;
+    let noTradeCount = 0;
+    for (const row of rows) {
+      if (row.signal === "LONG") longCount++;
+      else if (row.signal === "SHORT") shortCount++;
+      else noTradeCount++;
+    }
     console.log(
       `${ui.gray}active:${ui.reset} ${rows.length}  ` +
       `${ui.green}long:${longCount}${ui.reset}  ` +
@@ -153,6 +158,153 @@ export function getInteractiveHelpText(): string {
     "- Base/bias timeframes are auto-selected from horizon: <=10m => 1m/15m, <=30m => 3m/15m, <=90m => 5m/30m, >90m => 15m/1h.",
     ""
   ].join("\n");
+}
+
+function padLeft(value: string, width: number): string {
+  return value.length >= width ? value : value.padStart(width);
+}
+
+function padRight(value: string, width: number): string {
+  return value.length >= width ? value : value.padEnd(width);
+}
+
+export function renderLearningStatsLines(input: {
+  overview: {
+    totalSamples: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    avgPnlUsd: number;
+  };
+  lookbackDays: number;
+  learningModeRunning: boolean;
+}): string[] {
+  const { overview } = input;
+  const winRatePct = (overview.winRate * 100).toFixed(2);
+  const avgPnl = `${overview.avgPnlUsd >= 0 ? "+" : ""}${overview.avgPnlUsd.toFixed(2)} USDC`;
+  const avgPnlColor = overview.avgPnlUsd >= 0 ? ui.green : ui.red;
+  const modeColor = input.learningModeRunning ? ui.green : ui.gray;
+
+  return [
+    `${ui.bold}${ui.blue}LEARNING STATS${ui.reset} ${ui.gray}(last ${input.lookbackDays}d)${ui.reset}`,
+    `${ui.gray}${"─".repeat(78)}${ui.reset}`,
+    `${ui.bold}mode:${ui.reset} ${modeColor}${input.learningModeRunning ? "RUNNING" : "STOPPED"}${ui.reset}  ` +
+      `${ui.gray}|${ui.reset} ${ui.bold}samples:${ui.reset} ${overview.totalSamples}  ` +
+      `${ui.gray}|${ui.reset} ${ui.green}wins:${overview.wins}${ui.reset}  ` +
+      `${ui.red}losses:${overview.losses}${ui.reset}`,
+    `${ui.bold}win rate:${ui.reset} ${
+      overview.winRate >= 0.55 ? ui.green : overview.winRate >= 0.45 ? ui.yellow : ui.red
+    }${winRatePct}%${ui.reset}  ` +
+      `${ui.gray}|${ui.reset} ${ui.bold}avg pnl:${ui.reset} ${avgPnlColor}${avgPnl}${ui.reset}`,
+    `${ui.gray}${"─".repeat(78)}${ui.reset}`
+  ];
+}
+
+export function renderLearningReportLines(input: {
+  overview: {
+    totalSamples: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    avgPnlUsd: number;
+  };
+  lookbackDays: number;
+  learningModeRunning: boolean;
+  bucketReport: {
+    lookbackDays: number;
+    rows: Array<{
+      timeframe: string;
+      horizonBucket: string;
+      samples: number;
+      wins: number;
+      losses: number;
+      winRate: number;
+      avgPnlUsd: number;
+    }>;
+  };
+}): string[] {
+  return [
+    ...renderLearningStatsLines({
+      overview: input.overview,
+      lookbackDays: input.lookbackDays,
+      learningModeRunning: input.learningModeRunning
+    }),
+    "",
+    ...renderLearningBucketsLines(input.bucketReport)
+  ];
+}
+
+export function renderLearningBucketsLines(input: {
+  lookbackDays: number;
+  rows: Array<{
+    timeframe: string;
+    horizonBucket: string;
+    samples: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    avgPnlUsd: number;
+  }>;
+}): string[] {
+  const lines: string[] = [
+    `${ui.bold}${ui.blue}LEARNING A/B BUCKETS${ui.reset} ${ui.gray}(last ${input.lookbackDays}d)${ui.reset}`
+  ];
+  if (input.rows.length === 0) {
+    lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
+    lines.push(`${ui.gray}No learning samples yet.${ui.reset}`);
+    return lines;
+  }
+
+  const header =
+    `${padRight("TF", 8)} ${padRight("HORIZON", 9)} ${padLeft("SAMPLES", 7)} ${padLeft("W", 4)} ${padLeft("L", 4)} ` +
+    `${padLeft("WIN%", 8)} ${padLeft("AVG PNL", 12)}`;
+  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
+  lines.push(`${ui.gray}${header}${ui.reset}`);
+  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
+
+  let totalSamples = 0;
+  let totalWins = 0;
+  let totalLosses = 0;
+  let weightedWinNumerator = 0;
+  let weightedPnlNumerator = 0;
+
+  for (const row of input.rows) {
+    totalSamples += row.samples;
+    totalWins += row.wins;
+    totalLosses += row.losses;
+    weightedWinNumerator += row.winRate * row.samples;
+    weightedPnlNumerator += row.avgPnlUsd * row.samples;
+
+    const winRatePct = row.winRate * 100;
+    const winRateColor = winRatePct >= 55 ? ui.green : winRatePct >= 45 ? ui.yellow : ui.red;
+    const pnlColor = row.avgPnlUsd >= 0 ? ui.green : ui.red;
+    const avgPnlText = `${row.avgPnlUsd >= 0 ? "+" : ""}${row.avgPnlUsd.toFixed(2)}`;
+    const rowPrefix =
+      `${ui.cyan}${padRight(row.timeframe, 8)}${ui.reset} ` +
+      `${ui.gray}${padRight(row.horizonBucket, 9)}${ui.reset} ` +
+      `${padLeft(String(row.samples), 7)} ${padLeft(String(row.wins), 4)} ${padLeft(String(row.losses), 4)} `;
+    const rowSuffix =
+      `${winRateColor}${padLeft(winRatePct.toFixed(2), 7)}%${ui.reset} ` +
+      `${pnlColor}${padLeft(avgPnlText, 12)}${ui.reset}`;
+    lines.push(`${rowPrefix}${rowSuffix}`);
+  }
+
+  const totalWinRatePct = totalSamples > 0 ? (weightedWinNumerator / totalSamples) * 100 : 0;
+  const totalAvgPnl = totalSamples > 0 ? weightedPnlNumerator / totalSamples : 0;
+  const totalPnlText = `${totalAvgPnl >= 0 ? "+" : ""}${totalAvgPnl.toFixed(2)}`;
+  const totalPnlColor = totalAvgPnl >= 0 ? ui.green : ui.red;
+  const totalWinColor = totalWinRatePct >= 55 ? ui.green : totalWinRatePct >= 45 ? ui.yellow : ui.red;
+
+  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
+  lines.push(
+    `${ui.bold}${padRight("TOTAL", 8)} ${padRight("-", 9)} ${padLeft(String(totalSamples), 7)} ${padLeft(
+      String(totalWins),
+      4
+    )} ${padLeft(String(totalLosses), 4)} ${totalWinColor}${padLeft(totalWinRatePct.toFixed(2), 7)}%${ui.reset} ` +
+      `${totalPnlColor}${padLeft(totalPnlText, 12)}${ui.reset}`
+  );
+  lines.push(`${ui.gray}${"─".repeat(96)}${ui.reset}`);
+  return lines;
 }
 
 export function renderSimulationResultLines(input: {
