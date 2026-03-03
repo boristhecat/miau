@@ -106,7 +106,7 @@ describe("RecommendationEngine", () => {
       lastPrice: 50000,
       indicators,
       perp: basePerp,
-      biasTrend: "LONG",
+      biasContext: { trend: "LONG", rsiZone: "NEUTRAL", macdDirection: "POSITIVE", bbPosition: "INSIDE" },
       biasInterval: "15m"
     });
     const recShortBias = new RecommendationEngine().build({
@@ -114,7 +114,7 @@ describe("RecommendationEngine", () => {
       lastPrice: 50000,
       indicators,
       perp: basePerp,
-      biasTrend: "SHORT",
+      biasContext: { trend: "SHORT", rsiZone: "NEUTRAL", macdDirection: "NEGATIVE", bbPosition: "INSIDE" },
       biasInterval: "15m"
     });
 

@@ -3,6 +3,14 @@ export type TradeAction = "LONG" | "SHORT" | "NO TRADE";
 export type MarketRegime = "TREND" | "RANGE" | "VOLATILE_SPIKE" | "LOW_LIQ_CHOP";
 export type SetupGrade = "A" | "B" | "C" | "D";
 export type ImpulseDirection = "UP" | "DOWN" | "NONE";
+export type TradingSession = "ASIA" | "LONDON" | "US" | "DEAD";
+
+export interface BiasContext {
+  readonly trend: "LONG" | "SHORT";
+  readonly rsiZone: "OVERBOUGHT" | "OVERSOLD" | "NEUTRAL";
+  readonly macdDirection: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
+  readonly bbPosition: "ABOVE" | "BELOW" | "INSIDE";
+}
 
 export interface ConfidenceBreakdown {
   readonly trend: number;
@@ -50,6 +58,16 @@ export interface IndicatorSnapshot {
     readonly rangeExpansionRatio: number;
     readonly breakoutDirection: ImpulseDirection;
   };
+  readonly rsiDivergence?: {
+    readonly bullish: boolean;
+    readonly bearish: boolean;
+  };
+  readonly volumeProfile?: {
+    readonly vpoc: number;
+    readonly vah: number;
+    readonly val: number;
+  };
+  readonly medianAtrPct?: number;
 }
 
 export interface PerpMarketSnapshot {

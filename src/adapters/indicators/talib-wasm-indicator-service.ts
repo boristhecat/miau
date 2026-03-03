@@ -12,8 +12,18 @@ import {
 const TALIB_REFRESH_INTERVAL_CALCULATIONS = 300;
 let calculationsSinceRefresh = 0;
 
+function resolveIndicatorPeriods(intervalMinutes: number) {
+  if (intervalMinutes <= 10) {
+    return { rsiPeriod: 9, emaFast: 9, emaSlow: 21, macdFast: 5, macdSlow: 13, macdSignal: 4, adxPeriod: 10 };
+  }
+  if (intervalMinutes <= 30) {
+    return { rsiPeriod: 14, emaFast: 13, emaSlow: 34, macdFast: 8, macdSlow: 21, macdSignal: 5, adxPeriod: 14 };
+  }
+  return { rsiPeriod: 14, emaFast: 20, emaSlow: 50, macdFast: 12, macdSlow: 26, macdSignal: 9, adxPeriod: 14 };
+}
+
 export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
-  calculate(candles: Candle[]): IndicatorSnapshot {
+  calculate(candles: Candle[], intervalMinutes = 1): IndicatorSnapshot {
     if (candles.length < 60) {
       throw new Error("At least 60 candles are required to compute indicators reliably.");
     }
@@ -26,11 +36,19 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       const highs = candles.map((c) => c.high);
       const lows = candles.map((c) => c.low);
       const volumes = candles.map((c) => c.volume);
+      const p = resolveIndicatorPeriods(intervalMinutes);
 
-      const rsi = this.lastFromResult(talib.RSI({ inReal: closes, optInTimePeriod: 14 }), "outReal", "RSI");
-      const ema20 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: 20 }), "outReal", "EMA20");
-      const ema50 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: 50 }), "outReal", "EMA50");
-      const macd = talib.MACD({ inReal: closes, optInFastPeriod: 12, optInSlowPeriod: 26, optInSignalPeriod: 9 });
+      const rsiResult = talib.RSI({ inReal: closes, optInTimePeriod: p.rsiPeriod });
+      const rsiSeries = this.extractArray(rsiResult, "outReal", "RSI");
+      const rsi = this.lastFromArray(rsiSeries, "RSI");
+      const ema20 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: p.emaFast }), "outReal", "EMA20");
+      const ema50 = this.lastFromResult(talib.EMA({ inReal: closes, optInTimePeriod: p.emaSlow }), "outReal", "EMA50");
+      const macd = talib.MACD({
+        inReal: closes,
+        optInFastPeriod: p.macdFast,
+        optInSlowPeriod: p.macdSlow,
+        optInSignalPeriod: p.macdSignal
+      });
       this.assertSuccess(macd, "MACD");
       const atr = this.lastFromResult(
         talib.ATR({ High: highs, Low: lows, Close: closes, optInTimePeriod: 14 }),
@@ -38,7 +56,7 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
         "ATR"
       );
       const adx = this.lastFromResult(
-        talib.ADX({ High: highs, Low: lows, Close: closes, optInTimePeriod: 14 }),
+        talib.ADX({ High: highs, Low: lows, Close: closes, optInTimePeriod: p.adxPeriod }),
         "outReal",
         "ADX"
       );
@@ -46,7 +64,7 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       this.assertSuccess(bb, "BBANDS");
       const stochRsi = talib.STOCHRSI({
         inReal: closes,
-        optInTimePeriod: 14,
+        optInTimePeriod: p.rsiPeriod,
         optInFast_KPeriod: 3,
         optInFast_DPeriod: 3
       });
@@ -97,7 +115,10 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
         cmf20: this.round(cmf20),
         volumeZScore20: this.round(volumeZScore20),
         cvdDeltaPct5: this.round(cvdDeltaPct5),
-        recentCandleContext
+        recentCandleContext,
+        rsiDivergence: this.computeRsiDivergence(closes, rsiSeries),
+        volumeProfile: this.computeVolumeProfile(candles),
+        medianAtrPct: this.computeMedianAtrPct(candles)
       };
     } catch (error) {
       ensureTalibHealthyOnError(error);
@@ -243,6 +264,108 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       return 0;
     }
     return (signedVolume / totalVolume) * 100;
+  }
+
+  private computeRsiDivergence(
+    closes: number[],
+    rsiSeries: number[],
+    lookback = 10
+  ): { bullish: boolean; bearish: boolean } {
+    if (rsiSeries.length < lookback || closes.length < lookback) {
+      return { bullish: false, bearish: false };
+    }
+    const recentCloses = closes.slice(-lookback);
+    const recentRsi = rsiSeries.slice(-lookback);
+
+    let bullish = false;
+    let bearish = false;
+    for (let i = 1; i < lookback - 1; i += 1) {
+      const isSwingLow = recentCloses[i]! < recentCloses[i - 1]! && recentCloses[i]! < recentCloses[i + 1]!;
+      const isSwingHigh = recentCloses[i]! > recentCloses[i - 1]! && recentCloses[i]! > recentCloses[i + 1]!;
+      if (isSwingLow) {
+        const lastClose = recentCloses[recentCloses.length - 1]!;
+        const lastRsi = recentRsi[recentRsi.length - 1]!;
+        if (lastClose < recentCloses[i]! && lastRsi > recentRsi[i]!) {
+          bullish = true;
+        }
+      }
+      if (isSwingHigh) {
+        const lastClose = recentCloses[recentCloses.length - 1]!;
+        const lastRsi = recentRsi[recentRsi.length - 1]!;
+        if (lastClose > recentCloses[i]! && lastRsi < recentRsi[i]!) {
+          bearish = true;
+        }
+      }
+    }
+    return { bullish, bearish };
+  }
+
+  private computeVolumeProfile(candles: Candle[], lookback = 20): { vpoc: number; vah: number; val: number } {
+    const recent = candles.slice(-lookback);
+    if (recent.length < lookback) {
+      const mid = recent[recent.length - 1]?.close ?? 0;
+      return { vpoc: mid, vah: mid, val: mid };
+    }
+    const allLow = Math.min(...recent.map((c) => c.low));
+    const allHigh = Math.max(...recent.map((c) => c.high));
+    const range = allHigh - allLow;
+    if (range < 1e-8) {
+      return { vpoc: allLow, vah: allHigh, val: allLow };
+    }
+
+    const buckets = 20;
+    const bucketSize = range / buckets;
+    const volumes = new Array<number>(buckets).fill(0);
+    for (const c of recent) {
+      const typical = (c.high + c.low + c.close) / 3;
+      const idx = Math.min(Math.floor((typical - allLow) / bucketSize), buckets - 1);
+      volumes[idx] += c.volume;
+    }
+    let maxIdx = 0;
+    for (let i = 1; i < buckets; i += 1) {
+      if (volumes[i]! > volumes[maxIdx]!) {
+        maxIdx = i;
+      }
+    }
+    const vpoc = allLow + (maxIdx + 0.5) * bucketSize;
+
+    const totalVol = volumes.reduce((s, v) => s + v, 0);
+    const vaTarget = totalVol * 0.7;
+    let lo = maxIdx;
+    let hi = maxIdx;
+    let accumulated = volumes[maxIdx]!;
+    while (accumulated < vaTarget && (lo > 0 || hi < buckets - 1)) {
+      const expandLo = lo > 0 ? volumes[lo - 1]! : -1;
+      const expandHi = hi < buckets - 1 ? volumes[hi + 1]! : -1;
+      if (expandLo >= expandHi) {
+        lo -= 1;
+        accumulated += volumes[lo]!;
+      } else {
+        hi += 1;
+        accumulated += volumes[hi]!;
+      }
+    }
+    const val = allLow + lo * bucketSize;
+    const vah = allLow + (hi + 1) * bucketSize;
+    return { vpoc: this.round(vpoc), vah: this.round(vah), val: this.round(val) };
+  }
+
+  private computeMedianAtrPct(candles: Candle[], lookback = 20): number {
+    const recent = candles.slice(-lookback);
+    if (recent.length < 2) {
+      return 0;
+    }
+    const trPcts: number[] = [];
+    for (let i = 1; i < recent.length; i += 1) {
+      const c = recent[i]!;
+      const prevClose = recent[i - 1]!.close;
+      const tr = Math.max(c.high - c.low, Math.abs(c.high - prevClose), Math.abs(c.low - prevClose));
+      trPcts.push(tr / Math.max(c.close, 1e-8));
+    }
+    trPcts.sort((a, b) => a - b);
+    const mid = Math.floor(trPcts.length / 2);
+    const median = trPcts.length % 2 === 0 ? (trPcts[mid - 1]! + trPcts[mid]!) / 2 : trPcts[mid]!;
+    return this.round(median * 100);
   }
 
   private computeRecentCandleContext(candles: Candle[]): IndicatorSnapshot["recentCandleContext"] {

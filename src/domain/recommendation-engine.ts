@@ -1,4 +1,4 @@
-import type { MarketRegime, Recommendation, Signal } from "./types.js";
+import type { BiasContext, MarketRegime, Recommendation, Signal } from "./types.js";
 import { applyObjectiveTargeting } from "./targeting-policy.js";
 import { applyTradeGuards } from "./recommendation-guards.js";
 import { RecommendationSignalEvaluator } from "./recommendation-signal-evaluator.js";
@@ -11,8 +11,9 @@ interface BuildRecommendationInput {
   indicators: import("./types.js").IndicatorSnapshot;
   perp: import("./types.js").PerpMarketSnapshot;
   forcedDirection?: "LONG" | "SHORT";
-  biasTrend?: Signal;
+  biasContext?: BiasContext;
   biasInterval?: string;
+  btcContext?: { emaAbove: boolean; momentumPositive: boolean };
   leverage?: number;
   positionSizeUsd?: number;
   slPct?: number;
@@ -43,8 +44,9 @@ export class RecommendationEngine {
       slUsd,
       tpUsd,
       forcedDirection,
-      biasTrend,
+      biasContext,
       biasInterval,
+      btcContext,
       objectiveUsdc,
       objectiveHorizon,
       expectedRangeHorizon,
@@ -67,9 +69,10 @@ export class RecommendationEngine {
       indicators,
       perp,
       lastPrice,
-      biasTrend,
+      biasContext,
       biasInterval,
-      resolvedBaseInterval
+      resolvedBaseInterval,
+      btcContext
     );
 
     let confidence = baseConfidence;

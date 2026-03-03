@@ -1,8 +1,9 @@
 import type { Recommendation } from "../domain/types.js";
+import { parseIntervalToMinutes } from "../domain/interval-utils.js";
 import type { IndicatorCalculatorPort } from "../ports/indicator-calculator-port.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { RecommendationPolicyPort } from "../ports/recommendation-policy-port.js";
-import { inferBiasTrend } from "../domain/recommendation-signal-evaluator.js";
+import { inferBiasContext } from "../domain/recommendation-signal-evaluator.js";
 
 interface UseCaseDeps {
   marketData: MarketDataPort;
@@ -31,28 +32,43 @@ export class GenerateRecommendationUseCase {
     const interval = input.interval ?? "1m";
     const biasInterval = input.biasInterval ?? "15m";
     const limit = input.limit ?? 180;
+    const intervalMins = parseIntervalToMinutes(interval);
+    const biasIntervalMins = parseIntervalToMinutes(biasInterval);
 
-    const candles = await this.deps.marketData.getCandles({
-      pair: input.pair,
-      interval,
-      limit
-    });
+    const [candles, biasCandles, btcCandles] = await Promise.all([
+      this.deps.marketData.getCandles({
+        pair: input.pair,
+        interval,
+        limit
+      }),
+      biasInterval === interval
+        ? Promise.resolve(null)
+        : this.deps.marketData.getCandles({
+            pair: input.pair,
+            interval: biasInterval,
+            limit
+          }),
+      input.pair !== "BTC-USD"
+        ? this.deps.marketData.getCandles({ pair: "BTC-USD", interval, limit }).catch(() => null)
+        : Promise.resolve(null)
+    ]);
 
     if (candles.length === 0) {
       throw new Error("No candle data returned from market source.");
     }
 
-    const indicators = this.deps.indicatorService.calculate(candles);
-    const biasCandles =
-      biasInterval === interval
-        ? candles
-        : await this.deps.marketData.getCandles({
-            pair: input.pair,
-            interval: biasInterval,
-            limit
-          });
-    const biasIndicators = this.deps.indicatorService.calculate(biasCandles);
-    const biasTrend = inferBiasTrend(biasIndicators);
+    const resolvedBiasCandles = biasCandles ?? candles;
+    const indicators = this.deps.indicatorService.calculate(candles, intervalMins);
+    const biasIndicators = this.deps.indicatorService.calculate(resolvedBiasCandles, biasIntervalMins);
+    const biasContext = inferBiasContext(biasIndicators);
+    let btcContext: { emaAbove: boolean; momentumPositive: boolean } | undefined;
+    if (btcCandles && btcCandles.length >= 60) {
+      const btcIndicators = this.deps.indicatorService.calculate(btcCandles, intervalMins);
+      btcContext = {
+        emaAbove: btcIndicators.ema20 >= btcIndicators.ema50,
+        momentumPositive: btcIndicators.macdHistogram > 0
+      };
+    }
     const lastPrice = candles[candles.length - 1]!.close;
     const perp = await this.deps.marketData.getPerpSnapshot({ pair: input.pair });
 
@@ -71,8 +87,9 @@ export class GenerateRecommendationUseCase {
       expectedRangeHorizon: input.expectedRangeHorizon,
       forcedDirection: input.forcedDirection,
       baseInterval: interval,
-      biasTrend,
-      biasInterval
+      biasContext,
+      biasInterval,
+      btcContext
     });
   }
 }

@@ -1,4 +1,12 @@
-import type { ConfidenceBreakdown, IndicatorSnapshot, MarketRegime, PerpMarketSnapshot, Signal } from "./types.js";
+import type {
+  BiasContext,
+  ConfidenceBreakdown,
+  IndicatorSnapshot,
+  MarketRegime,
+  PerpMarketSnapshot,
+  Signal,
+  TradingSession
+} from "./types.js";
 import { resolveIndicatorWeightProfile, type WeightChannel } from "./indicator-weight-policy.js";
 import { parseIntervalToMinutes as parseInterval } from "./interval-utils.js";
 
@@ -21,8 +29,29 @@ export interface SignalEvaluationResult {
   regime: "TRADEABLE" | "CHOPPY";
 }
 
+export function inferBiasContext(biasIndicators: IndicatorSnapshot): BiasContext {
+  const trend = biasIndicators.ema20 >= biasIndicators.ema50 ? "LONG" : "SHORT";
+  const rsiZone =
+    biasIndicators.rsi14 >= 70 ? "OVERBOUGHT" : biasIndicators.rsi14 <= 30 ? "OVERSOLD" : "NEUTRAL";
+  const macdDirection =
+    biasIndicators.macdHistogram > 0 ? "POSITIVE" : biasIndicators.macdHistogram < 0 ? "NEGATIVE" : "NEUTRAL";
+  const lastClose = biasIndicators.vwap;
+  const bbPosition =
+    lastClose > biasIndicators.bbUpper ? "ABOVE" : lastClose < biasIndicators.bbLower ? "BELOW" : "INSIDE";
+  return { trend, rsiZone, macdDirection, bbPosition };
+}
+
+/** Kept for backward compatibility. */
 export function inferBiasTrend(biasIndicators: IndicatorSnapshot): "LONG" | "SHORT" {
   return biasIndicators.ema20 >= biasIndicators.ema50 ? "LONG" : "SHORT";
+}
+
+function detectTradingSession(): TradingSession {
+  const utcHour = new Date().getUTCHours();
+  if (utcHour >= 0 && utcHour < 8) return "ASIA";
+  if (utcHour >= 8 && utcHour < 13) return "LONDON";
+  if (utcHour >= 13 && utcHour < 21) return "US";
+  return "DEAD";
 }
 
 export class RecommendationSignalEvaluator {
@@ -30,9 +59,10 @@ export class RecommendationSignalEvaluator {
     indicators: IndicatorSnapshot,
     perp: PerpMarketSnapshot,
     lastPrice: number,
-    biasTrend?: Signal,
+    biasContext?: BiasContext,
     biasInterval?: string,
-    baseInterval = "1m"
+    baseInterval = "1m",
+    btcContext?: { emaAbove: boolean; momentumPositive: boolean }
   ): SignalEvaluationResult {
     let longScore = 0;
     let shortScore = 0;
@@ -152,12 +182,24 @@ export class RecommendationSignalEvaluator {
       rationale.push("Price is inside Bollinger bands.");
     }
 
+    const fundingMomentum = perp.fundingRate - perp.fundingRateAvg;
+    const fundingAccelerating = Math.abs(fundingMomentum) > 0.00003;
     if (perp.fundingRate > 0.00005 && perp.fundingRateAvg > 0) {
-      shortScore += w("flow", 4);
-      rationale.push("Funding is persistently positive (long crowding risk).");
+      const pts = fundingAccelerating ? 6 : 4;
+      shortScore += w("flow", pts);
+      rationale.push(
+        fundingAccelerating
+          ? "Funding is accelerating positive (increasing long crowding risk)."
+          : "Funding is persistently positive (long crowding risk)."
+      );
     } else if (perp.fundingRate < -0.00005 && perp.fundingRateAvg < 0) {
-      longScore += w("flow", 4);
-      rationale.push("Funding is persistently negative (short crowding risk).");
+      const pts = fundingAccelerating ? 6 : 4;
+      longScore += w("flow", pts);
+      rationale.push(
+        fundingAccelerating
+          ? "Funding is accelerating negative (increasing short crowding risk)."
+          : "Funding is persistently negative (short crowding risk)."
+      );
     } else {
       rationale.push("Funding is neutral.");
     }
@@ -208,13 +250,35 @@ export class RecommendationSignalEvaluator {
       }
     }
 
-    if (biasTrend) {
-      if (biasTrend === "LONG") {
-        longScore += w("trend", 16);
-        rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bullish.`);
+    if (biasContext) {
+      const htfLabel = biasInterval ?? "HTF";
+      if (biasContext.trend === "LONG") {
+        longScore += w("trend", 14);
+        rationale.push(`HTF bias (${htfLabel}) is bullish (EMA trend).`);
       } else {
-        shortScore += w("trend", 16);
-        rationale.push(`Higher-timeframe bias (${biasInterval ?? "HTF"}) is bearish.`);
+        shortScore += w("trend", 14);
+        rationale.push(`HTF bias (${htfLabel}) is bearish (EMA trend).`);
+      }
+      if (biasContext.macdDirection === "POSITIVE") {
+        longScore += w("momentum", 4);
+        rationale.push("HTF MACD is positive.");
+      } else if (biasContext.macdDirection === "NEGATIVE") {
+        shortScore += w("momentum", 4);
+        rationale.push("HTF MACD is negative.");
+      }
+      if (biasContext.rsiZone === "OVERBOUGHT" && biasContext.trend === "LONG") {
+        longScore -= w("momentum", 3);
+        rationale.push("HTF RSI is overbought; long continuation risk elevated.");
+      } else if (biasContext.rsiZone === "OVERSOLD" && biasContext.trend === "SHORT") {
+        shortScore -= w("momentum", 3);
+        rationale.push("HTF RSI is oversold; short continuation risk elevated.");
+      }
+      if (biasContext.bbPosition === "ABOVE") {
+        shortScore += w("meanReversion", 2);
+        rationale.push("HTF price is above Bollinger upper band.");
+      } else if (biasContext.bbPosition === "BELOW") {
+        longScore += w("meanReversion", 2);
+        rationale.push("HTF price is below Bollinger lower band.");
       }
     }
 
@@ -270,6 +334,71 @@ export class RecommendationSignalEvaluator {
           rationale.push("Breakout check: downside breakout lacks follow-through; fade risk increased.");
         }
       }
+    }
+
+    if (indicators.rsiDivergence) {
+      if (indicators.rsiDivergence.bullish) {
+        longScore += w("meanReversion", 8);
+        shortScore -= w("meanReversion", 4);
+        rationale.push("RSI bullish divergence detected (price lower low, RSI higher low).");
+      } else if (indicators.rsiDivergence.bearish) {
+        shortScore += w("meanReversion", 8);
+        longScore -= w("meanReversion", 4);
+        rationale.push("RSI bearish divergence detected (price higher high, RSI lower high).");
+      }
+    }
+
+    if (indicators.volumeProfile) {
+      const { vpoc, vah, val } = indicators.volumeProfile;
+      const vpocDist = (Math.abs(lastPrice - vpoc) / Math.max(vpoc, 1)) * 100;
+      if (vpocDist < 0.15) {
+        if (marketRegime === "RANGE") {
+          rationale.push("Price is near VPOC (volume fair value) - range mean reversion favored.");
+        } else {
+          longScore -= w("flow", 2);
+          shortScore -= w("flow", 2);
+          rationale.push("Price is near VPOC; may act as resistance/support.");
+        }
+      } else if (lastPrice > vah) {
+        longScore += w("flow", 4);
+        rationale.push("Price is above Value Area High; breakout above value area.");
+      } else if (lastPrice < val) {
+        shortScore += w("flow", 4);
+        rationale.push("Price is below Value Area Low; breakdown below value area.");
+      } else {
+        rationale.push(`Price is inside value area (VAL ${val.toFixed(4)} - VAH ${vah.toFixed(4)}).`);
+      }
+    }
+
+    if (btcContext) {
+      const btcBullish = btcContext.emaAbove && btcContext.momentumPositive;
+      const btcBearish = !btcContext.emaAbove && !btcContext.momentumPositive;
+      if (btcBullish) {
+        longScore += w("trend", 5);
+        shortScore -= w("trend", 3);
+        rationale.push("BTC is bullish (EMA + MACD); alt long has macro tailwind.");
+      } else if (btcBearish) {
+        shortScore += w("trend", 5);
+        longScore -= w("trend", 3);
+        rationale.push("BTC is bearish (EMA + MACD); alt long has macro headwind.");
+      } else {
+        rationale.push("BTC trend is mixed; cross-asset correlation neutral.");
+      }
+    }
+
+    const session = detectTradingSession();
+    if (session === "ASIA") {
+      longScore -= w("momentum", 2);
+      shortScore -= w("momentum", 2);
+      rationale.push("Session: Asian hours - lower volume; impulse follow-through reduced.");
+    } else if (session === "DEAD") {
+      longScore -= w("momentum", 4);
+      shortScore -= w("momentum", 4);
+      rationale.push("Session: dead zone (US close - Asia open) - low volume, avoid breakouts.");
+    } else if (session === "US") {
+      rationale.push("Session: US peak hours - elevated volatility and volume.");
+    } else {
+      rationale.push("Session: London/NY overlap - trend-follow reliability moderate-high.");
     }
 
     const bullishStructureSignals = [
@@ -407,6 +536,41 @@ export class RecommendationSignalEvaluator {
       }
     }
 
+    const prevRegimeContext = this.classifyRegime(indicators, lastPrice, true);
+    const prevMarketRegime = prevRegimeContext.marketRegime;
+    if (prevMarketRegime !== marketRegime) {
+      if (prevMarketRegime === "RANGE" && marketRegime === "TREND") {
+        longScore += w("trend", 5);
+        shortScore += w("trend", 5);
+        rationale.push("Regime transition: RANGE -> TREND detected (fresh breakout setup).");
+      } else if (prevMarketRegime === "TREND" && marketRegime === "RANGE") {
+        longScore -= w("trend", 4);
+        shortScore -= w("trend", 4);
+        rationale.push("Regime transition: TREND -> RANGE detected (exhaustion; reduce trend conviction).");
+      } else if (marketRegime === "VOLATILE_SPIKE") {
+        longScore -= w("volatility", 3);
+        shortScore -= w("volatility", 3);
+        rationale.push("Regime transition: spike detected - caution escalated.");
+      }
+    }
+
+    const minScore = Math.min(longScore, shortScore);
+    const maxScore = Math.max(longScore, shortScore);
+    if (maxScore > 25 && minScore > 0) {
+      const conflictRatio = minScore / maxScore;
+      if (conflictRatio > 0.8) {
+        longScore *= 0.7;
+        shortScore *= 0.7;
+        rationale.push(
+          `Signal conflict detected (ratio ${conflictRatio.toFixed(2)}): both sides heavily loaded - conviction reduced.`
+        );
+      } else if (conflictRatio > 0.65) {
+        longScore *= 0.85;
+        shortScore *= 0.85;
+        rationale.push(`Moderate signal conflict (ratio ${conflictRatio.toFixed(2)}): mixed signals reduce conviction.`);
+      }
+    }
+
     const diff = Math.abs(longScore - shortScore);
     let signal: Exclude<Signal, "NO_TRADE">;
     let confidence: number;
@@ -452,7 +616,7 @@ export class RecommendationSignalEvaluator {
       indicators,
       marketRegime,
       impulseBias,
-      biasTrend,
+      biasContext,
       breakoutValidationFailed,
       pullbackExtended
     });
@@ -476,7 +640,7 @@ export class RecommendationSignalEvaluator {
     return (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
   }
 
-  private classifyRegime(indicators: IndicatorSnapshot, lastPrice: number): RegimeContext {
+  private classifyRegime(indicators: IndicatorSnapshot, lastPrice: number, longerLookback = false): RegimeContext {
     const atrPct = this.computeAtrPct(indicators);
     const spread = indicators.ema20 - indicators.ema50;
     const spreadPct = (Math.abs(spread) / Math.max(lastPrice, 1)) * 100;
@@ -484,6 +648,10 @@ export class RecommendationSignalEvaluator {
     const nearVwapThreshold = this.clamp(0.02 + atrPct * 0.01, 0.02, 0.06);
     const nearVwap =
       (Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1)) * 100 < nearVwapThreshold;
+    const spikeAtrThreshold = longerLookback ? 2 : 1.2;
+    const spikeBandThreshold = longerLookback ? 3.5 : 2.2;
+    const trendAdxThreshold = longerLookback ? 18 : 22;
+    const trendSpreadThreshold = longerLookback ? 0.08 : 0.12;
 
     if (atrPct < 0.12 && bandWidthPct < 0.35) {
       return {
@@ -492,14 +660,14 @@ export class RecommendationSignalEvaluator {
         rationale: ["Regime classifier: low-liquidity chop (compressed range + very low ATR)."]
       };
     }
-    if (atrPct > 1.2 || bandWidthPct > 2.2) {
+    if (atrPct > spikeAtrThreshold || bandWidthPct > spikeBandThreshold) {
       return {
         marketRegime: "VOLATILE_SPIKE",
         regime: "TRADEABLE",
         rationale: ["Regime classifier: volatility spike (expanded range and elevated ATR)."]
       };
     }
-    if (indicators.adx14 >= 22 && spreadPct >= 0.12 && !nearVwap) {
+    if (indicators.adx14 >= trendAdxThreshold && spreadPct >= trendSpreadThreshold && !nearVwap) {
       return {
         marketRegime: "TREND",
         regime: "TRADEABLE",
@@ -517,7 +685,7 @@ export class RecommendationSignalEvaluator {
     indicators: IndicatorSnapshot;
     marketRegime: MarketRegime;
     impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE";
-    biasTrend?: Signal;
+    biasContext?: BiasContext;
     breakoutValidationFailed: boolean;
     pullbackExtended: boolean;
   }): ConfidenceBreakdown {
@@ -536,11 +704,13 @@ export class RecommendationSignalEvaluator {
       45 +
         Math.abs(input.indicators.macdHistogram) * 2.2 +
         (input.indicators.rsi14 > 55 || input.indicators.rsi14 < 45 ? 8 : -5) +
-        (input.impulseBias === "NONE" ? 0 : 12),
+        (input.impulseBias === "NONE" ? 0 : 12) +
+        (input.indicators.rsiDivergence?.bullish || input.indicators.rsiDivergence?.bearish ? 6 : 0),
       0,
       100
     );
-    const volatility = this.clamp(100 - Math.abs(atrPct - 0.65) * 70, 0, 100);
+    const medianAtrPct = input.indicators.medianAtrPct ?? atrPct;
+    const volatility = this.clamp(100 - Math.abs(atrPct - medianAtrPct) * 70, 0, 100);
     const vwapDistancePct =
       (Math.abs(input.indicators.ema20 - input.indicators.vwap) / Math.max(input.indicators.vwap, 1)) * 100;
     const structure = this.clamp(
@@ -554,7 +724,9 @@ export class RecommendationSignalEvaluator {
     const context = this.clamp(
       50 +
         (Math.abs(input.indicators.macdHistogram) > 0.2 ? 8 : -4) +
-        (input.biasTrend ? 6 : 0) +
+        (input.biasContext
+          ? 4 + (input.biasContext.macdDirection === "POSITIVE" || input.biasContext.macdDirection === "NEGATIVE" ? 4 : 0)
+          : 0) +
         ((input.indicators.mfi14 ?? 50) > 55 || (input.indicators.mfi14 ?? 50) < 45 ? 4 : -2) +
         (Math.abs(input.indicators.cmf20 ?? 0) > 0.06 ? 4 : 0) +
         (input.marketRegime === "LOW_LIQ_CHOP" ? -20 : 0) +
@@ -589,4 +761,3 @@ export class RecommendationSignalEvaluator {
     return parseInterval(interval);
   }
 }
-

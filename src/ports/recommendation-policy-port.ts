@@ -1,4 +1,4 @@
-import type { Recommendation } from "../domain/types.js";
+import type { BiasContext, Recommendation } from "../domain/types.js";
 
 export interface RecommendationBuildInput {
   pair: string;
@@ -6,8 +6,9 @@ export interface RecommendationBuildInput {
   indicators: import("../domain/types.js").IndicatorSnapshot;
   perp: import("../domain/types.js").PerpMarketSnapshot;
   forcedDirection?: "LONG" | "SHORT";
-  biasTrend?: import("../domain/types.js").Signal;
+  biasContext?: BiasContext;
   biasInterval?: string;
+  btcContext?: { emaAbove: boolean; momentumPositive: boolean };
   leverage?: number;
   positionSizeUsd?: number;
   slPct?: number;

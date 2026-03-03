@@ -1,5 +1,12 @@
 # Project Plan
 
+## Task: Indicator improvements pipeline upgrade (2026-03-03)
+- [x] Add domain type foundations for `BiasContext`, `TradingSession`, and extended indicator snapshots
+- [x] Add adaptive indicator periods plus RSI divergence / volume profile / median ATR% calculations
+- [x] Thread `BiasContext` and BTC market context through use-case, engine, port, and tests
+- [x] Expand signal evaluation with richer HTF bias, funding momentum, RSI divergence, volume profile, BTC correlation, session conditioning, conflict detection, ATR normalization, and regime transition logic
+- [x] Run `npm run build` and `npm test`
+
 ## Task: Remove `learn --buckets` command alias (2026-02-25)
 - [x] Remove interactive `learn --buckets` command handling
 - [x] Update interactive help and docs to use `learn --stats` only
