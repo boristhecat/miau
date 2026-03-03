@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Last updated: 2026-02-19
+Last updated: 2026-03-03
 
 ## Summary
 - `miau-trader` is a TypeScript CLI that produces crypto trade suggestions from Backpack public market data.
@@ -34,11 +34,13 @@ Last updated: 2026-02-19
 
 ## Recommendation Engine (current)
 - Indicator engine selection in CLI is `talib-wasm` only (`INDICATOR_ENGINE` must be `talib-wasm` if set).
-- Indicators: RSI(14), EMA(20/50), MACD(12,26,9), ATR(14), ADX(14), Bollinger Bands(20,2), StochRSI, VWAP, OBV slope, MFI(14), CMF(20), volume z-score, short CVD delta proxy.
-- Additional context: funding, premium, open interest (+delta when available), optional orderbook microstructure (spread/imbalance/microprice), recent-candle impulse/breakout context.
+- Indicators use horizon-adaptive periods for RSI / EMA / MACD / ADX on faster timeframes; ATR(14) and Bollinger Bands(20,2) remain fixed.
+- Snapshot data also includes VWAP, OBV slope, MFI(14), CMF(20), volume z-score, short CVD delta proxy, RSI divergence, 20-candle volume profile (VPOC/VAH/VAL), rolling median ATR%, and recent-candle impulse/breakout context.
+- Additional context includes funding, premium, open interest (+delta when available), optional orderbook microstructure (spread/imbalance/microprice), richer HTF bias context, BTC correlation for alts, and UTC session classification.
 - Market regime classes: `TREND`, `RANGE`, `VOLATILE_SPIKE`, `LOW_LIQ_CHOP`.
-- Indicator confluence weights are adaptive by horizon bucket (`1-10m`, `10-30m`, `30-90m`, `90m+`) and regime; short horizons emphasize momentum/flow/microstructure, while longer horizons emphasize trend/volatility.
+- Indicator confluence weights are adaptive by horizon bucket (`1-10m`, `10-30m`, `30-90m`, `90m+`) and regime; short horizons emphasize momentum/flow/microstructure, while longer horizons emphasize trend/volatility, with stronger regime-specific discounts/boosts for trend, mean-reversion, volatility, and low-liquidity conditions.
 - Signal scoring now includes directional-consensus weighting to reduce false contrarian flips on clear trend structure.
+- Signal scoring also accounts for richer HTF bias dimensions, funding acceleration, RSI divergence, value-area location, BTC alignment for alts, time-of-day session penalties, conflict scaling when both sides are heavily loaded, and regime-transition detection.
 - Overbought/oversold RSI handling is trend-aware (less aggressive reversal bias when structure strongly confirms continuation).
 - Guard behavior is less binary:
   - Pullback-extension blocks are stricter on short horizons and weaker setups.

@@ -1,5 +1,11 @@
 # Project Plan
 
+## Task: Finish indicator improvements alignment (2026-03-03)
+- [x] Apply chunk 14 regime multiplier changes in the indicator weight policy
+- [x] Update focused tests to assert the new multiplier behavior
+- [x] Refresh `docs/CURRENT_STATE.md` so it reflects the implemented indicator improvements
+- [x] Run `npm run build` and `npm test`
+
 ## Task: Indicator improvements pipeline upgrade (2026-03-03)
 - [x] Add domain type foundations for `BiasContext`, `TradingSession`, and extended indicator snapshots
 - [x] Add adaptive indicator periods plus RSI divergence / volume profile / median ATR% calculations

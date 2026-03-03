@@ -23,19 +23,21 @@ export function resolveIndicatorWeightProfile(input: {
   const multipliers = { ...baseProfile.multipliers };
 
   if (input.marketRegime === "TREND") {
-    multipliers.trend *= 1.1;
-    multipliers.momentum *= 1.05;
-    multipliers.meanReversion *= 0.9;
+    multipliers.trend *= 1.25;
+    multipliers.momentum *= 1.1;
+    multipliers.meanReversion *= 0.75;
   } else if (input.marketRegime === "RANGE") {
-    multipliers.meanReversion *= 1.15;
-    multipliers.trend *= 0.9;
+    multipliers.meanReversion *= 1.3;
+    multipliers.trend *= 0.8;
   } else if (input.marketRegime === "VOLATILE_SPIKE") {
-    multipliers.volatility *= 1.2;
-    multipliers.fastFilters *= 1.1;
-  } else if (input.marketRegime === "LOW_LIQ_CHOP") {
-    multipliers.microstructure *= 1.15;
+    multipliers.volatility *= 1.35;
     multipliers.fastFilters *= 1.2;
-    multipliers.momentum *= 0.9;
+    multipliers.trend *= 0.85;
+  } else if (input.marketRegime === "LOW_LIQ_CHOP") {
+    multipliers.microstructure *= 1.25;
+    multipliers.fastFilters *= 1.2;
+    multipliers.momentum *= 0.8;
+    multipliers.trend *= 0.85;
   }
 
   return {
