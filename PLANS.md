@@ -1,5 +1,18 @@
 # Project Plan
 
+## Task: Merge domain redesign proposal with peer review into v2 (2026-03-06)
+- [x] Re-read `PLANS.md`, `docs/CURRENT_STATE.md`, and the current proposal plus peer review
+- [x] Create a separate merged `v2` document, then consolidate on it after review sign-off
+- [x] Tighten Phase 1 scope, add a feasibility split by data source, and specify one concrete setup family
+- [x] Append a compact `v2.1` addendum to the `v2` document covering thresholds, type migration, reliability bootstrapping, and learning-store implications
+
+## Task: Trade vs NO_TRADE gate improvements (2026-03-05)
+- [x] Add minimum absolute winner-score conviction handling and normalized winner-ratio gating
+- [x] Add HTF contradiction severity, volume-confirmation gating, and optional-channel participation confidence adjustment
+- [x] Add session-adaptive guard thresholds for ASIA/DEAD and regime/signal mismatch guard escalation
+- [x] Update tests for evaluator/guard behavior under the new gating rules
+- [x] Run `npm run build` and `npm test`
+
 ## Task: Finish indicator improvements alignment (2026-03-03)
 - [x] Apply chunk 14 regime multiplier changes in the indicator weight policy
 - [x] Update focused tests to assert the new multiplier behavior
