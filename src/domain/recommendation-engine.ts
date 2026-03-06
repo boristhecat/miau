@@ -64,7 +64,11 @@ export class RecommendationEngine {
       pullbackExtended,
       breakoutValidationFailed,
       breakoutFailureDirection,
-      confidenceBreakdown
+      confidenceBreakdown,
+      lowAbsoluteConviction,
+      winnerRatioInsufficient,
+      htfContradictionCount,
+      regimeSignalMismatch
     } = this.signalEvaluator.evaluate(
       indicators,
       perp,
@@ -212,6 +216,10 @@ export class RecommendationEngine {
       pullbackExtended,
       breakoutValidationFailed,
       breakoutFailureDirection,
+      lowAbsoluteConviction,
+      winnerRatioInsufficient,
+      htfContradictionCount,
+      regimeSignalMismatch,
       interval: resolvedBaseInterval,
       setupGrade: setupAssessment.setupGrade,
       setupQuality: finalConfidenceBreakdown.setupQuality,

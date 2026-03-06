@@ -1,5 +1,10 @@
 # Project Plan
 
+## Task: Commit current guard/evaluator baseline hardening (2026-03-06)
+- [x] Confirm the remaining uncommitted guard/evaluator/test changes form a coherent baseline-hardening patch
+- [x] Run focused guard tests, then broader verification if green
+- [x] Commit only the guard/evaluator/test baseline changes, leaving unrelated local changes untouched
+
 ## Task: Merge domain redesign proposal with peer review into v2 (2026-03-06)
 - [x] Re-read `PLANS.md`, `docs/CURRENT_STATE.md`, and the current proposal plus peer review
 - [x] Create a separate merged `v2` document, then consolidate on it after review sign-off

@@ -27,6 +27,10 @@ export interface SignalEvaluationResult {
   breakoutValidationFailed: boolean;
   breakoutFailureDirection: "UP" | "DOWN" | "NONE";
   regime: "TRADEABLE" | "CHOPPY";
+  lowAbsoluteConviction: boolean;
+  winnerRatioInsufficient: boolean;
+  htfContradictionCount: number;
+  regimeSignalMismatch: boolean;
 }
 
 export function inferBiasContext(biasIndicators: IndicatorSnapshot): BiasContext {
@@ -85,6 +89,10 @@ export class RecommendationSignalEvaluator {
     let pullbackExtended = false;
     let breakoutValidationFailed = false;
     let breakoutFailureDirection: "UP" | "DOWN" | "NONE" = "NONE";
+    let lowAbsoluteConviction = false;
+    let winnerRatioInsufficient = false;
+    let htfContradictionCount = 0;
+    let regimeSignalMismatch = false;
 
     const emaTrendWeight = shortHorizon ? 17 : 28;
     if (indicators.ema20 > indicators.ema50) {
@@ -554,23 +562,6 @@ export class RecommendationSignalEvaluator {
       }
     }
 
-    const minScore = Math.min(longScore, shortScore);
-    const maxScore = Math.max(longScore, shortScore);
-    if (maxScore > 25 && minScore > 0) {
-      const conflictRatio = minScore / maxScore;
-      if (conflictRatio > 0.8) {
-        longScore *= 0.7;
-        shortScore *= 0.7;
-        rationale.push(
-          `Signal conflict detected (ratio ${conflictRatio.toFixed(2)}): both sides heavily loaded - conviction reduced.`
-        );
-      } else if (conflictRatio > 0.65) {
-        longScore *= 0.85;
-        shortScore *= 0.85;
-        rationale.push(`Moderate signal conflict (ratio ${conflictRatio.toFixed(2)}): mixed signals reduce conviction.`);
-      }
-    }
-
     const diff = Math.abs(longScore - shortScore);
     let signal: Exclude<Signal, "NO_TRADE">;
     let confidence: number;
@@ -589,6 +580,66 @@ export class RecommendationSignalEvaluator {
     } else {
       confidence = Math.max(35, 45 + diff);
       rationale.push("Indicator confluence is weak; confidence is reduced.");
+    }
+
+    const winnerScore = Math.max(longScore, shortScore);
+    const loserScore = Math.min(longScore, shortScore);
+    let winnerRatio = 1;
+    if (loserScore > 0) {
+      winnerRatio = winnerScore / (winnerScore + loserScore);
+    }
+    if (winnerRatio < 0.48) {
+      winnerRatioInsufficient = true;
+      rationale.push(`Winner ratio ${winnerRatio.toFixed(2)} is below 0.48; directional edge is insufficient.`);
+    } else if (winnerRatio < 0.55) {
+      confidence -= 12;
+      rationale.push(`Low winner ratio (${winnerRatio.toFixed(2)}); mixed signals reduce conviction.`);
+    }
+
+    if (winnerScore < 28) {
+      lowAbsoluteConviction = true;
+      confidence -= 10;
+      rationale.push("Few indicators contributed to the winning direction; conviction is low.");
+    }
+
+    const volumeConfirmation = this.computeVolumeConfirmationScore(signal, indicators);
+    if (volumeConfirmation.score <= 0) {
+      if (!volumeConfirmation.anyData) {
+        confidence -= 8;
+        rationale.push("No volume indicators available; confidence reduced.");
+      } else {
+        confidence -= 12;
+        rationale.push("Volume indicators do not confirm trade direction.");
+      }
+    } else if (volumeConfirmation.score >= 2) {
+      rationale.push(`Volume confirmation is strong (${volumeConfirmation.score} channels aligned).`);
+    } else {
+      rationale.push(`Volume confirmation is partial (${volumeConfirmation.score} channel aligned).`);
+    }
+
+    const optionalParticipationCount = this.countOptionalParticipation({
+      signal,
+      indicators,
+      lastPrice,
+      biasContext,
+      btcContext
+    });
+    rationale.push(`Signal participation: ${optionalParticipationCount} optional channels confirmed direction.`);
+    if (optionalParticipationCount >= 6) {
+      confidence += 5;
+    } else if (optionalParticipationCount <= 2) {
+      confidence -= 6;
+    }
+
+    htfContradictionCount = this.countHtfContradictions(signal, biasContext);
+    if (htfContradictionCount > 0) {
+      rationale.push(`HTF contradiction count: ${htfContradictionCount}/4 against ${signal}.`);
+    }
+
+    regimeSignalMismatch =
+      (marketRegime === "RANGE" || marketRegime === "VOLATILE_SPIKE") && signal === emaTrendDirection;
+    if (regimeSignalMismatch) {
+      rationale.push(`Regime mismatch: trend-follow ${signal} in ${marketRegime} regime.`);
     }
 
     if (regime === "CHOPPY") {
@@ -632,7 +683,11 @@ export class RecommendationSignalEvaluator {
       impulseBias,
       pullbackExtended,
       breakoutValidationFailed,
-      breakoutFailureDirection
+      breakoutFailureDirection,
+      lowAbsoluteConviction,
+      winnerRatioInsufficient,
+      htfContradictionCount,
+      regimeSignalMismatch
     };
   }
 
@@ -759,5 +814,109 @@ export class RecommendationSignalEvaluator {
 
   private parseIntervalToMinutes(interval: string): number {
     return parseInterval(interval);
+  }
+
+  private countHtfContradictions(signal: Exclude<Signal, "NO_TRADE">, biasContext?: BiasContext): number {
+    if (!biasContext) {
+      return 0;
+    }
+    let count = 0;
+    if ((signal === "LONG" && biasContext.trend === "SHORT") || (signal === "SHORT" && biasContext.trend === "LONG")) {
+      count += 1;
+    }
+    if (
+      (signal === "LONG" && biasContext.macdDirection === "NEGATIVE") ||
+      (signal === "SHORT" && biasContext.macdDirection === "POSITIVE")
+    ) {
+      count += 1;
+    }
+    if ((signal === "LONG" && biasContext.rsiZone === "OVERBOUGHT") || (signal === "SHORT" && biasContext.rsiZone === "OVERSOLD")) {
+      count += 1;
+    }
+    if ((signal === "LONG" && biasContext.bbPosition === "ABOVE") || (signal === "SHORT" && biasContext.bbPosition === "BELOW")) {
+      count += 1;
+    }
+    return count;
+  }
+
+  private computeVolumeConfirmationScore(
+    signal: Exclude<Signal, "NO_TRADE">,
+    indicators: IndicatorSnapshot
+  ): { score: number; anyData: boolean } {
+    let score = 0;
+    const hasObv = indicators.obvSlope5 !== undefined;
+    const hasMfi = indicators.mfi14 !== undefined;
+    const hasCmf = indicators.cmf20 !== undefined;
+    const hasCvd = indicators.cvdDeltaPct5 !== undefined && indicators.volumeZScore20 !== undefined;
+    const anyData = hasObv || hasMfi || hasCmf || hasCvd;
+
+    if (hasObv && ((signal === "LONG" && indicators.obvSlope5! > 0) || (signal === "SHORT" && indicators.obvSlope5! < 0))) {
+      score += 1;
+    }
+    if (hasMfi && ((signal === "LONG" && indicators.mfi14! > 55) || (signal === "SHORT" && indicators.mfi14! < 45))) {
+      score += 1;
+    }
+    if (hasCmf && ((signal === "LONG" && indicators.cmf20! > 0.08) || (signal === "SHORT" && indicators.cmf20! < -0.08))) {
+      score += 1;
+    }
+    if (
+      hasCvd &&
+      indicators.volumeZScore20! >= 1 &&
+      ((signal === "LONG" && indicators.cvdDeltaPct5! > 0) || (signal === "SHORT" && indicators.cvdDeltaPct5! < 0))
+    ) {
+      score += 1;
+    }
+    return { score, anyData };
+  }
+
+  private countOptionalParticipation(input: {
+    signal: Exclude<Signal, "NO_TRADE">;
+    indicators: IndicatorSnapshot;
+    lastPrice: number;
+    biasContext?: BiasContext;
+    btcContext?: { emaAbove: boolean; momentumPositive: boolean };
+  }): number {
+    const { signal, indicators, lastPrice, biasContext, btcContext } = input;
+    let count = 0;
+    if ((signal === "LONG" && indicators.rsiDivergence?.bullish) || (signal === "SHORT" && indicators.rsiDivergence?.bearish)) {
+      count += 1;
+    }
+    if (
+      (signal === "LONG" && indicators.volumeProfile !== undefined && lastPrice > indicators.volumeProfile.vah) ||
+      (signal === "SHORT" && indicators.volumeProfile !== undefined && lastPrice < indicators.volumeProfile.val)
+    ) {
+      count += 1;
+    }
+    if (
+      (signal === "LONG" && (indicators.obvSlope5 ?? 0) > 0.02) ||
+      (signal === "SHORT" && (indicators.obvSlope5 ?? 0) < -0.02)
+    ) {
+      count += 1;
+    }
+    if ((signal === "LONG" && (indicators.mfi14 ?? 0) >= 55) || (signal === "SHORT" && (indicators.mfi14 ?? 100) <= 45)) {
+      count += 1;
+    }
+    if ((signal === "LONG" && (indicators.cmf20 ?? 0) >= 0.08) || (signal === "SHORT" && (indicators.cmf20 ?? 0) <= -0.08)) {
+      count += 1;
+    }
+    if (
+      indicators.volumeZScore20 !== undefined &&
+      indicators.cvdDeltaPct5 !== undefined &&
+      indicators.volumeZScore20 >= 1 &&
+      ((signal === "LONG" && indicators.cvdDeltaPct5 > 10) || (signal === "SHORT" && indicators.cvdDeltaPct5 < -10))
+    ) {
+      count += 1;
+    }
+    if (
+      btcContext &&
+      ((signal === "LONG" && btcContext.emaAbove && btcContext.momentumPositive) ||
+        (signal === "SHORT" && !btcContext.emaAbove && !btcContext.momentumPositive))
+    ) {
+      count += 1;
+    }
+    if (biasContext && biasContext.trend === signal) {
+      count += 1;
+    }
+    return count;
   }
 }
