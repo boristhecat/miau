@@ -4,6 +4,7 @@ import { applyTradeGuards } from "./recommendation-guards.js";
 import { RecommendationSignalEvaluator } from "./recommendation-signal-evaluator.js";
 import { RecommendationSetupAssessor } from "./recommendation-setup-assessor.js";
 import { RecommendationTradeCalculator } from "./recommendation-trade-calculator.js";
+import { RecommendationTradeabilityEvaluator } from "./recommendation-tradeability-evaluator.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -27,6 +28,7 @@ interface BuildRecommendationInput {
 }
 
 export class RecommendationEngine {
+  private readonly tradeabilityEvaluator = new RecommendationTradeabilityEvaluator();
   private readonly signalEvaluator = new RecommendationSignalEvaluator();
   private readonly setupAssessor = new RecommendationSetupAssessor();
   private readonly tradeCalculator = new RecommendationTradeCalculator();
@@ -53,6 +55,11 @@ export class RecommendationEngine {
       baseInterval
     } = input;
     const resolvedBaseInterval = baseInterval ?? "1m";
+    const tradeabilityAssessment = this.tradeabilityEvaluator.evaluate({
+      indicators,
+      perp,
+      lastPrice
+    });
 
     const {
       signal,
@@ -207,29 +214,47 @@ export class RecommendationEngine {
       `Setup grade ${setupAssessment.setupGrade}: loc ${setupAssessment.factorScores.location} / trig ${setupAssessment.factorScores.trigger} / micro ${setupAssessment.factorScores.microstructure} / regime ${setupAssessment.factorScores.regime} / risk ${setupAssessment.factorScores.riskEfficiency} / friction ${setupAssessment.factorScores.friction}.`
     );
 
-    const guardResult = applyTradeGuards({
-      signal: tradeSignal,
-      forcedDirection,
-      regime,
-      marketRegime,
-      impulseBias,
-      pullbackExtended,
-      breakoutValidationFailed,
-      breakoutFailureDirection,
-      lowAbsoluteConviction,
-      winnerRatioInsufficient,
-      htfContradictionCount,
-      regimeSignalMismatch,
-      interval: resolvedBaseInterval,
-      setupGrade: setupAssessment.setupGrade,
-      setupQuality: finalConfidenceBreakdown.setupQuality,
-      confidence,
-      riskRewardRatio,
-      bidAskSpreadPct: perp.bidAskSpreadPct,
-      rationale
-    });
+    const tradeabilityHardBlock = tradeabilityAssessment.status === "DO_NOT_TRADE";
+    const tradeabilityRationale = tradeabilityHardBlock
+      ? appendTradeabilityRationale(rationale, tradeabilityAssessment.rationale, forcedDirection !== undefined)
+      : rationale;
 
-    const finalSignal = guardResult.signal;
+    let finalSignal: Signal;
+    let finalRationale: readonly string[];
+    let blocked = tradeabilityHardBlock && forcedDirection !== undefined;
+
+    if (tradeabilityHardBlock && forcedDirection === undefined) {
+      finalSignal = "NO_TRADE";
+      finalRationale = tradeabilityRationale;
+      blocked = true;
+    } else {
+      const guardResult = applyTradeGuards({
+        signal: tradeSignal,
+        forcedDirection,
+        regime,
+        marketRegime,
+        impulseBias,
+        pullbackExtended,
+        breakoutValidationFailed,
+        breakoutFailureDirection,
+        lowAbsoluteConviction,
+        winnerRatioInsufficient,
+        htfContradictionCount,
+        regimeSignalMismatch,
+        interval: resolvedBaseInterval,
+        setupGrade: setupAssessment.setupGrade,
+        setupQuality: finalConfidenceBreakdown.setupQuality,
+        confidence,
+        riskRewardRatio,
+        bidAskSpreadPct: perp.bidAskSpreadPct,
+        skipLegacyTradeabilityChecks: tradeabilityHardBlock,
+        rationale: tradeabilityRationale
+      });
+      finalSignal = guardResult.signal;
+      finalRationale = guardResult.rationale;
+      blocked = guardResult.blocked || blocked;
+    }
+
     const action = this.tradeCalculator.toAction(finalSignal, confidence, regime);
     const executionStats = this.tradeCalculator.computeExecutionStats({
       signal: finalSignal,
@@ -255,10 +280,13 @@ export class RecommendationEngine {
       signal: finalSignal,
       modelSignal,
       requestedDirection: forcedDirection,
-      qualityVerdict: guardResult.blocked ? "WEAK" : "VALID",
+      qualityVerdict: blocked ? "WEAK" : "VALID",
       action,
       regime,
       marketRegime,
+      marketTradeability: tradeabilityAssessment.status,
+      marketTradeabilityReasons:
+        tradeabilityAssessment.reasonCodes.length > 0 ? tradeabilityAssessment.reasonCodes : undefined,
       entry: round(entry),
       expectedLow: round(expectedRange.low),
       expectedHigh: round(expectedRange.high),
@@ -289,11 +317,35 @@ export class RecommendationEngine {
       expectedValuePerMarginPct: executionStats?.expectedValuePerMarginPct,
       confidence,
       confidenceBreakdown: finalConfidenceBreakdown,
-      rationale: guardResult.rationale,
+      rationale: finalRationale,
       indicators,
       perp
     };
   }
+}
+
+function appendTradeabilityRationale(
+  rationale: readonly string[],
+  tradeabilityRationale: readonly string[],
+  advisory: boolean
+): readonly string[] {
+  if (tradeabilityRationale.length === 0) {
+    return rationale;
+  }
+
+  const prefix = advisory ? "Guard advisory: " : "No-trade guard: ";
+  const accumulated = [...rationale];
+  const existing = new Set(accumulated);
+
+  for (const message of tradeabilityRationale) {
+    const line = `${prefix}${message}`;
+    if (!existing.has(line)) {
+      accumulated.push(line);
+      existing.add(line);
+    }
+  }
+
+  return accumulated;
 }
 
 function round(value: number): number {

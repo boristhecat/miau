@@ -4,6 +4,15 @@ export type MarketRegime = "TREND" | "RANGE" | "VOLATILE_SPIKE" | "LOW_LIQ_CHOP"
 export type SetupGrade = "A" | "B" | "C" | "D";
 export type ImpulseDirection = "UP" | "DOWN" | "NONE";
 export type TradingSession = "ASIA" | "LONDON" | "US" | "DEAD";
+export type TradeabilityStatus = "TRADEABLE" | "CAUTION" | "DO_NOT_TRADE";
+export type TradeabilityReasonCode =
+  | "LOW_LIQUIDITY_CHOP"
+  | "WIDE_SPREAD"
+  | "VWAP_CHOP"
+  | "SESSION_DEAD_ZONE"
+  | "HTF_CONTRADICTION"
+  | "WEAK_SETUP_QUALITY"
+  | "LOW_CONVICTION";
 
 export interface BiasContext {
   readonly trend: "LONG" | "SHORT";
@@ -84,6 +93,15 @@ export interface PerpMarketSnapshot {
   readonly microPricePremiumPct?: number;
 }
 
+export interface TradeabilityAssessment {
+  readonly status: TradeabilityStatus;
+  readonly session: TradingSession;
+  readonly marketRegime: MarketRegime;
+  readonly reasonCodes: readonly TradeabilityReasonCode[];
+  readonly rationale: readonly string[];
+  readonly blocked: boolean;
+}
+
 export interface Recommendation {
   readonly pair: string;
   readonly analysisInterval?: string;
@@ -95,6 +113,8 @@ export interface Recommendation {
   readonly action: TradeAction;
   readonly regime: "TRADEABLE" | "CHOPPY";
   readonly marketRegime: MarketRegime;
+  readonly marketTradeability?: TradeabilityStatus;
+  readonly marketTradeabilityReasons?: readonly TradeabilityReasonCode[];
   readonly entry: number;
   readonly expectedLow?: number;
   readonly expectedHigh?: number;

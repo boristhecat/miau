@@ -4,17 +4,16 @@ import type {
   IndicatorSnapshot,
   MarketRegime,
   PerpMarketSnapshot,
-  Signal,
-  TradingSession
+  Signal
 } from "./types.js";
 import { resolveIndicatorWeightProfile, type WeightChannel } from "./indicator-weight-policy.js";
 import { parseIntervalToMinutes as parseInterval } from "./interval-utils.js";
-
-interface RegimeContext {
-  marketRegime: MarketRegime;
-  regime: "TRADEABLE" | "CHOPPY";
-  rationale: string[];
-}
+import {
+  assessVwapChop,
+  classifyMarketRegime,
+  computeAtrPct as computeIndicatorAtrPct,
+  detectTradingSession
+} from "./recommendation-market-context.js";
 
 export interface SignalEvaluationResult {
   signal: Exclude<Signal, "NO_TRADE">;
@@ -50,14 +49,6 @@ export function inferBiasTrend(biasIndicators: IndicatorSnapshot): "LONG" | "SHO
   return biasIndicators.ema20 >= biasIndicators.ema50 ? "LONG" : "SHORT";
 }
 
-function detectTradingSession(): TradingSession {
-  const utcHour = new Date().getUTCHours();
-  if (utcHour >= 0 && utcHour < 8) return "ASIA";
-  if (utcHour >= 8 && utcHour < 13) return "LONDON";
-  if (utcHour >= 13 && utcHour < 21) return "US";
-  return "DEAD";
-}
-
 export class RecommendationSignalEvaluator {
   evaluate(
     indicators: IndicatorSnapshot,
@@ -73,9 +64,9 @@ export class RecommendationSignalEvaluator {
     const rationale: string[] = [];
     const intervalMinutes = this.parseIntervalToMinutes(baseInterval);
     const shortHorizon = intervalMinutes <= 15;
-    const regimeContext = this.classifyRegime(indicators, lastPrice);
+    const regimeContext = classifyMarketRegime(indicators, lastPrice);
     rationale.push(...regimeContext.rationale);
-    let regime = regimeContext.regime;
+    let regime: "TRADEABLE" | "CHOPPY" = regimeContext.marketRegime === "LOW_LIQ_CHOP" ? "CHOPPY" : "TRADEABLE";
     const marketRegime = regimeContext.marketRegime;
     const weightProfile = resolveIndicatorWeightProfile({
       intervalMinutes,
@@ -290,9 +281,8 @@ export class RecommendationSignalEvaluator {
       }
     }
 
-    const atrPct = (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
+    const atrPct = computeIndicatorAtrPct(indicators);
     const impulseMomentumThreshold = this.clamp(0.2 + atrPct * 0.14, 0.22, 0.45);
-    const vwapDistanceThresholdPct = this.clamp(0.02 + atrPct * 0.01, 0.02, 0.06);
     const recent = indicators.recentCandleContext;
     if (recent) {
       const upImpulse =
@@ -544,7 +534,7 @@ export class RecommendationSignalEvaluator {
       }
     }
 
-    const prevRegimeContext = this.classifyRegime(indicators, lastPrice, true);
+    const prevRegimeContext = classifyMarketRegime(indicators, lastPrice, true);
     const prevMarketRegime = prevRegimeContext.marketRegime;
     if (prevMarketRegime !== marketRegime) {
       if (prevMarketRegime === "RANGE" && marketRegime === "TREND") {
@@ -647,11 +637,11 @@ export class RecommendationSignalEvaluator {
       rationale.push("Regime filter reduced confidence due to intraday chop risk.");
     }
 
-    const vwapDistancePct = (Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1)) * 100;
-    if (vwapDistancePct < vwapDistanceThresholdPct) {
+    const vwapChop = assessVwapChop(indicators, lastPrice);
+    if (vwapChop.nearVwapChop) {
       regime = "CHOPPY";
       confidence = Math.max(25, confidence - 12);
-      rationale.push("VWAP filter: price is too close to VWAP; intraday direction is not clean.");
+      rationale.push(vwapChop.rationale ?? "VWAP filter: price is too close to VWAP; intraday direction is not clean.");
     }
 
     if (marketRegime === "TREND") {
@@ -692,48 +682,7 @@ export class RecommendationSignalEvaluator {
   }
 
   computeAtrPct(indicators: IndicatorSnapshot): number {
-    return (indicators.atr14 / Math.max(indicators.ema20, 1)) * 100;
-  }
-
-  private classifyRegime(indicators: IndicatorSnapshot, lastPrice: number, longerLookback = false): RegimeContext {
-    const atrPct = this.computeAtrPct(indicators);
-    const spread = indicators.ema20 - indicators.ema50;
-    const spreadPct = (Math.abs(spread) / Math.max(lastPrice, 1)) * 100;
-    const bandWidthPct = (Math.abs(indicators.bbUpper - indicators.bbLower) / Math.max(lastPrice, 1)) * 100;
-    const nearVwapThreshold = this.clamp(0.02 + atrPct * 0.01, 0.02, 0.06);
-    const nearVwap =
-      (Math.abs(lastPrice - indicators.vwap) / Math.max(indicators.vwap, 1)) * 100 < nearVwapThreshold;
-    const spikeAtrThreshold = longerLookback ? 2 : 1.2;
-    const spikeBandThreshold = longerLookback ? 3.5 : 2.2;
-    const trendAdxThreshold = longerLookback ? 18 : 22;
-    const trendSpreadThreshold = longerLookback ? 0.08 : 0.12;
-
-    if (atrPct < 0.12 && bandWidthPct < 0.35) {
-      return {
-        marketRegime: "LOW_LIQ_CHOP",
-        regime: "CHOPPY",
-        rationale: ["Regime classifier: low-liquidity chop (compressed range + very low ATR)."]
-      };
-    }
-    if (atrPct > spikeAtrThreshold || bandWidthPct > spikeBandThreshold) {
-      return {
-        marketRegime: "VOLATILE_SPIKE",
-        regime: "TRADEABLE",
-        rationale: ["Regime classifier: volatility spike (expanded range and elevated ATR)."]
-      };
-    }
-    if (indicators.adx14 >= trendAdxThreshold && spreadPct >= trendSpreadThreshold && !nearVwap) {
-      return {
-        marketRegime: "TREND",
-        regime: "TRADEABLE",
-        rationale: ["Regime classifier: trend (ADX + EMA spread + price displacement)."]
-      };
-    }
-    return {
-      marketRegime: "RANGE",
-      regime: "TRADEABLE",
-      rationale: ["Regime classifier: range (no persistent trend edge detected)."]
-    };
+    return computeIndicatorAtrPct(indicators);
   }
 
   private computeConfidenceBreakdown(input: {

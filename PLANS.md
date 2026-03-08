@@ -1,5 +1,18 @@
 # Project Plan
 
+## Task: Implement Phase 1a tradeability separation (2026-03-06)
+- [x] Extract shared market-context helpers for session and market-regime classification
+- [x] Add additive tradeability types and a dedicated tradeability evaluator
+- [x] Wire tradeability into the recommendation engine while preserving legacy compatibility fields and rationale prefixes
+- [x] Add regression coverage for `CAUTION`, compatibility behavior, and existing guard logic
+- [x] Run focused tests, full `npm test`, and `npm run build`
+
+## Task: Phase 1a implementation planning (2026-03-06)
+- [x] Re-read `PLANS.md`, `docs/CURRENT_STATE.md`, and `docs/DOMAIN_REDESIGN_PROPOSAL_V2.md`
+- [x] Map the concrete files and interfaces Phase 1a will touch
+- [x] Write a Phase 1a implementation plan covering scope, sequence, tests, risks, and acceptance criteria
+- [x] Review the Phase 1a plan before starting code changes
+
 ## Task: Commit current guard/evaluator baseline hardening (2026-03-06)
 - [x] Confirm the remaining uncommitted guard/evaluator/test changes form a coherent baseline-hardening patch
 - [x] Run focused guard tests, then broader verification if green

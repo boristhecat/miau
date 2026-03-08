@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecommendationEngine } from "../src/domain/recommendation-engine.js";
 import type { IndicatorSnapshot, PerpMarketSnapshot } from "../src/domain/types.js";
 
@@ -13,6 +13,10 @@ const basePerp: PerpMarketSnapshot = {
 };
 
 describe("RecommendationEngine", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("applies percent SL/TP overrides", () => {
     const indicators: IndicatorSnapshot = {
       rsi14: 58,
@@ -316,7 +320,94 @@ describe("RecommendationEngine", () => {
     });
 
     expect(rec.signal).toBe("NO_TRADE");
+    expect(rec.marketTradeability).toBe("DO_NOT_TRADE");
+    expect(rec.marketTradeabilityReasons).toContain("VWAP_CHOP");
     expect(rec.rationale.some((line) => line.includes("VWAP filter"))).toBe(true);
+    expect(rec.rationale.some((line) => line.startsWith("No-trade guard:"))).toBe(true);
+  });
+
+  it("keeps CAUTION tradeability informational-only in the dead session", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-05T22:00:00.000Z"));
+
+    const indicators: IndicatorSnapshot = {
+      rsi14: 61,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 14,
+      macdSignal: 9,
+      macdHistogram: 4,
+      atr14: 130,
+      adx14: 32,
+      bbUpper: 51050,
+      bbMiddle: 50000,
+      bbLower: 48950,
+      stochRsiK: 62,
+      stochRsiD: 54,
+      vwap: 50150,
+      obvSlope5: 0.03,
+      mfi14: 64,
+      cmf20: 0.12,
+      volumeZScore20: 1.4,
+      cvdDeltaPct5: 22,
+      recentCandleContext: {
+        momentumPct3: 0.42,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.35,
+        breakoutDirection: "UP"
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50620,
+      indicators,
+      perp: {
+        ...basePerp,
+        openInterestDeltaPct: 0.5,
+        orderBookImbalance: 0.1,
+        microPricePremiumPct: 0.02
+      },
+      baseInterval: "15m"
+    });
+
+    expect(rec.marketTradeability).toBe("CAUTION");
+    expect(rec.marketTradeabilityReasons).toEqual(["SESSION_DEAD_ZONE"]);
+    expect(rec.rationale).not.toContain("No-trade guard: dead zone session; treat fresh entries cautiously.");
+  });
+
+  it("preserves forced-direction advisory behavior on market-level tradeability blocks", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 60,
+      ema20: 50500,
+      ema50: 50000,
+      macd: 10,
+      macdSignal: 7,
+      macdHistogram: 3,
+      atr14: 140,
+      adx14: 28,
+      bbUpper: 51000,
+      bbMiddle: 50000,
+      bbLower: 49000,
+      stochRsiK: 58,
+      stochRsiD: 50,
+      vwap: 50200
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50600,
+      indicators,
+      perp: { ...basePerp, bidAskSpreadPct: 0.2 },
+      forcedDirection: "LONG"
+    });
+
+    expect(rec.signal).toBe("LONG");
+    expect(rec.marketTradeability).toBe("DO_NOT_TRADE");
+    expect(rec.marketTradeabilityReasons).toContain("WIDE_SPREAD");
+    expect(rec.qualityVerdict).toBe("WEAK");
+    expect(rec.rationale).toContain("Guard advisory: orderbook spread is too wide for clean execution.");
   });
 
   it("adapts TP/SL width by ATR regime", () => {

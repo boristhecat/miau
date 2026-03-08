@@ -76,4 +76,16 @@ describe("applyTradeGuards", () => {
     expect(result.signal).toBe("NO_TRADE");
     expect(result.rationale.some((line) => line.includes("requires risk/reward >= 1.6"))).toBe(true);
   });
+
+  it("can skip legacy market-level checks when tradeability was handled earlier", () => {
+    const result = applyTradeGuards({
+      ...baseInput,
+      marketRegime: "LOW_LIQ_CHOP",
+      regime: "CHOPPY",
+      bidAskSpreadPct: 0.2,
+      skipLegacyTradeabilityChecks: true
+    });
+    expect(result.signal).toBe("LONG");
+    expect(result.rationale.some((line) => line.startsWith("No-trade guard:"))).toBe(false);
+  });
 });

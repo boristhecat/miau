@@ -1,13 +1,6 @@
 import type { MarketRegime, SetupGrade, Signal, TradingSession } from "./types.js";
 import { parseIntervalToMinutes } from "./interval-utils.js";
-
-function detectTradingSession(): TradingSession {
-  const utcHour = new Date().getUTCHours();
-  if (utcHour >= 0 && utcHour < 8) return "ASIA";
-  if (utcHour >= 8 && utcHour < 13) return "LONDON";
-  if (utcHour >= 13 && utcHour < 21) return "US";
-  return "DEAD";
-}
+import { detectTradingSession } from "./recommendation-market-context.js";
 
 export function applyTradeGuards(input: {
   signal: Exclude<Signal, "NO_TRADE">;
@@ -28,6 +21,7 @@ export function applyTradeGuards(input: {
   confidence: number;
   riskRewardRatio: number;
   bidAskSpreadPct?: number;
+  skipLegacyTradeabilityChecks?: boolean;
   rationale: readonly string[];
 }): { signal: Signal; blocked: boolean; rationale: readonly string[] } {
   const intervalMinutes = parseIntervalToMinutes(input.interval);
@@ -64,7 +58,7 @@ export function applyTradeGuards(input: {
     }
     accumulated.push("Guard advisory: breakout follow-through warning detected, but directional edge still dominates.");
   }
-  if (input.marketRegime === "LOW_LIQ_CHOP") {
+  if (!input.skipLegacyTradeabilityChecks && input.marketRegime === "LOW_LIQ_CHOP") {
     return block("low-liquidity chop regime.");
   }
   if (input.winnerRatioInsufficient) {
@@ -81,10 +75,10 @@ export function applyTradeGuards(input: {
       `Guard: trend-follow signal in ${input.marketRegime} regime requires higher R/R (1.6) and confidence (55).`
     );
   }
-  if (input.bidAskSpreadPct !== undefined && input.bidAskSpreadPct > 0.12) {
+  if (!input.skipLegacyTradeabilityChecks && input.bidAskSpreadPct !== undefined && input.bidAskSpreadPct > 0.12) {
     return block("orderbook spread is too wide for clean execution.");
   }
-  if (input.regime === "CHOPPY") {
+  if (!input.skipLegacyTradeabilityChecks && input.regime === "CHOPPY") {
     return block("choppy regime.");
   }
   if (input.regimeSignalMismatch && input.riskRewardRatio < 1.6) {
