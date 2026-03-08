@@ -200,4 +200,29 @@ describe("BackpackMarketDataClient", () => {
       { symbol: "ETH", quoteVolume24h: 7000000, openInterest: 800 }
     ]);
   });
+
+  it("keeps rec universe loading alive when one open interest request returns 400", async () => {
+    nock(baseUrl).get("/api/v1/markets").reply(200, [
+      { symbol: "BTC_USDC_PERP", baseSymbol: "BTC", quoteSymbol: "USDC", marketType: "PERP" },
+      { symbol: "ETH_USDC_PERP", baseSymbol: "ETH", quoteSymbol: "USDC", marketType: "PERP" }
+    ]);
+    nock(baseUrl).get("/api/v1/tickers").reply(200, [
+      { symbol: "ETH_USDC_PERP", quoteVolume24h: "7000000" },
+      { symbol: "BTC_USDC_PERP", quoteVolume24h: "9000000" }
+    ]);
+    nock(baseUrl).get("/api/v1/openInterest").query({ symbol: "BTC_USDC_PERP" }).reply(400, {
+      message: "bad request"
+    });
+    nock(baseUrl).get("/api/v1/openInterest").query({ symbol: "ETH_USDC_PERP" }).reply(200, [
+      { openInterest: "800", symbol: "ETH_USDC_PERP" }
+    ]);
+
+    const client = new BackpackMarketDataClient(new AxiosHttpClient(baseUrl));
+    const rows = await client.getTopPerpSymbolsByVolumeWithOpenInterest(2);
+
+    expect(rows).toEqual([
+      { symbol: "BTC", quoteVolume24h: 9000000, openInterest: 0 },
+      { symbol: "ETH", quoteVolume24h: 7000000, openInterest: 800 }
+    ]);
+  });
 });

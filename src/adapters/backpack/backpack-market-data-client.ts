@@ -181,7 +181,7 @@ export class BackpackMarketDataClient implements MarketDataPort {
   > {
     const ranked = await this.getTopPerpVolumeRows(limit);
     const withOi = await mapWithConcurrency(ranked, 4, async (row) => {
-      const openInterest = await this.getOpenInterest(row.symbol);
+      const openInterest = await this.getOpenInterestSafe(row.symbol);
       return {
         symbol: row.base,
         quoteVolume24h: this.round(row.quoteVolume24h),
@@ -190,6 +190,14 @@ export class BackpackMarketDataClient implements MarketDataPort {
     });
 
     return withOi;
+  }
+
+  private async getOpenInterestSafe(symbol: string): Promise<number> {
+    try {
+      return await this.getOpenInterest(symbol);
+    } catch {
+      return 0;
+    }
   }
 
   private async getOpenInterest(symbol: string): Promise<number> {

@@ -1,5 +1,11 @@
 # Project Plan
 
+## Task: Fix `rec` mode 400 failure (2026-03-08)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace the `rec`-specific request path
+- [x] Harden the `rec` universe prefetch so one Open Interest 400 does not abort the whole mode
+- [x] Add regression coverage for partial Open Interest fetch failures in `rec`
+- [x] Run focused tests plus build verification
+
 ## Task: Implement Phase 1a tradeability separation (2026-03-06)
 - [x] Extract shared market-context helpers for session and market-regime classification
 - [x] Add additive tradeability types and a dedicated tradeability evaluator
