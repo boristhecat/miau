@@ -1,3 +1,4 @@
+import { RecommendationTradeCalculator } from "../domain/recommendation-trade-calculator.js";
 import { TradeHealthEvaluator } from "../domain/trade-health-evaluator.js";
 import { TradeManagementEvaluator } from "../domain/trade-management-evaluator.js";
 import { TradeMonitorMetricsEvaluator } from "../domain/trade-monitor-metrics.js";
@@ -7,7 +8,7 @@ import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { IEvaluateOpenTradeUseCase, IGenerateRecommendationUseCase } from "./use-case-interfaces.js";
 
 export class EvaluateOpenTradeUseCase implements IEvaluateOpenTradeUseCase {
-  private readonly metricsEvaluator = new TradeMonitorMetricsEvaluator();
+  private readonly metricsEvaluator = new TradeMonitorMetricsEvaluator(new RecommendationTradeCalculator());
   private readonly healthEvaluator = new TradeHealthEvaluator();
   private readonly managementEvaluator = new TradeManagementEvaluator();
 
@@ -51,11 +52,15 @@ export class EvaluateOpenTradeUseCase implements IEvaluateOpenTradeUseCase {
       analysisRecommendation,
       metrics
     });
+    const previousDegradingTicks = input.previousSnapshot?.consecutiveDegradingTicks ?? 0;
+    const consecutiveDegradingTicks =
+      health.status === "DEGRADING" ? previousDegradingTicks + 1 : 0;
     const management = this.managementEvaluator.evaluate({
       baseline: input.baseline,
       analysisRecommendation,
       metrics,
-      health
+      health,
+      consecutiveDegradingTicks
     });
 
     return {
@@ -79,7 +84,8 @@ export class EvaluateOpenTradeUseCase implements IEvaluateOpenTradeUseCase {
         managementAction: management.action,
         healthReasons: health.rationale,
         managementReasons: management.rationale,
-        analysisUpdatedAtMs
+        analysisUpdatedAtMs,
+        consecutiveDegradingTicks
       }
     };
   }

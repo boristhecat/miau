@@ -40,9 +40,80 @@ describe("TradeHealthEvaluator", () => {
     expect(result.status).toBe("DEGRADING");
     expect(result.rationale.length).toBeGreaterThan(0);
   });
+
+  it("stays INTACT during grace period when only low-severity signals degrade", () => {
+    // Within first 20% of 60-min holding period = 12 min = 720s
+    const result = evaluator.evaluate({
+      baseline: makeBaseline({ baselineHoldingPeriodMinutes: 60, baselineSequenceStatus: "CONFIRMED" }),
+      analysisRecommendation: makeRecommendation({
+        sequenceStatus: "FORMING",
+        sequenceReasons: ["Continuation sequence is improving but not confirmed."],
+        levelInteractionStatus: "TESTING",
+        levelInteractionReasons: ["Price is testing nearest support."]
+      }),
+      metrics: {
+        ...makeMetrics(),
+        timeInTradeSeconds: 60, // 1 min — well within grace period
+        currentR: 0.1
+      }
+    });
+
+    expect(result.status).toBe("INTACT");
+  });
+
+  it("flags DEGRADING after grace period when confirmed sequence regresses and trade is underwater", () => {
+    const result = evaluator.evaluate({
+      baseline: makeBaseline({ baselineHoldingPeriodMinutes: 60, baselineSequenceStatus: "CONFIRMED" }),
+      analysisRecommendation: makeRecommendation({
+        sequenceStatus: "FORMING",
+        sequenceReasons: ["The trigger sequence is no longer firmly confirmed."],
+        levelInteractionStatus: "TESTING",
+        levelInteractionReasons: ["Price is testing nearest support."]
+      }),
+      metrics: {
+        ...makeMetrics(),
+        timeInTradeSeconds: 900, // 15 min — past 20% grace period
+        currentR: -0.3 // underwater adds severity-2 reason
+      }
+    });
+
+    expect(result.status).toBe("DEGRADING");
+  });
+
+  it("still flags DEGRADING during grace period for high-severity reasons", () => {
+    const result = evaluator.evaluate({
+      baseline: makeBaseline({ baselineHoldingPeriodMinutes: 60 }),
+      analysisRecommendation: makeRecommendation({
+        signal: "NO_TRADE"
+      }),
+      metrics: {
+        ...makeMetrics(),
+        timeInTradeSeconds: 30, // within grace period
+        currentR: -0.5
+      }
+    });
+
+    expect(result.status).toBe("DEGRADING");
+  });
+
+  it("marks BROKEN at 120% holding window with no positive progress", () => {
+    const result = evaluator.evaluate({
+      baseline: makeBaseline({ baselineHoldingPeriodMinutes: 10 }),
+      analysisRecommendation: makeRecommendation(),
+      metrics: {
+        ...makeMetrics(),
+        holdingProgressPct: 125,
+        grossUnrealizedPnlPct: -0.5,
+        currentR: -0.3
+      }
+    });
+
+    expect(result.status).toBe("BROKEN");
+    expect(result.rationale.join(" ")).toContain("holding window");
+  });
 });
 
-function makeBaseline(): TradeMonitorBaseline {
+function makeBaseline(overrides?: Partial<TradeMonitorBaseline>): TradeMonitorBaseline {
   return {
     trade: {
       pair: "BTC-USD",
@@ -59,7 +130,8 @@ function makeBaseline(): TradeMonitorBaseline {
     baselineAtr: 2,
     baselinePlaybook: "TREND_PULLBACK_CONTINUATION",
     baselineMarketRegime: "TREND",
-    baselineBuiltAtMs: Date.now() - 60_000
+    baselineBuiltAtMs: Date.now() - 60_000,
+    ...overrides
   };
 }
 

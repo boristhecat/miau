@@ -1,4 +1,5 @@
 import type { IndicatorSnapshot, MarketRegime, PerpMarketSnapshot, SetupGrade, Signal } from "./types.js";
+import { clamp } from "./interval-utils.js";
 
 export interface SetupAssessment {
   setupQuality: number;
@@ -40,9 +41,9 @@ export class RecommendationSetupAssessor {
           Math.abs(input.entry - input.indicators.bbLower),
           Math.abs(input.indicators.bbUpper - input.entry)
         );
-        baseLocation = this.clamp(100 - (nearestBandDistance / (atr * 1.6)) * 100, 0, 100);
+        baseLocation = clamp(100 - (nearestBandDistance / (atr * 1.6)) * 100, 0, 100);
       } else {
-        baseLocation = this.clamp(100 - extensionAtr * 55, 0, 100);
+        baseLocation = clamp(100 - extensionAtr * 55, 0, 100);
       }
       const vp = input.indicators.volumeProfile;
       if (vp) {
@@ -85,7 +86,7 @@ export class RecommendationSetupAssessor {
         if (recent.breakoutDirection === "DOWN") {
           return 24;
         }
-        return this.clamp(50 + recent.momentumPct3 * 90 + (recent.bullishCloseRatio5 - 0.5) * 35, 0, 100);
+        return clamp(50 + recent.momentumPct3 * 90 + (recent.bullishCloseRatio5 - 0.5) * 35, 0, 100);
       }
       if (recent.breakoutDirection === "DOWN" && recent.momentumPct3 < 0 && recent.bearishCloseRatio5 >= 0.6) {
         return 84;
@@ -93,7 +94,7 @@ export class RecommendationSetupAssessor {
       if (recent.breakoutDirection === "UP") {
         return 24;
       }
-      return this.clamp(50 - recent.momentumPct3 * 90 + (recent.bearishCloseRatio5 - 0.5) * 35, 0, 100);
+      return clamp(50 - recent.momentumPct3 * 90 + (recent.bearishCloseRatio5 - 0.5) * 35, 0, 100);
     })();
 
     const microstructure = (() => {
@@ -120,7 +121,7 @@ export class RecommendationSetupAssessor {
       if ((input.perp.bidAskSpreadPct ?? 0) > 0.08) score -= 12;
       if ((input.perp.openInterestDeltaPct ?? 0) > 0.35) score += 4;
       if ((input.perp.openInterestDeltaPct ?? 0) < -0.35) score -= 6;
-      return this.clamp(score, 0, 100);
+      return clamp(score, 0, 100);
     })();
 
     const regime = (() => {
@@ -136,7 +137,7 @@ export class RecommendationSetupAssessor {
     const riskEfficiency = (() => {
       const slAtr = Math.abs(input.entry - input.stopLoss) / atr;
       const tpAtr = Math.abs(input.takeProfit - input.entry) / atr;
-      return this.clamp(
+      return clamp(
         45 +
           (input.riskRewardRatio - 1) * 25 -
           Math.max(0, slAtr - 1.4) * 20 -
@@ -160,12 +161,12 @@ export class RecommendationSetupAssessor {
       if (gross <= 1e-8) {
         return 20;
       }
-      const burden = this.clamp(costs / gross, 0, 2);
-      return this.clamp(100 - burden * 120, 5, 100);
+      const burden = clamp(costs / gross, 0, 2);
+      return clamp(100 - burden * 120, 5, 100);
     })();
 
     const setupQuality = this.round(
-      this.clamp(
+      clamp(
         input.baseSetupQuality * 0.25 +
           location * 0.20 +
           trigger * 0.20 +
@@ -203,7 +204,4 @@ export class RecommendationSetupAssessor {
     return Number(value.toFixed(4));
   }
 
-  private clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-  }
 }

@@ -3,7 +3,7 @@ import type { PerpMarketSnapshot } from "./types.js";
 import type { TradeMonitorBaseline, TradeMonitorMetrics, TradeMonitorSnapshot } from "./trade-monitor-types.js";
 
 export class TradeMonitorMetricsEvaluator {
-  private readonly tradeCalculator = new RecommendationTradeCalculator();
+  constructor(private readonly tradeCalculator: RecommendationTradeCalculator) {}
 
   evaluate(input: {
     baseline: TradeMonitorBaseline;

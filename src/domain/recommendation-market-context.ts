@@ -1,4 +1,5 @@
 import type { IndicatorSnapshot, MarketRegime, TradingSession } from "./types.js";
+import { clamp } from "./interval-utils.js";
 
 export interface MarketRegimeAssessment {
   readonly marketRegime: MarketRegime;
@@ -95,6 +96,3 @@ export function isSessionTransition(now: Date = new Date()): boolean {
   return false;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}

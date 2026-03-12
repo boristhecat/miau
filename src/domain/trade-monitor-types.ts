@@ -108,4 +108,6 @@ export interface TradeMonitorSnapshot {
   readonly healthReasons: readonly string[];
   readonly managementReasons: readonly string[];
   readonly analysisUpdatedAtMs: number;
+  /** Number of consecutive ticks where health was DEGRADING. */
+  readonly consecutiveDegradingTicks: number;
 }

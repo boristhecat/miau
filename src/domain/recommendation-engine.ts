@@ -1,6 +1,15 @@
-import type { BiasContext, MarketRegime, Recommendation, Signal } from "./types.js";
+import type {
+  BiasContext,
+  EntryReadinessAssessment,
+  LevelInteractionAssessment,
+  MarketRegime,
+  Recommendation,
+  SequenceAssessment,
+  Signal,
+  TradeabilityAssessment
+} from "./types.js";
 import { applyObjectiveTargeting } from "./targeting-policy.js";
-import { parseIntervalToMinutes } from "./interval-utils.js";
+import { clamp, parseIntervalToMinutes } from "./interval-utils.js";
 import { applyTradeGuards } from "./recommendation-guards.js";
 import { RecommendationSignalEvaluator } from "./recommendation-signal-evaluator.js";
 import { RecommendationSetupAssessor } from "./recommendation-setup-assessor.js";
@@ -123,13 +132,13 @@ export class RecommendationEngine {
     const playbookPolicy = resolvePlaybookPolicy(setupResult.playbook);
     const playbookRegimeAligned = isPlaybookRegimeAligned(setupResult.playbook, marketRegime);
     rationale.push(playbookPolicy.rationale);
-    const tradeabilityAssessment = this.tradeabilityEvaluator.evaluate({
+    const tradeabilityAssessment = this.safeEvaluateTradeability({
       indicators,
       perp,
       lastPrice,
       spreadBlockThreshold: assetProfile.spreadBlockThreshold,
       trendOnlyMode: false
-    });
+    }, rationale);
     const atrProfile = this.tradeCalculator.getAtrProfile(
       atrPct,
       marketRegime as MarketRegime,
@@ -294,25 +303,19 @@ export class RecommendationEngine {
       });
     }
 
-    const sequenceAssessment = this.sequenceEvaluator.evaluate({
+    const sequenceAssessment = this.safeEvaluateSequence({
       signal: tradeSignal,
       indicators,
       setupPlaybook: setupResult.playbook
-    });
-    rationale.push(`Intraday sequence ${sequenceAssessment.status} (${sequenceAssessment.pattern}): ${sequenceAssessment.rationale.join(" ")}`);
-    const levelInteraction = this.levelInteractionEvaluator.evaluate({
+    }, rationale);
+    const levelInteraction = this.safeEvaluateLevelInteraction({
       signal: tradeSignal,
       lastPrice,
       indicators,
       setupPlaybook: setupResult.playbook
-    });
-    if (levelInteraction.status !== "NONE") {
-      rationale.push(
-        `Key level ${levelInteraction.status} (${levelInteraction.reference}): ${levelInteraction.rationale.join(" ")}`
-      );
-    }
+    }, rationale);
 
-    const entryReadiness = this.entryReadinessEvaluator.evaluate({
+    const entryReadiness = this.safeEvaluateEntryReadiness({
       signal: tradeSignal,
       lastPrice,
       indicators,
@@ -321,8 +324,7 @@ export class RecommendationEngine {
       pullbackEntryPrice: pullbackResult.pullbackEntry ? pullbackResult.entry : undefined,
       sequenceAssessment,
       levelInteraction
-    });
-    rationale.push(`Entry readiness ${entryReadiness.status}: ${entryReadiness.rationale.join(" ")}`);
+    }, rationale);
     if (entryReadiness.preferredEntryPrice !== undefined && entryReadiness.status !== "READY_NOW" && entryValidityWindow === undefined) {
       entryValidityWindow = `Preferred entry ${entryReadiness.preferredEntryPrice.toFixed(4)} while setup is ${entryReadiness.status.toLowerCase()}.`;
     }
@@ -530,6 +532,68 @@ export class RecommendationEngine {
       paperTradingConfidence
     };
   }
+
+  private safeEvaluateTradeability(
+    input: Parameters<RecommendationTradeabilityEvaluator["evaluate"]>[0],
+    rationale: string[]
+  ): TradeabilityAssessment {
+    try {
+      return this.tradeabilityEvaluator.evaluate(input);
+    } catch (err) {
+      rationale.push(`Tradeability check failed (${errorMessage(err)}); defaulting to TRADEABLE.`);
+      return { status: "TRADEABLE", session: "US", marketRegime: "TREND", reasonCodes: [], rationale: [], blocked: false };
+    }
+  }
+
+  private safeEvaluateSequence(
+    input: Parameters<RecommendationSequenceEvaluator["evaluate"]>[0],
+    rationale: string[]
+  ): SequenceAssessment {
+    try {
+      const result = this.sequenceEvaluator.evaluate(input);
+      rationale.push(`Intraday sequence ${result.status} (${result.pattern}): ${result.rationale.join(" ")}`);
+      return result;
+    } catch (err) {
+      rationale.push(`Sequence evaluation failed (${errorMessage(err)}); defaulting to NONE.`);
+      return { status: "NONE", pattern: "NONE", rationale: [] };
+    }
+  }
+
+  private safeEvaluateLevelInteraction(
+    input: Parameters<RecommendationLevelInteractionEvaluator["evaluate"]>[0],
+    rationale: string[]
+  ): LevelInteractionAssessment {
+    try {
+      const result = this.levelInteractionEvaluator.evaluate(input);
+      if (result.status !== "NONE") {
+        rationale.push(
+          `Key level ${result.status} (${result.reference}): ${result.rationale.join(" ")}`
+        );
+      }
+      return result;
+    } catch (err) {
+      rationale.push(`Level interaction evaluation failed (${errorMessage(err)}); defaulting to NONE.`);
+      return { status: "NONE", reference: "NONE", rationale: [] };
+    }
+  }
+
+  private safeEvaluateEntryReadiness(
+    input: Parameters<RecommendationEntryReadinessEvaluator["evaluate"]>[0],
+    rationale: string[]
+  ): EntryReadinessAssessment {
+    try {
+      const result = this.entryReadinessEvaluator.evaluate(input);
+      rationale.push(`Entry readiness ${result.status}: ${result.rationale.join(" ")}`);
+      return result;
+    } catch (err) {
+      rationale.push(`Entry readiness evaluation failed (${errorMessage(err)}); defaulting to READY_NOW.`);
+      return { status: "READY_NOW", rationale: [] };
+    }
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function appendTradeabilityRationale(
@@ -560,6 +624,3 @@ function round(value: number): number {
   return Number(value.toFixed(4));
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}

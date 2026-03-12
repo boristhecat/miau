@@ -1,10 +1,10 @@
 import readline from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
-import type { ReadStream, WriteStream } from "node:tty";
 import type {
   IBuildOpenTradeBaselineUseCase,
   IEvaluateOpenTradeUseCase
 } from "../../application/use-case-interfaces.js";
+import { clamp, parseIntervalToMinutes } from "../../domain/interval-utils.js";
 import { renderTradeMonitor, renderTradeMonitorMessage } from "./trade-monitor-view.js";
 
 export interface StartTradeMonitorInput {
@@ -19,6 +19,8 @@ export interface StartTradeMonitorInput {
   objectiveHorizon?: string;
   intervalOverride?: string;
   openedAtMs?: number;
+  /** Override slow-lane analysis refresh interval in seconds. Derived from analysis interval if omitted. */
+  slowRefreshSeconds?: number;
 }
 
 export class TradeMonitorController {
@@ -54,10 +56,14 @@ export class TradeMonitorController {
     });
 
     const refreshIntervalMs = Math.max(500, Math.round(input.refreshSeconds * 1000));
-    const slowRefreshIntervalMs = 5_000;
+    const slowRefreshIntervalMs = this.deriveSlowRefreshMs(
+      input.slowRefreshSeconds,
+      baseline.trade.analysisInterval
+    );
     let currentAnalysisRecommendation = baseline.baselineRecommendation;
     let previousSnapshot: import("../../domain/trade-monitor-types.js").TradeMonitorSnapshot | undefined;
     let stopRequested = false;
+    const abortController = new AbortController();
     let resolveStop: (() => void) | undefined;
     const stopPromise = new Promise<void>((resolve) => {
       resolveStop = resolve;
@@ -67,6 +73,7 @@ export class TradeMonitorController {
         return;
       }
       stopRequested = true;
+      abortController.abort();
       resolveStop?.();
     };
 
@@ -87,20 +94,40 @@ export class TradeMonitorController {
         const refreshAnalysis =
           previousSnapshot === undefined ||
           Date.now() - previousSnapshot.analysisUpdatedAtMs >= slowRefreshIntervalMs;
-        const result = await this.deps.evaluateOpenTradeUseCase.execute({
-          baseline,
-          currentAnalysisRecommendation,
-          previousSnapshot,
-          refreshAnalysis
-        });
-        currentAnalysisRecommendation = result.analysisRecommendation;
-        previousSnapshot = result.snapshot;
-        renderTradeMonitor(result.snapshot);
-        await Promise.race([delay(refreshIntervalMs), stopPromise]);
+        try {
+          const result = await this.deps.evaluateOpenTradeUseCase.execute({
+            baseline,
+            currentAnalysisRecommendation,
+            previousSnapshot,
+            refreshAnalysis
+          });
+          currentAnalysisRecommendation = result.analysisRecommendation;
+          previousSnapshot = result.snapshot;
+          renderTradeMonitor(result.snapshot);
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name === "AbortError") break;
+          throw err;
+        }
+        try {
+          await Promise.race([delay(refreshIntervalMs, undefined, { signal: abortController.signal }), stopPromise]);
+        } catch {
+          // AbortError from delay — exit cleanly
+          break;
+        }
       }
     } finally {
       this.deps.input.off("keypress", onKeypress);
       this.deps.input.setRawMode?.(Boolean(previousRawMode));
     }
+  }
+
+  /** Derive slow-lane refresh interval: explicit override or 80% of one candle, clamped [3s, 30s]. */
+  private deriveSlowRefreshMs(explicitSeconds: number | undefined, analysisInterval: string): number {
+    if (explicitSeconds !== undefined) {
+      return Math.round(clamp(explicitSeconds, 3, 30) * 1000);
+    }
+    const candleSeconds = parseIntervalToMinutes(analysisInterval) * 60;
+    const derivedSeconds = clamp(candleSeconds * 0.8, 3, 30);
+    return Math.round(derivedSeconds * 1000);
   }
 }

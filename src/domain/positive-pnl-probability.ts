@@ -1,8 +1,5 @@
 import type { Recommendation } from "./types.js";
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
+import { clamp } from "./interval-utils.js";
 
 export function estimatePositivePnlProbability(
   rec: Recommendation,

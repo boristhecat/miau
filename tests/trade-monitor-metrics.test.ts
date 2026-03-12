@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { RecommendationTradeCalculator } from "../src/domain/recommendation-trade-calculator.js";
 import { TradeMonitorMetricsEvaluator } from "../src/domain/trade-monitor-metrics.js";
 import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../src/domain/trade-monitor-types.js";
 import type { Recommendation } from "../src/domain/types.js";
 
 describe("TradeMonitorMetricsEvaluator", () => {
-  const evaluator = new TradeMonitorMetricsEvaluator();
+  const evaluator = new TradeMonitorMetricsEvaluator(new RecommendationTradeCalculator());
 
   it("computes long-trade pnl and distance metrics", () => {
     const baseline = makeBaseline({

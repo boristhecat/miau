@@ -1,4 +1,5 @@
 import type { Signal } from "./types.js";
+import { clamp } from "./interval-utils.js";
 
 export interface ObjectiveTargetingRequest {
   signal: Exclude<Signal, "NO_TRADE">;
@@ -180,10 +181,6 @@ export function toCandleCount(horizonMinutes: number, baseIntervalMinutes: numbe
 
 function round(value: number, digits: number): number {
   return Number(value.toFixed(digits));
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function minimumStopFraction(input: { entry: number; atr: number; horizonMinutes: number }): number {
