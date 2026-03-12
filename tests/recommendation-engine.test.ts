@@ -1070,4 +1070,74 @@ describe("RecommendationEngine", () => {
     expect(pullback.setupPlaybook).toBe("TREND_PULLBACK_CONTINUATION");
     expect((breakout.timeBasedExitCandles ?? 0)).toBeLessThan(pullback.timeBasedExitCandles ?? Number.POSITIVE_INFINITY);
   });
+
+  it("surfaces key-level interaction status for accepted intraday levels", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 63,
+      ema20: 100,
+      ema50: 98,
+      macd: 12,
+      macdSignal: 8,
+      macdHistogram: 4,
+      atr14: 2,
+      adx14: 30,
+      bbUpper: 106,
+      bbMiddle: 100,
+      bbLower: 96,
+      stochRsiK: 70,
+      stochRsiD: 60,
+      vwap: 100.2,
+      sessionLevels: {
+        currentOpen: 99.8,
+        currentHigh: 101.4,
+        currentLow: 99.2,
+        priorHigh: 100.4,
+        priorLow: 98.8
+      },
+      dailyLevels: {
+        currentOpen: 99.7,
+        currentHigh: 101.5,
+        currentLow: 98.9,
+        priorHigh: 100.8,
+        priorLow: 97.9
+      },
+      nearestSupportLevel: 99.5,
+      nearestResistanceLevel: 100.7,
+      recentCandleContext: {
+        momentumPct3: 0.3,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.3,
+        breakoutDirection: "UP",
+        lastOpen: 100.0,
+        lastHigh: 101.2,
+        lastLow: 99.9,
+        lastClose: 101.0,
+        previousClose: 100.0,
+        lastClosePositionInRange: 0.85,
+        upperWickPct: 0.1,
+        lowerWickPct: 0.08,
+        sweptPrevHigh: false,
+        sweptPrevLow: false,
+        closedBackInsidePrevRange: false
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 101,
+      indicators,
+      perp: {
+        ...basePerp,
+        fundingRate: -0.0002,
+        markPrice: 101,
+        indexPrice: 101
+      },
+      baseInterval: "5m"
+    });
+
+    expect(rec.levelInteractionStatus).toBe("ACCEPTED");
+    expect(rec.levelInteractionReference).toBeDefined();
+    expect(rec.levelInteractionReference).not.toBe("NONE");
+  });
 });

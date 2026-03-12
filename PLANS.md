@@ -21,6 +21,12 @@
 - [x] Wire sequence assessment into entry readiness, recommendation output, and heuristics without touching watch mode
 - [x] Add regression coverage, run focused/full verification, and refresh `docs/CURRENT_STATE.md`
 
+## Task: Phase 1e key-level interaction logic (2026-03-12)
+- [x] Re-read the current plan/state and trace how session/day structure is used in setup and readiness
+- [x] Add a dedicated level-interaction evaluator for acceptance/rejection/testing around key session/day levels
+- [x] Wire level interaction into entry readiness, recommendation output, and expectancy heuristics
+- [x] Add regression coverage, run focused/full verification, and refresh `docs/CURRENT_STATE.md`
+
 ## Task: Fix `rec` mode 400 failure (2026-03-08)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace the `rec`-specific request path
 - [x] Harden the `rec` universe prefetch so one Open Interest 400 does not abort the whole mode

@@ -25,6 +25,19 @@ export type SequencePattern =
   | "BREAKOUT_FAILURE"
   | "SWEEP_REJECTION"
   | "NONE";
+export type LevelInteractionStatus = "ACCEPTED" | "REJECTED" | "TESTING" | "NONE";
+export type LevelInteractionReference =
+  | "CURRENT_SESSION_OPEN"
+  | "PRIOR_SESSION_HIGH"
+  | "PRIOR_SESSION_LOW"
+  | "CURRENT_DAY_OPEN"
+  | "PRIOR_DAY_HIGH"
+  | "PRIOR_DAY_LOW"
+  | "NEAREST_SUPPORT"
+  | "NEAREST_RESISTANCE"
+  | "VWAP"
+  | "EMA20"
+  | "NONE";
 export type TradeabilityReasonCode =
   | "LOW_LIQUIDITY_CHOP"
   | "WIDE_SPREAD"
@@ -167,6 +180,12 @@ export interface SequenceAssessment {
   readonly rationale: readonly string[];
 }
 
+export interface LevelInteractionAssessment {
+  readonly status: LevelInteractionStatus;
+  readonly reference: LevelInteractionReference;
+  readonly rationale: readonly string[];
+}
+
 export interface Recommendation {
   readonly pair: string;
   readonly analysisInterval?: string;
@@ -235,6 +254,9 @@ export interface Recommendation {
   readonly sequenceStatus?: SequenceStatus;
   readonly sequencePattern?: SequencePattern;
   readonly sequenceReasons?: readonly string[];
+  readonly levelInteractionStatus?: LevelInteractionStatus;
+  readonly levelInteractionReference?: LevelInteractionReference;
+  readonly levelInteractionReasons?: readonly string[];
   /** Time-based exit: close at breakeven if TP not hit within this many candles */
   readonly timeBasedExitCandles?: number;
   readonly timeBasedExitMinutes?: number;

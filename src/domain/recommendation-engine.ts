@@ -11,6 +11,7 @@ import { resolveAssetProfile } from "./asset-profile.js";
 import { RecommendationEntryReadinessEvaluator } from "./recommendation-entry-readiness-evaluator.js";
 import { isPlaybookRegimeAligned, resolvePlaybookPolicy } from "./recommendation-playbook-policy.js";
 import { RecommendationSequenceEvaluator } from "./recommendation-sequence-evaluator.js";
+import { RecommendationLevelInteractionEvaluator } from "./recommendation-level-interaction-evaluator.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -42,6 +43,7 @@ export class RecommendationEngine {
   private readonly tradeCalculator = new RecommendationTradeCalculator();
   private readonly entryReadinessEvaluator = new RecommendationEntryReadinessEvaluator();
   private readonly sequenceEvaluator = new RecommendationSequenceEvaluator();
+  private readonly levelInteractionEvaluator = new RecommendationLevelInteractionEvaluator();
 
   build(input: BuildRecommendationInput): Recommendation {
     const {
@@ -298,6 +300,17 @@ export class RecommendationEngine {
       setupPlaybook: setupResult.playbook
     });
     rationale.push(`Intraday sequence ${sequenceAssessment.status} (${sequenceAssessment.pattern}): ${sequenceAssessment.rationale.join(" ")}`);
+    const levelInteraction = this.levelInteractionEvaluator.evaluate({
+      signal: tradeSignal,
+      lastPrice,
+      indicators,
+      setupPlaybook: setupResult.playbook
+    });
+    if (levelInteraction.status !== "NONE") {
+      rationale.push(
+        `Key level ${levelInteraction.status} (${levelInteraction.reference}): ${levelInteraction.rationale.join(" ")}`
+      );
+    }
 
     const entryReadiness = this.entryReadinessEvaluator.evaluate({
       signal: tradeSignal,
@@ -306,7 +319,8 @@ export class RecommendationEngine {
       marketRegime,
       setupPlaybook: setupResult.playbook,
       pullbackEntryPrice: pullbackResult.pullbackEntry ? pullbackResult.entry : undefined,
-      sequenceAssessment
+      sequenceAssessment,
+      levelInteraction
     });
     rationale.push(`Entry readiness ${entryReadiness.status}: ${entryReadiness.rationale.join(" ")}`);
     if (entryReadiness.preferredEntryPrice !== undefined && entryReadiness.status !== "READY_NOW" && entryValidityWindow === undefined) {
@@ -506,6 +520,9 @@ export class RecommendationEngine {
       sequenceStatus: sequenceAssessment.status,
       sequencePattern: sequenceAssessment.pattern,
       sequenceReasons: sequenceAssessment.rationale,
+      levelInteractionStatus: levelInteraction.status,
+      levelInteractionReference: levelInteraction.reference,
+      levelInteractionReasons: levelInteraction.rationale.length > 0 ? levelInteraction.rationale : undefined,
       timeBasedExitCandles,
       timeBasedExitMinutes,
       independentChannelAgreement,

@@ -94,6 +94,14 @@ function computeHeuristicProbability(rec: Recommendation): number {
     }
   }
 
+  if (rec.levelInteractionStatus !== undefined) {
+    if (rec.levelInteractionStatus === "ACCEPTED" || rec.levelInteractionStatus === "REJECTED") {
+      probability += 4;
+    } else if (rec.levelInteractionStatus === "TESTING") {
+      probability -= 5;
+    }
+  }
+
   if (rec.feeBurdenPct !== undefined && rec.feeBurdenPct > 0.2) {
     probability -= 8;
   }

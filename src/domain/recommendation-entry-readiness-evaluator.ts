@@ -1,6 +1,7 @@
 import type {
   EntryReadinessAssessment,
   IndicatorSnapshot,
+  LevelInteractionAssessment,
   MarketRegime,
   SequenceAssessment,
   SetupPlaybook,
@@ -15,6 +16,7 @@ interface EvaluateEntryReadinessInput {
   setupPlaybook?: SetupPlaybook;
   pullbackEntryPrice?: number;
   sequenceAssessment?: SequenceAssessment;
+  levelInteraction?: LevelInteractionAssessment;
 }
 
 export class RecommendationEntryReadinessEvaluator {
@@ -49,6 +51,12 @@ export class RecommendationEntryReadinessEvaluator {
 
     switch (input.setupPlaybook) {
       case "BREAKOUT_CONTINUATION": {
+        if (input.levelInteraction?.status === "TESTING") {
+          return wait(
+            "WAIT_CONFIRMATION",
+            input.levelInteraction.rationale[0] ?? "Breakout is only testing a key level so far."
+          );
+        }
         if (input.sequenceAssessment?.status === "FAILED") {
           return wait("TOO_LATE", input.sequenceAssessment.rationale[0] ?? "Breakout sequence failed.");
         }
@@ -80,6 +88,13 @@ export class RecommendationEntryReadinessEvaluator {
       case "DIVERGENCE_REVERSAL":
       case "LIQUIDATION_REVERSAL":
       case "RANGE_FADE": {
+        if (input.levelInteraction?.status === "TESTING") {
+          return wait(
+            "WAIT_CONFIRMATION",
+            input.levelInteraction.rationale[0] ?? "Reversal setup is only testing support/resistance so far.",
+            reactionZone
+          );
+        }
         if (input.sequenceAssessment?.status === "FAILED") {
           return wait("WAIT_CONFIRMATION", input.sequenceAssessment.rationale[0] ?? "Reversal sequence is not confirmed.");
         }
@@ -111,6 +126,12 @@ export class RecommendationEntryReadinessEvaluator {
       }
       case "TREND_PULLBACK_CONTINUATION":
       default: {
+        if (input.levelInteraction?.status === "TESTING" && input.pullbackEntryPrice === undefined) {
+          return wait(
+            "WAIT_CONFIRMATION",
+            input.levelInteraction.rationale[0] ?? "Continuation setup is only testing the key level so far."
+          );
+        }
         if (input.sequenceAssessment?.status === "FAILED") {
           return wait("WAIT_CONFIRMATION", input.sequenceAssessment.rationale[0] ?? "Continuation reclaim failed.");
         }
