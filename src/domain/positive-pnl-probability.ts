@@ -56,6 +56,34 @@ function computeHeuristicProbability(rec: Recommendation): number {
     probability -= 4;
   }
 
+  if (rec.entryReadiness && rec.entryReadiness !== "READY_NOW") {
+    probability -= rec.entryReadiness === "TOO_LATE" ? 14 : 8;
+  }
+
+  if (rec.setupPlaybook) {
+    switch (rec.setupPlaybook) {
+      case "TREND_PULLBACK_CONTINUATION":
+        probability += rec.marketRegime === "TREND" ? 4 : -8;
+        break;
+      case "BREAKOUT_CONTINUATION":
+        probability += rec.marketRegime === "TREND" ? 2 : -10;
+        break;
+      case "RANGE_FADE":
+        probability += rec.marketRegime === "RANGE" ? 4 : -10;
+        break;
+      case "DIVERGENCE_REVERSAL":
+        probability += rec.marketRegime === "RANGE" || rec.marketRegime === "VOLATILE_SPIKE" ? 2 : -8;
+        break;
+      case "LIQUIDATION_REVERSAL":
+        probability += rec.marketRegime === "VOLATILE_SPIKE" ? 5 : -6;
+        break;
+    }
+  }
+
+  if (rec.playbookRegimeAligned === false) {
+    probability -= 12;
+  }
+
   if (rec.feeBurdenPct !== undefined && rec.feeBurdenPct > 0.2) {
     probability -= 8;
   }

@@ -77,4 +77,22 @@ describe("estimatePositivePnlProbability", () => {
 
     expect(estimatePositivePnlProbability(tradeable)).toBeGreaterThan(estimatePositivePnlProbability(blocked));
   });
+
+  it("penalizes non-ready entries and misaligned playbooks", () => {
+    const aligned = makeRecommendation({
+      setupDetected: true,
+      setupPlaybook: "TREND_PULLBACK_CONTINUATION",
+      playbookRegimeAligned: true,
+      entryReadiness: "READY_NOW"
+    });
+    const late = makeRecommendation({
+      setupDetected: true,
+      setupPlaybook: "RANGE_FADE",
+      playbookRegimeAligned: false,
+      entryReadiness: "TOO_LATE",
+      marketRegime: "TREND"
+    });
+
+    expect(estimatePositivePnlProbability(aligned)).toBeGreaterThan(estimatePositivePnlProbability(late));
+  });
 });

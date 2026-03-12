@@ -89,6 +89,29 @@ describe("applyTradeGuards", () => {
     expect(result.rationale.some((line) => line.includes("99.2500"))).toBe(true);
   });
 
+  it("blocks misaligned playbooks against the current regime", () => {
+    const result = applyTradeGuards({
+      ...baseInput,
+      marketRegime: "TREND",
+      setupPlaybook: "RANGE_FADE",
+      playbookRegimeAligned: false
+    });
+    expect(result.signal).toBe("NO_TRADE");
+    expect(result.rationale.some((line) => line.includes("RANGE_FADE"))).toBe(true);
+  });
+
+  it("enforces the playbook-specific minimum risk reward floor", () => {
+    const result = applyTradeGuards({
+      ...baseInput,
+      setupPlaybook: "BREAKOUT_CONTINUATION",
+      playbookRegimeAligned: true,
+      playbookMinRiskReward: 1.8,
+      riskRewardRatio: 1.55
+    });
+    expect(result.signal).toBe("NO_TRADE");
+    expect(result.rationale.some((line) => line.includes("BREAKOUT_CONTINUATION requires risk/reward >= 1.8"))).toBe(true);
+  });
+
   it("can skip legacy market-level checks when tradeability was handled earlier", () => {
     const result = applyTradeGuards({
       ...baseInput,

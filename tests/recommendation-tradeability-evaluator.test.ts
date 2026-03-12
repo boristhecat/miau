@@ -125,4 +125,33 @@ describe("RecommendationTradeabilityEvaluator", () => {
     expect(assessment.status).toBe("TRADEABLE");
     expect(assessment.reasonCodes).toEqual([]);
   });
+
+  it("does not hard-block range regime when trend-only mode is disabled", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-05T14:00:00.000Z"));
+
+    const assessment = evaluator.evaluate({
+      indicators: {
+        ...trendIndicators,
+        ema20: 50030,
+        ema50: 50000,
+        macd: 1,
+        macdSignal: 1,
+        macdHistogram: 0.1,
+        adx14: 17,
+        atr14: 130,
+        bbUpper: 50380,
+        bbMiddle: 50000,
+        bbLower: 49620,
+        vwap: 49850
+      },
+      perp: basePerp,
+      lastPrice: 50090,
+      trendOnlyMode: false
+    });
+
+    expect(assessment.marketRegime).toBe("RANGE");
+    expect(assessment.status).toBe("TRADEABLE");
+    expect(assessment.blocked).toBe(false);
+  });
 });

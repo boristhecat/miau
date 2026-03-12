@@ -44,19 +44,26 @@ Last updated: 2026-03-12
 - Signal scoring also accounts for richer HTF bias dimensions, funding acceleration, RSI divergence, value-area location, BTC alignment for alts, time-of-day session penalties, conflict scaling when both sides are heavily loaded, and regime-transition detection.
 - Overbought/oversold RSI handling is trend-aware (less aggressive reversal bias when structure strongly confirms continuation).
 - Structural setup detection now feeds explicit playbooks: `TREND_PULLBACK_CONTINUATION`, `BREAKOUT_CONTINUATION`, `DIVERGENCE_REVERSAL`, `LIQUIDATION_REVERSAL`, and `RANGE_FADE`.
+- The engine no longer treats `RANGE` / `VOLATILE_SPIKE` as blanket no-trade regimes. Instead, tradeability still blocks friction/chop, while playbook-policy decides whether a given setup is valid in the current regime.
 - Entry-readiness is evaluated as a separate domain step from market tradeability and directional bias. Current readiness states are `READY_NOW`, `WAIT_PULLBACK`, `WAIT_BREAKOUT_RETEST`, `WAIT_CONFIRMATION`, and `TOO_LATE`.
 - Pullback-entry planning now anchors to richer structure (nearest support/resistance, session/day levels, VWAP, value area, swings) instead of only EMA20.
+- Playbook-policy is now a distinct domain concern:
+  - each playbook has allowed regimes
+  - each playbook can enforce a higher minimum risk/reward floor
+  - ATR-based SL/TP multipliers are adjusted by playbook
+  - holding-period and time-based exit decay are adjusted by playbook
 - Guard behavior is less binary:
   - Pullback-extension blocks are stricter on short horizons and weaker setups.
   - Breakout follow-through failure blocks only when it conflicts with the trade direction; otherwise it is advisory.
 - The guard layer can now block trades that are directionally valid but not executable yet because entry readiness says to wait for pullback/retest/confirmation or the move is already too late.
+- The guard layer also blocks playbook/regime mismatches directly, for example `RANGE_FADE` in `TREND` or `BREAKOUT_CONTINUATION` without enough risk/reward.
 - Objective targeting includes a minimum stop-distance floor to avoid unrealistically tight SL placement in low-volatility conditions.
 
 ## Output / Confidence
 - Confidence is deterministic (`0..100`) and blended with setup-quality scoring.
 - Setup grade (`A/B/C/D`) is included with factor-level rationale.
 - `NO_TRADE` is produced by guard failures (regime/chop, quality, confidence, risk-reward, impulse anti-fade, entry-readiness wait states, etc.).
-- Recommendation payloads now also carry `setupType`, `setupPlaybook`, `entryReadiness`, `entryReadinessReasons`, and `preferredEntryPrice`.
+- Recommendation payloads now also carry `setupType`, `setupPlaybook`, `playbookRegimeAligned`, `playbookMinRiskReward`, `entryReadiness`, `entryReadinessReasons`, and `preferredEntryPrice`.
 
 ## Learning + Persistence
 - Local learning outcomes are stored in SQLite (`data/learning.sqlite`).

@@ -9,6 +9,7 @@ import { RecommendationTradeabilityEvaluator } from "./recommendation-tradeabili
 import { detectStructuralSetup } from "./recommendation-setup-detector.js";
 import { resolveAssetProfile } from "./asset-profile.js";
 import { RecommendationEntryReadinessEvaluator } from "./recommendation-entry-readiness-evaluator.js";
+import { isPlaybookRegimeAligned, resolvePlaybookPolicy } from "./recommendation-playbook-policy.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -65,12 +66,6 @@ export class RecommendationEngine {
     } = input;
     const resolvedBaseInterval = baseInterval ?? "1m";
     const assetProfile = resolveAssetProfile(pair);
-    const tradeabilityAssessment = this.tradeabilityEvaluator.evaluate({
-      indicators,
-      perp,
-      lastPrice,
-      spreadBlockThreshold: assetProfile.spreadBlockThreshold
-    });
 
     const {
       signal,
@@ -113,7 +108,30 @@ export class RecommendationEngine {
 
     const atr = indicators.atr14;
     const atrPct = this.signalEvaluator.computeAtrPct(indicators);
-    const atrProfile = this.tradeCalculator.getAtrProfile(atrPct, marketRegime as MarketRegime, regimeMaturity);
+    const setupResult = detectStructuralSetup({
+      signal: tradeSignal,
+      lastPrice,
+      indicators,
+      perp,
+      marketRegime
+    });
+    rationale.push(...setupResult.rationale);
+    const playbookPolicy = resolvePlaybookPolicy(setupResult.playbook);
+    const playbookRegimeAligned = isPlaybookRegimeAligned(setupResult.playbook, marketRegime);
+    rationale.push(playbookPolicy.rationale);
+    const tradeabilityAssessment = this.tradeabilityEvaluator.evaluate({
+      indicators,
+      perp,
+      lastPrice,
+      spreadBlockThreshold: assetProfile.spreadBlockThreshold,
+      trendOnlyMode: false
+    });
+    const atrProfile = this.tradeCalculator.getAtrProfile(
+      atrPct,
+      marketRegime as MarketRegime,
+      regimeMaturity,
+      playbookPolicy.atrScale
+    );
 
     // Honest market entry — use lastPrice as entry, with validity window
     const entry = lastPrice;
@@ -272,15 +290,6 @@ export class RecommendationEngine {
       });
     }
 
-    // Improvement #1: Setup detection
-    const setupResult = detectStructuralSetup({
-      signal: tradeSignal,
-      lastPrice,
-      indicators,
-      perp,
-      marketRegime
-    });
-    rationale.push(...setupResult.rationale);
     const entryReadiness = this.entryReadinessEvaluator.evaluate({
       signal: tradeSignal,
       lastPrice,
@@ -350,6 +359,9 @@ export class RecommendationEngine {
         riskRewardRatio,
         feeBurdenPct,
         setupDetected: setupResult.hasSetup,
+        setupPlaybook: setupResult.playbook,
+        playbookRegimeAligned,
+        playbookMinRiskReward: playbookPolicy.minRiskReward,
         entryReadinessStatus: entryReadiness.status,
         preferredEntryPrice: entryReadiness.preferredEntryPrice,
         entryReadinessRationale: entryReadiness.rationale,
@@ -387,12 +399,15 @@ export class RecommendationEngine {
       entry,
       takeProfit,
       atr,
-      baseInterval: resolvedBaseInterval
+      baseInterval: resolvedBaseInterval,
+      holdingMultiplier: playbookPolicy.holdingPeriodMultiplier,
+      minCandles: playbookPolicy.minHoldingCandles,
+      maxCandles: playbookPolicy.maxHoldingCandles
     });
 
     // Improvement #4: Time-based exit rule
     // If TP not hit within 60% of estimated holding period, exit at breakeven.
-    const timeBasedExitCandles = Math.max(2, Math.round(holdingPeriod.candles * 0.6));
+    const timeBasedExitCandles = Math.max(2, Math.round(holdingPeriod.candles * playbookPolicy.timeStopFraction));
     const timeBasedExitMinutes = timeBasedExitCandles * parseIntervalToMinutes(resolvedBaseInterval);
 
     // Improvement #9: Paper trading confidence — only populated when calibrated
@@ -468,6 +483,8 @@ export class RecommendationEngine {
       setupDetected: setupResult.hasSetup || undefined,
       setupType: setupResult.setupType,
       setupPlaybook: setupResult.playbook,
+      playbookRegimeAligned: setupResult.playbook ? playbookRegimeAligned : undefined,
+      playbookMinRiskReward: setupResult.playbook ? playbookPolicy.minRiskReward : undefined,
       slippageEstimatePct,
       totalExecutionCostPct,
       holdingPeriodCandles: holdingPeriod.candles,

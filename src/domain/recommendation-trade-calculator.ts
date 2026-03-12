@@ -5,60 +5,68 @@ export class RecommendationTradeCalculator {
   getAtrProfile(
     atrPct: number,
     marketRegime: MarketRegime,
-    regimeMaturity?: "FRESH" | "MATURE"
+    regimeMaturity?: "FRESH" | "MATURE",
+    scale: { sl?: number; tp?: number; tpFallback?: number } = {}
   ): {
     slAtrMultiplier: number;
     tpAtrMultiplier: number;
     tpFallbackAtrMultiplier: number;
   } {
+    let baseProfile:
+      | {
+          slAtrMultiplier: number;
+          tpAtrMultiplier: number;
+          tpFallbackAtrMultiplier: number;
+        }
+      | undefined;
     if (marketRegime === "LOW_LIQ_CHOP") {
-      return {
+      baseProfile = {
         slAtrMultiplier: 0.9,
         tpAtrMultiplier: 1.2,
         tpFallbackAtrMultiplier: 1.1
       };
-    }
-    if (marketRegime === "TREND") {
+    } else if (marketRegime === "TREND") {
       const tpScale = regimeMaturity === "MATURE" ? 0.85 : 1.0;
-      return {
+      baseProfile = {
         slAtrMultiplier: 1.1,
         tpAtrMultiplier: 2.4 * tpScale,
         tpFallbackAtrMultiplier: 2.1 * tpScale
       };
-    }
-    if (marketRegime === "RANGE") {
-      return {
+    } else if (marketRegime === "RANGE") {
+      baseProfile = {
         slAtrMultiplier: 1.0,
         tpAtrMultiplier: 1.2,
         tpFallbackAtrMultiplier: 1.1
       };
-    }
-    if (marketRegime === "VOLATILE_SPIKE") {
-      return {
+    } else if (marketRegime === "VOLATILE_SPIKE") {
+      baseProfile = {
         slAtrMultiplier: 1.6,
         tpAtrMultiplier: 2.2,
         tpFallbackAtrMultiplier: 2.0
       };
-    }
-
-    if (atrPct < 0.18) {
-      return {
+    } else if (atrPct < 0.18) {
+      baseProfile = {
         slAtrMultiplier: 1.0,
         tpAtrMultiplier: 1.5,
         tpFallbackAtrMultiplier: 1.35
       };
-    }
-    if (atrPct > 1.0) {
-      return {
+    } else if (atrPct > 1.0) {
+      baseProfile = {
         slAtrMultiplier: 1.45,
         tpAtrMultiplier: 2.4,
         tpFallbackAtrMultiplier: 2.2
       };
+    } else {
+      baseProfile = {
+        slAtrMultiplier: 1.2,
+        tpAtrMultiplier: 2.0,
+        tpFallbackAtrMultiplier: 1.8
+      };
     }
     return {
-      slAtrMultiplier: 1.2,
-      tpAtrMultiplier: 2.0,
-      tpFallbackAtrMultiplier: 1.8
+      slAtrMultiplier: this.round(baseProfile.slAtrMultiplier * (scale.sl ?? 1)),
+      tpAtrMultiplier: this.round(baseProfile.tpAtrMultiplier * (scale.tp ?? 1)),
+      tpFallbackAtrMultiplier: this.round(baseProfile.tpFallbackAtrMultiplier * (scale.tpFallback ?? 1))
     };
   }
 
@@ -501,11 +509,16 @@ export class RecommendationTradeCalculator {
     takeProfit: number;
     atr: number;
     baseInterval: string;
+    holdingMultiplier?: number;
+    minCandles?: number;
+    maxCandles?: number;
   }): { candles: number; minutes: number } {
     const tpDistance = Math.abs(input.takeProfit - input.entry);
     const atrPerCandle = Math.max(input.atr, 1e-8);
-    const candlesNeeded = Math.ceil((tpDistance / atrPerCandle) ** 2);
-    const clamped = Math.max(2, Math.min(candlesNeeded, 120));
+    const candlesNeeded = Math.ceil((tpDistance / atrPerCandle) ** 2 * (input.holdingMultiplier ?? 1));
+    const minCandles = input.minCandles ?? 2;
+    const maxCandles = input.maxCandles ?? 120;
+    const clamped = Math.max(minCandles, Math.min(candlesNeeded, maxCandles));
     const intervalMinutes = this.parseIntervalToMinutes(input.baseInterval);
     return { candles: clamped, minutes: clamped * intervalMinutes };
   }

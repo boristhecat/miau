@@ -981,4 +981,80 @@ describe("RecommendationEngine", () => {
     expect(rec.setupType).toBe("BREAKOUT");
     expect(rec.setupPlaybook).toBe("BREAKOUT_CONTINUATION");
   });
+
+  it("gives breakout playbooks a faster time-based exit than trend pullback playbooks", () => {
+    const breakoutIndicators: IndicatorSnapshot = {
+      rsi14: 63,
+      ema20: 50120,
+      ema50: 49940,
+      macd: 12,
+      macdSignal: 8,
+      macdHistogram: 4,
+      atr14: 140,
+      adx14: 31,
+      bbUpper: 51050,
+      bbMiddle: 50150,
+      bbLower: 49500,
+      stochRsiK: 72,
+      stochRsiD: 61,
+      vwap: 50180,
+      nearestSupportLevel: 50080,
+      nearestResistanceLevel: 51280,
+      recentCandleContext: {
+        momentumPct3: 0.38,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.4,
+        breakoutDirection: "UP"
+      }
+    };
+    const pullbackIndicators: IndicatorSnapshot = {
+      rsi14: 59,
+      ema20: 50120,
+      ema50: 49940,
+      macd: 11,
+      macdSignal: 8,
+      macdHistogram: 3,
+      atr14: 140,
+      adx14: 30,
+      bbUpper: 51050,
+      bbMiddle: 50150,
+      bbLower: 49500,
+      stochRsiK: 66,
+      stochRsiD: 58,
+      vwap: 50170,
+      nearestSupportLevel: 50280,
+      nearestResistanceLevel: 51280,
+      swingLow: 50190,
+      recentCandleContext: {
+        momentumPct3: 0.12,
+        bullishCloseRatio5: 0.6,
+        bearishCloseRatio5: 0.4,
+        rangeExpansionRatio: 1.05,
+        breakoutDirection: "NONE"
+      }
+    };
+
+    const breakout = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50340,
+      indicators: breakoutIndicators,
+      perp: {
+        ...basePerp,
+        fundingRate: -0.0002
+      },
+      baseInterval: "5m"
+    });
+    const pullback = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50340,
+      indicators: pullbackIndicators,
+      perp: basePerp,
+      baseInterval: "5m"
+    });
+
+    expect(breakout.setupPlaybook).toBe("BREAKOUT_CONTINUATION");
+    expect(pullback.setupPlaybook).toBe("TREND_PULLBACK_CONTINUATION");
+    expect((breakout.timeBasedExitCandles ?? 0)).toBeLessThan(pullback.timeBasedExitCandles ?? Number.POSITIVE_INFINITY);
+  });
 });

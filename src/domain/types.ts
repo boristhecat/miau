@@ -199,6 +199,8 @@ export interface Recommendation {
   readonly setupDetected?: boolean;
   readonly setupType?: string;
   readonly setupPlaybook?: SetupPlaybook;
+  readonly playbookRegimeAligned?: boolean;
+  readonly playbookMinRiskReward?: number;
   readonly holdingPeriodCandles?: number;
   readonly holdingPeriodMinutes?: number;
   readonly entryValidityWindow?: string;

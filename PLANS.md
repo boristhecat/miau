@@ -7,6 +7,13 @@
 - [x] Refine setup/playbook semantics so setup classification, readiness, and tradeability are evaluated separately
 - [x] Add regression coverage, run focused/full verification, and refresh `docs/CURRENT_STATE.md`
 
+## Task: Phase 1c playbook-aware risk and holding policy (2026-03-12)
+- [x] Re-read the current engine/guard/calculator flow and scope playbook-specific behavior that fits current data
+- [x] Add a playbook policy module for regime alignment, risk/reward floors, ATR profile tuning, and hold-time behavior
+- [x] Wire playbook policy into recommendation building, guards, and expectancy heuristics
+- [x] Add regression coverage for continuation vs breakout vs reversal handling and run focused/full verification
+- [x] Refresh `docs/CURRENT_STATE.md` if behavior changes materially
+
 ## Task: Fix `rec` mode 400 failure (2026-03-08)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace the `rec`-specific request path
 - [x] Harden the `rec` universe prefetch so one Open Interest 400 does not abort the whole mode

@@ -25,6 +25,9 @@ export function applyTradeGuards(input: {
   riskRewardRatio: number;
   feeBurdenPct?: number;
   setupDetected?: boolean;
+  setupPlaybook?: import("./types.js").SetupPlaybook;
+  playbookRegimeAligned?: boolean;
+  playbookMinRiskReward?: number;
   entryReadinessStatus?: EntryReadinessStatus;
   preferredEntryPrice?: number;
   entryReadinessRationale?: readonly string[];
@@ -71,6 +74,9 @@ export function applyTradeGuards(input: {
       return block(`${readinessMessage}${preferredEntry}`);
     }
     return block(`wait for a cleaner trigger: ${readinessMessage}${preferredEntry}`);
+  }
+  if (input.setupPlaybook && input.playbookRegimeAligned === false) {
+    return block(`${input.setupPlaybook} is not aligned with the current ${input.marketRegime} regime.`);
   }
   if (input.breakoutValidationFailed) {
     const breakoutFailureAgainstSignal =
@@ -124,11 +130,18 @@ export function applyTradeGuards(input: {
   if (!input.skipLegacyTradeabilityChecks && input.regime === "CHOPPY") {
     return block("choppy regime.");
   }
+  const playbookRiskRewardFloor = Math.max(input.playbookMinRiskReward ?? 0, input.regimeSignalMismatch ? 1.6 : 0, 1.2);
   if (input.regimeSignalMismatch && input.riskRewardRatio < 1.6) {
     return block(`trend-follow signal in ${input.marketRegime} regime requires risk/reward >= 1.6.`);
   }
-  if (input.riskRewardRatio < 1.2) {
-    return block("risk/reward below 1.2.");
+  if (input.riskRewardRatio < playbookRiskRewardFloor) {
+    const floorLabel = Number.isInteger(playbookRiskRewardFloor)
+      ? playbookRiskRewardFloor.toFixed(1)
+      : String(playbookRiskRewardFloor);
+    if (input.setupPlaybook && playbookRiskRewardFloor > 1.2) {
+      return block(`${input.setupPlaybook} requires risk/reward >= ${floorLabel}.`);
+    }
+    return block(`risk/reward below ${floorLabel}.`);
   }
   if (input.feeBurdenPct !== undefined && input.feeBurdenPct > 0.30) {
     return block(`fee burden is ${(input.feeBurdenPct * 100).toFixed(0)}% of gross TP; trade is not economical.`);
