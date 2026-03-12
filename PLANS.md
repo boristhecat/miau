@@ -1,5 +1,10 @@
 # Project Plan
 
+## Task: Remove `watch` mode entirely (2026-03-12)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace every watch-mode reference across CLI, console adapters, docs, and tests
+- [x] Remove watch-mode code paths and delete watch-specific modules/tests without affecting recommendation or learning flows
+- [x] Update current docs/help text and run build/test verification
+
 ## Task: Phase 1b trader-viability improvements (2026-03-12)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then scope the highest-ROI improvements that fit current architecture and public-data limits
 - [x] Expand structural level context in the indicator/domain layer without breaking adapter boundaries

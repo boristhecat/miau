@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { AdaptiveLearningService } from "./application/adaptive-learning-service.js";
-import { EvaluateWatchSymbolUseCase } from "./application/evaluate-watch-symbol-use-case.js";
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
 import { RunLearningBucketReportUseCase } from "./application/run-learning-bucket-report-use-case.js";
 import { RunLearningCycleUseCase } from "./application/run-learning-cycle-use-case.js";
@@ -70,7 +69,6 @@ async function main(): Promise<void> {
       learning,
       learningSymbolSelector
     );
-    const watchSymbolUseCase = new EvaluateWatchSymbolUseCase(recommendationUseCase, learning);
     const simulationScheduler = new ScheduleSimulationUseCase(new EvaluateSimulationUseCase(marketData));
 
     await runInteractiveSession({
@@ -81,7 +79,6 @@ async function main(): Promise<void> {
       rankingUseCase,
       learningBucketReportUseCase,
       learningCycleUseCase,
-      watchSymbolUseCase,
       simulationScheduler,
       refreshIndicatorRuntime: refreshTalibWasm,
       tradeDefaults,

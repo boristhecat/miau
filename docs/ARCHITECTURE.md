@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-Last updated: 2026-02-18
+Last updated: 2026-03-12
 
 ## Purpose
 
@@ -49,7 +49,7 @@ Primary responsibilities:
 - adaptive learning policy orchestration (`adaptive-learning-service.ts`)
 - recommendation ranking orchestration (`run-recommendation-ranking-use-case.ts`)
 - learning cycle orchestration (`run-learning-cycle-use-case.ts`)
-- watch/simulation orchestration (`evaluate-watch-symbol-use-case.ts`, `evaluate-simulation-use-case.ts`)
+- simulation orchestration (`evaluate-simulation-use-case.ts`)
 - shared timeframe/learning policy helpers (`timeframe-policy.ts`, `learning-gates-policy.ts`)
 
 ### Ports (`src/ports`)
@@ -97,12 +97,12 @@ Concrete implementations:
 1. User starts app with `npm run dev`.
 2. User enters commands at prompt:
    - trading queries (`SYMBOL [minutes] [long|short] [flags]`)
-   - `rec`, `defaults`, `watch`, `unwatch`
+   - `rec`, `defaults`
    - `learn --start|--stop|--stats`
 3. Parser normalizes symbol input and supported flags (`--custom`, `--horizon`, `--expected`, `--simulate`).
 4. Use-case fetches candles/perp context and computes recommendation.
 5. Learning policy may calibrate confidence/quality gates.
-6. Console adapter renders dashboard + latest single-symbol output (including AI secondary opinion when API key is configured).
+6. Console adapter renders learning status + latest single-symbol output (including AI secondary opinion when API key is configured).
 7. Optional simulation runs asynchronously and feeds learning persistence.
 
 ### `rec` flow

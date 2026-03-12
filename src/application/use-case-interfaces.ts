@@ -2,7 +2,6 @@ import type { Recommendation } from "../domain/types.js";
 import type { AiAdvice } from "../ports/ai-advisor-port.js";
 import type { LearningOverview, LearningBucketRow } from "../ports/learning-store-port.js";
 import type { LearningPolicy } from "./learning-policy-service.js";
-import type { EvaluatedWatchSymbol } from "./evaluate-watch-symbol-use-case.js";
 import type { RecommendationRankingResult } from "./run-recommendation-ranking-use-case.js";
 import type { LearningBucketReport } from "./run-learning-bucket-report-use-case.js";
 import type { LearningSimulationCandidate } from "./run-learning-cycle-use-case.js";
@@ -69,18 +68,6 @@ export interface ILearningCycleUseCase {
     positionSizeUsd: number;
     active: () => boolean;
   }): Promise<{ symbols: string[]; candidates: LearningSimulationCandidate[] }>;
-}
-
-export interface IWatchSymbolUseCase {
-  execute(input: {
-    symbol: string;
-    objectiveHorizon: string;
-    requestedDirection?: "LONG" | "SHORT";
-    leverage: number;
-    positionSizeUsd: number;
-    cooldownAdvisory?: string;
-    calibration: (pair: string, confidence: number) => number;
-  }): Promise<EvaluatedWatchSymbol>;
 }
 
 export interface ISimulationScheduler {

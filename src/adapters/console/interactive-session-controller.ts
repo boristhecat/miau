@@ -7,8 +7,7 @@ import type {
   ILearningBucketReportUseCase,
   ILearningCycleUseCase,
   IRankingUseCase,
-  ISimulationScheduler,
-  IWatchSymbolUseCase
+  ISimulationScheduler
 } from "../../application/use-case-interfaces.js";
 import type { AiAdvice } from "../../ports/ai-advisor-port.js";
 import { type TradeDefaults } from "../persistence/trade-defaults-store.js";
@@ -19,14 +18,11 @@ import {
   renderLearningReportLines,
   renderSimulationResultLines,
   type DashboardState,
-  type WatchRow,
   ui
 } from "./interactive-console-view.js";
 import { LearningRunnerController, LEARN_HORIZONS_MINUTES, LEARN_CYCLE_INTERVAL_MINUTES } from "./learning-runner-controller.js";
-import { WatchManager } from "./watch-manager.js";
 import { RecommendationPrinter } from "./recommendation-printer.js";
 import { parseTradingInput, type TradingInput } from "./trading-input-parser.js";
-import { parseWatchCommand } from "./watch-command-parser.js";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
@@ -38,7 +34,6 @@ export interface InteractiveSessionDeps {
   rankingUseCase: IRankingUseCase;
   learningBucketReportUseCase: ILearningBucketReportUseCase;
   learningCycleUseCase: ILearningCycleUseCase;
-  watchSymbolUseCase: IWatchSymbolUseCase;
   simulationScheduler: ISimulationScheduler;
   refreshIndicatorRuntime: () => Promise<void>;
   tradeDefaults: TradeDefaults;
@@ -50,10 +45,8 @@ export interface InteractiveSessionDeps {
 export async function runInteractiveSession(deps: InteractiveSessionDeps): Promise<void> {
   const rl = readline.createInterface({ input, output });
   const tracker = new SessionPerformanceService();
-  const watchManager = new WatchManager();
   const learningRunner = new LearningRunnerController();
   const dashboard: DashboardState = {
-    watchRows: watchManager.getRows(),
     latestQueryLines: [],
     learning: {
       active: false,
@@ -202,35 +195,6 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
         requestRender();
         continue;
       }
-      if (normalized.startsWith("unwatch ")) {
-        const symbol = normalized.replace(/^unwatch\s+/, "").trim().toUpperCase();
-        const msg = watchManager.remove(symbol);
-        dashboard.latestQueryLines = [`${ui.green}[watch]${ui.reset} ${msg}`];
-        requestRender();
-        continue;
-      }
-      if (normalized.startsWith("watch ")) {
-        try {
-          const watchConfig = parseWatchCommand(raw);
-          watchManager.add(
-            watchConfig,
-            deps.watchSymbolUseCase,
-            tracker,
-            () => {
-              requestRender();
-            },
-            (_symbol, _err) => {
-              // errors already reflected in watchRows
-            }
-          );
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Invalid watch command";
-          dashboard.latestQueryLines = [`${ui.red}[error] ${message}${ui.reset}`];
-        }
-        requestRender();
-        continue;
-      }
-
       try {
         const baseInput = parseTradingInput(raw);
         const tradeInput = baseInput.customValues
@@ -386,7 +350,6 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
   } finally {
     learningRunner.stop();
     syncLearningIndicator();
-    watchManager.stopAll();
     rl.close();
   }
 }

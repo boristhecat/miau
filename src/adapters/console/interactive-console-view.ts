@@ -13,18 +13,7 @@ export const ui = {
   blue: "\u001b[34m"
 };
 
-export interface WatchRow {
-  symbol: string;
-  signal: Recommendation["signal"];
-  regime?: string;
-  confidence?: number;
-  setupQuality?: number;
-  reason?: string;
-  updatedAtMs: number;
-}
-
 export interface DashboardState {
-  watchRows: ReadonlyMap<string, WatchRow>;
   latestQueryLines: string[];
   learning: {
     active: boolean;
@@ -32,37 +21,6 @@ export interface DashboardState {
     symbolsCount: number;
     pendingSimulations: number;
   };
-}
-
-function ageLabel(updatedAtMs: number): string {
-  const sec = Math.max(0, Math.floor((Date.now() - updatedAtMs) / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h`;
-}
-
-function formatTimestamp(updatedAtMs: number): string {
-  return new Date(updatedAtMs).toLocaleTimeString();
-}
-
-function signalColor(signal: WatchRow["signal"]): string {
-  if (signal === "LONG") return ui.green;
-  if (signal === "SHORT") return ui.red;
-  return ui.gray;
-}
-
-function scoreColor(value?: number): string {
-  if (value === undefined) return ui.gray;
-  if (value >= 70) return ui.green;
-  if (value >= 55) return ui.yellow;
-  return ui.red;
-}
-
-function formatPct(value?: number): string {
-  if (value === undefined) return "-";
-  return `${value.toFixed(2)}%`;
 }
 
 export function renderDashboard(state: DashboardState): void {
@@ -75,44 +33,6 @@ export function renderDashboard(state: DashboardState): void {
       `${learningCycle}  ` +
       `${ui.gray}symbols:${state.learning.symbolsCount} pending:${state.learning.pendingSimulations}${ui.reset}`
   );
-  console.log(`${ui.gray}${"-".repeat(92)}${ui.reset}`);
-  console.log(`${ui.bold}${ui.blue}WATCHED SYMBOLS${ui.reset} ${ui.gray}(live, in-place)${ui.reset}`);
-  if (state.watchRows.size === 0) {
-    console.log(`${ui.gray}No active watches. Use: watch BTC --every 0.5${ui.reset}`);
-  } else {
-    const rows = [...state.watchRows.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
-    let longCount = 0;
-    let shortCount = 0;
-    let noTradeCount = 0;
-    for (const row of rows) {
-      if (row.signal === "LONG") longCount++;
-      else if (row.signal === "SHORT") shortCount++;
-      else noTradeCount++;
-    }
-    console.log(
-      `${ui.gray}active:${ui.reset} ${rows.length}  ` +
-      `${ui.green}long:${longCount}${ui.reset}  ` +
-      `${ui.red}short:${shortCount}${ui.reset}  ` +
-      `${ui.yellow}no-trade:${noTradeCount}${ui.reset}`
-    );
-    console.log(`${ui.gray}signal / regime / confidence / setup / age / last queried${ui.reset}`);
-    for (const row of rows) {
-      const conf = formatPct(row.confidence);
-      const setup = formatPct(row.setupQuality);
-      const note = row.reason ?? "-";
-      console.log(
-        `${ui.cyan}${ui.bold}${row.symbol}${ui.reset}  ` +
-          `${signalColor(row.signal)}${row.signal}${ui.reset}  ` +
-          `${ui.gray}${row.regime ?? "-"}${ui.reset}  ` +
-          `${scoreColor(row.confidence)}conf ${conf}${ui.reset}  ` +
-          `${scoreColor(row.setupQuality)}setup ${setup}${ui.reset}  ` +
-          `${ui.gray}${ageLabel(row.updatedAtMs)}${ui.reset}  ` +
-          `${ui.gray}${formatTimestamp(row.updatedAtMs)}${ui.reset}`
-      );
-      console.log(`${ui.gray}  note:${ui.reset} ${note}`);
-    }
-  }
-
   console.log(`${ui.gray}${"-".repeat(92)}${ui.reset}`);
   console.log(`${ui.bold}${ui.magenta}SINGLE SYMBOL OUTPUT (LATEST ONLY)${ui.reset}`);
   if (state.latestQueryLines.length === 0) {
@@ -134,13 +54,9 @@ export function getInteractiveHelpText(): string {
     "- defaults",
     "  Set default leverage, size, horizon, and AI model.",
     "",
-    "SCANNING & WATCH",
+    "SCANNING",
     "- rec",
     "  Scan top symbols and show ranked recommendations.",
-    "- watch <SYMBOL> [--every N]",
-    "  Track a symbol and refresh status every N minutes (default 0.5 = 30 seconds).",
-    "- unwatch <SYMBOL>",
-    "  Remove one watched symbol.",
     "",
     "LEARNING",
     "- learn --start | learn --stop | learn --stats",

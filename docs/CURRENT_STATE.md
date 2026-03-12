@@ -18,7 +18,7 @@ Last updated: 2026-03-12
   - `SYMBOL <minutes> long|short`
   - `SYMBOL --expected <minutes>`
   - `SYMBOL --simulate`
-  - `rec`, `defaults`, `watch`, `unwatch`, `learn --start|--stop|--stats`, `help`, `exit`
+  - `rec`, `defaults`, `learn --start|--stop|--stats`, `help`, `exit`
 - AI secondary opinion is included by default for normal trade output when `OPENAI_API_KEY` is configured.
 - AI model selection is persisted in `data/trade-defaults.json` and configurable via `defaults`.
 - AI block now includes structured `agreement` (`AGREE`/`DISAGREE`/`PARTIAL`), `regime` (`TREND`/`RANGE`/`CHOPPY`/`VOLATILE`), and `overruledSignals`.
