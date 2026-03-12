@@ -10,9 +10,12 @@ export type TradeabilityReasonCode =
   | "WIDE_SPREAD"
   | "VWAP_CHOP"
   | "SESSION_DEAD_ZONE"
+  | "SESSION_TRANSITION"
   | "HTF_CONTRADICTION"
   | "WEAK_SETUP_QUALITY"
-  | "LOW_CONVICTION";
+  | "LOW_CONVICTION"
+  | "RANGE_REGIME"
+  | "VOLATILE_SPIKE_REGIME";
 
 export interface BiasContext {
   readonly trend: "LONG" | "SHORT";
@@ -77,6 +80,10 @@ export interface IndicatorSnapshot {
     readonly val: number;
   };
   readonly medianAtrPct?: number;
+  readonly swingHigh?: number;
+  readonly swingLow?: number;
+  readonly nearestSupportLevel?: number;
+  readonly nearestResistanceLevel?: number;
 }
 
 export interface PerpMarketSnapshot {
@@ -143,9 +150,31 @@ export interface Recommendation {
   readonly expectedValueUsd?: number;
   readonly expectedValuePerMarginPct?: number;
   readonly confidence: number;
+  readonly signalStrength?: number;
+  readonly calibratedWinRate?: number;
   readonly setupGrade: SetupGrade;
   readonly confidenceBreakdown: ConfidenceBreakdown;
   readonly rationale: readonly string[];
   readonly indicators: IndicatorSnapshot;
   readonly perp: PerpMarketSnapshot;
+  readonly pullbackEntry?: boolean;
+  readonly feeBurdenPct?: number;
+  readonly slippageEstimatePct?: number;
+  readonly totalExecutionCostPct?: number;
+  readonly riskBasedPositionSizeUsd?: number;
+  readonly riskBudgetUsd?: number;
+  readonly setupDetected?: boolean;
+  readonly setupType?: string;
+  readonly holdingPeriodCandles?: number;
+  readonly holdingPeriodMinutes?: number;
+  readonly entryValidityWindow?: string;
+  /** Time-based exit: close at breakeven if TP not hit within this many candles */
+  readonly timeBasedExitCandles?: number;
+  readonly timeBasedExitMinutes?: number;
+  /** Number of independent signal channels (out of 4) agreeing with direction */
+  readonly independentChannelAgreement?: number;
+  /** True if BTC correlation hard-blocked this alt signal */
+  readonly btcCorrelationBlocked?: boolean;
+  /** Paper-trading confidence — only populated when learning system has sufficient calibration data */
+  readonly paperTradingConfidence?: number;
 }

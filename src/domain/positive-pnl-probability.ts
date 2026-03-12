@@ -4,19 +4,32 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-export function estimatePositivePnlProbability(rec: Recommendation): number {
-  let probability = rec.confidence;
+export function estimatePositivePnlProbability(
+  rec: Recommendation,
+  calibratedWinRate?: number
+): number {
+  if (calibratedWinRate !== undefined) {
+    const empirical = calibratedWinRate * 100;
+    const heuristic = computeHeuristicProbability(rec);
+    const blended = empirical * 0.7 + heuristic * 0.3;
+    return Math.round(clamp(blended, 1, 99));
+  }
+
+  return Math.round(clamp(computeHeuristicProbability(rec), 1, 99));
+}
+
+function computeHeuristicProbability(rec: Recommendation): number {
+  // Improvement #3: Start from 50% base (coin flip) instead of confidence.
+  // Confidence measures indicator agreement, not actual win probability.
+  // Only deviate from 50% based on structural quality factors.
+  let probability = 50;
 
   if (rec.signal === "NO_TRADE") {
     probability -= 30;
-  } else {
-    probability += 4;
   }
 
   if (rec.regime === "CHOPPY") {
     probability -= 14;
-  } else {
-    probability += 3;
   }
 
   if (rec.marketRegime === "TREND") {
@@ -37,5 +50,26 @@ export function estimatePositivePnlProbability(rec: Recommendation): number {
     probability -= 8;
   }
 
-  return Math.round(clamp(probability, 1, 99));
+  if (rec.setupDetected) {
+    probability += 6;
+  } else {
+    probability -= 4;
+  }
+
+  if (rec.feeBurdenPct !== undefined && rec.feeBurdenPct > 0.2) {
+    probability -= 8;
+  }
+
+  // Bonus for strong independent channel agreement
+  if (rec.independentChannelAgreement !== undefined) {
+    if (rec.independentChannelAgreement >= 4) {
+      probability += 6;
+    } else if (rec.independentChannelAgreement >= 3) {
+      probability += 3;
+    } else {
+      probability -= 8;
+    }
+  }
+
+  return probability;
 }

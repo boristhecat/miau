@@ -32,7 +32,7 @@ describe("applyTradeGuards", () => {
       winnerRatioInsufficient: true
     });
     expect(result.signal).toBe("NO_TRADE");
-    expect(result.rationale.some((line) => line.includes("winner ratio is below 0.48"))).toBe(true);
+    expect(result.rationale.some((line) => line.includes("winner ratio is below 0.60"))).toBe(true);
   });
 
   it("uses DEAD-zone confidence floor", () => {

@@ -1,7 +1,8 @@
 import {
   assessVwapChop,
   classifyMarketRegime,
-  detectTradingSession
+  detectTradingSession,
+  isSessionTransition
 } from "./recommendation-market-context.js";
 import type {
   IndicatorSnapshot,
@@ -14,6 +15,9 @@ interface EvaluateTradeabilityInput {
   indicators: IndicatorSnapshot;
   perp: PerpMarketSnapshot;
   lastPrice: number;
+  spreadBlockThreshold?: number;
+  /** When true (default), blocks RANGE and VOLATILE_SPIKE regimes to focus on trend-following only */
+  trendOnlyMode?: boolean;
 }
 
 export class RecommendationTradeabilityEvaluator {
@@ -23,12 +27,25 @@ export class RecommendationTradeabilityEvaluator {
     const reasonCodes: TradeabilityReasonCode[] = [];
     const rationale: string[] = [];
 
+    const trendOnlyMode = input.trendOnlyMode ?? true;
+
     if (marketRegime === "LOW_LIQ_CHOP") {
       reasonCodes.push("LOW_LIQUIDITY_CHOP");
       rationale.push("low-liquidity chop regime.");
     }
 
-    if (input.perp.bidAskSpreadPct !== undefined && input.perp.bidAskSpreadPct > 0.12) {
+    if (trendOnlyMode && marketRegime === "RANGE") {
+      reasonCodes.push("RANGE_REGIME");
+      rationale.push("RANGE regime blocked in trend-only mode.");
+    }
+
+    if (trendOnlyMode && marketRegime === "VOLATILE_SPIKE") {
+      reasonCodes.push("VOLATILE_SPIKE_REGIME");
+      rationale.push("VOLATILE_SPIKE regime blocked in trend-only mode.");
+    }
+
+    const spreadThreshold = input.spreadBlockThreshold ?? 0.12;
+    if (input.perp.bidAskSpreadPct !== undefined && input.perp.bidAskSpreadPct > spreadThreshold) {
       reasonCodes.push("WIDE_SPREAD");
       rationale.push("orderbook spread is too wide for clean execution.");
     }
@@ -47,6 +64,17 @@ export class RecommendationTradeabilityEvaluator {
         reasonCodes,
         rationale,
         blocked: true
+      };
+    }
+
+    if (isSessionTransition()) {
+      return {
+        status: "CAUTION",
+        session,
+        marketRegime,
+        reasonCodes: ["SESSION_TRANSITION"],
+        rationale: ["session transition zone (within 15min of boundary); whipsaw risk elevated."],
+        blocked: false
       };
     }
 

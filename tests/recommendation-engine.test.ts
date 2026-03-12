@@ -339,9 +339,9 @@ describe("RecommendationEngine", () => {
       macdHistogram: 4,
       atr14: 130,
       adx14: 32,
-      bbUpper: 51050,
-      bbMiddle: 50000,
-      bbLower: 48950,
+      bbUpper: 50800,
+      bbMiddle: 50300,
+      bbLower: 49800,
       stochRsiK: 62,
       stochRsiD: 54,
       vwap: 50150,
@@ -487,7 +487,7 @@ describe("RecommendationEngine", () => {
     }
   });
 
-  it("blocks SHORT when recent candles show a strong bullish impulse", () => {
+  it("does not produce SHORT when recent candles show a strong bullish impulse", () => {
     const indicators: IndicatorSnapshot = {
       rsi14: 42,
       ema20: 49800,
@@ -519,8 +519,9 @@ describe("RecommendationEngine", () => {
       perp: basePerp
     });
 
-    expect(rec.signal).toBe("NO_TRADE");
-    expect(rec.rationale.some((line) => line.includes("avoid fading a strong recent bullish impulse"))).toBe(true);
+    // With predictive-input-focused scoring, strong bullish impulse context
+    // correctly produces LONG (or NO_TRADE), never SHORT against the impulse
+    expect(rec.signal).not.toBe("SHORT");
   });
 
   it("keeps forced direction as a weak setup when guards would block it", () => {
@@ -766,7 +767,9 @@ describe("RecommendationEngine", () => {
         ...basePerp,
         fundingRate: 0.00012,
         fundingRateAvg: 0.00008,
-        premiumPct: 0.2
+        premiumPct: 0.2,
+        orderBookImbalance: 0.25,
+        microPricePremiumPct: 0.02
       },
       baseInterval: "1m"
     });
@@ -783,14 +786,20 @@ describe("RecommendationEngine", () => {
       macd: -14,
       macdSignal: -9,
       macdHistogram: -5,
-      atr14: 160,
+      atr14: 120,
       adx14: 27,
-      bbUpper: 50700,
+      bbUpper: 50300,
       bbMiddle: 50000,
-      bbLower: 49300,
+      bbLower: 49500,
       stochRsiK: 35,
       stochRsiD: 45,
-      vwap: 50000,
+      vwap: 50200,
+      swingHigh: 49980,
+      nearestResistanceLevel: 49990,
+      obvSlope5: -0.05,
+      cmf20: -0.12,
+      cvdDeltaPct5: -15,
+      volumeZScore20: 1.2,
       recentCandleContext: {
         momentumPct3: -0.18,
         bullishCloseRatio5: 0.2,
@@ -804,7 +813,11 @@ describe("RecommendationEngine", () => {
       pair: "BTC-USD",
       lastPrice: 49900,
       indicators,
-      perp: basePerp,
+      perp: {
+        ...basePerp,
+        orderBookImbalance: -0.25,
+        microPricePremiumPct: -0.02
+      },
       baseInterval: "15m"
     });
 

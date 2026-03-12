@@ -25,6 +25,9 @@ export type RankTopOpportunitiesFactory = (
   symbolUniverseProvider: SymbolUniverseProvider
 ) => Pick<RankTopOpportunitiesUseCase, "execute">;
 
+/** Phase 3b: Liquid asset whitelist — focus on highest-liquidity assets for maximum edge */
+export const LIQUID_ASSET_WHITELIST = new Set(["BTC", "ETH", "SOL", "AVAX"]);
+
 export class RunRecommendationRankingUseCase {
   constructor(
     private readonly recommendationUseCase: RecommendationGenerator,
@@ -37,7 +40,8 @@ export class RunRecommendationRankingUseCase {
     const universeLimit = input.universeLimit ?? 15;
     const top = input.top ?? 5;
     const adaptiveTimeframes = resolveAdaptiveTimeframes(input.defaults.objectiveHorizon);
-    const selected = await this.marketData.getTopPerpSymbolsByVolumeWithOpenInterest(universeLimit);
+    const allSelected = await this.marketData.getTopPerpSymbolsByVolumeWithOpenInterest(universeLimit);
+    const selected = allSelected.filter((item) => LIQUID_ASSET_WHITELIST.has(item.symbol));
 
     const learningAwareGenerator: RecommendationGenerator = {
       execute: async (request) => {

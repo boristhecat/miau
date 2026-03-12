@@ -14,10 +14,14 @@ import {
   computeAtrPct as computeIndicatorAtrPct,
   detectTradingSession
 } from "./recommendation-market-context.js";
+import { resolveAssetProfile, type AssetProfile } from "./asset-profile.js";
 
 export interface SignalEvaluationResult {
   signal: Exclude<Signal, "NO_TRADE">;
   confidence: number;
+  /** Raw directional score strength (0-100) before setup quality blending.
+   *  Use this for win probability estimation, not confidence. */
+  signalStrength: number;
   confidenceBreakdown: ConfidenceBreakdown;
   rationale: string[];
   marketRegime: MarketRegime;
@@ -30,6 +34,10 @@ export interface SignalEvaluationResult {
   winnerRatioInsufficient: boolean;
   htfContradictionCount: number;
   regimeSignalMismatch: boolean;
+  /** Number of independent signal channels (out of 4) agreeing with the chosen direction */
+  independentChannelAgreement: number;
+  /** Whether the current regime is freshly transitioned or mature */
+  regimeMaturity: "FRESH" | "MATURE";
 }
 
 export function inferBiasContext(biasIndicators: IndicatorSnapshot): BiasContext {
@@ -57,8 +65,10 @@ export class RecommendationSignalEvaluator {
     biasContext?: BiasContext,
     biasInterval?: string,
     baseInterval = "1m",
-    btcContext?: { emaAbove: boolean; momentumPositive: boolean }
+    btcContext?: { emaAbove: boolean; momentumPositive: boolean },
+    pair?: string
   ): SignalEvaluationResult {
+    const assetProfile = resolveAssetProfile(pair ?? "BTC-USD");
     let longScore = 0;
     let shortScore = 0;
     const rationale: string[] = [];
@@ -76,6 +86,21 @@ export class RecommendationSignalEvaluator {
     rationale.push(
       `Weight profile ${weightProfile.horizonBucket}/${marketRegime}: trend x${weightProfile.multipliers.trend.toFixed(2)}, momentum x${weightProfile.multipliers.momentum.toFixed(2)}, flow x${weightProfile.multipliers.flow.toFixed(2)}, micro x${weightProfile.multipliers.microstructure.toFixed(2)}.`
     );
+    // Phase 1a: Channel score accumulator — tracks per-channel contributions for capping
+    const acc: Record<WeightChannel, { long: number; short: number }> = {
+      trend: { long: 0, short: 0 },
+      momentum: { long: 0, short: 0 },
+      flow: { long: 0, short: 0 },
+      microstructure: { long: 0, short: 0 },
+      meanReversion: { long: 0, short: 0 },
+      volatility: { long: 0, short: 0 },
+      fastFilters: { long: 0, short: 0 },
+      consensus: { long: 0, short: 0 }
+    };
+    const addL = (ch: WeightChannel, pts: number) => { acc[ch].long += w(ch, pts); };
+    const addS = (ch: WeightChannel, pts: number) => { acc[ch].short += w(ch, pts); };
+    // Phase 1b: Funding horizon scaling — contrarian funding is wrong on short timeframes
+    const fundingHorizonScale = intervalMinutes <= 10 ? 0.3 : intervalMinutes <= 30 ? 0.6 : intervalMinutes <= 60 ? 0.8 : 1.0;
     let impulseBias: "UP_IMPULSE" | "DOWN_IMPULSE" | "NONE" = "NONE";
     let pullbackExtended = false;
     let breakoutValidationFailed = false;
@@ -85,115 +110,78 @@ export class RecommendationSignalEvaluator {
     let htfContradictionCount = 0;
     let regimeSignalMismatch = false;
 
-    const emaTrendWeight = shortHorizon ? 17 : 28;
-    if (indicators.ema20 > indicators.ema50) {
-      longScore += w("trend", emaTrendWeight);
-      rationale.push("EMA20 is above EMA50 (bullish trend).");
+    // --- Regime context (lagging indicators as filters, not directional score) ---
+    const emaTrend: "LONG" | "SHORT" = indicators.ema20 > indicators.ema50 ? "LONG" : "SHORT";
+    const trendConfirmed = indicators.adx14 >= 25;
+    const macdAligned = indicators.macdHistogram > 0 && indicators.macd > indicators.macdSignal;
+    const macdBearAligned = indicators.macdHistogram < 0 && indicators.macd < indicators.macdSignal;
+    const aboveVwap = lastPrice >= indicators.vwap;
+
+    // Regime filter: count how many lagging indicators agree (used as confidence modifier, not score)
+    const bullishRegimeConfirmations = [
+      emaTrend === "LONG",
+      macdAligned,
+      aboveVwap,
+      indicators.rsi14 > 50
+    ].filter(Boolean).length;
+    const bearishRegimeConfirmations = [
+      emaTrend === "SHORT",
+      macdBearAligned,
+      !aboveVwap,
+      indicators.rsi14 < 50
+    ].filter(Boolean).length;
+
+    // Regime alignment gives a modest directional nudge (not heavy scoring)
+    const regimeNudge = shortHorizon ? 8 : 14;
+    if (bullishRegimeConfirmations >= 3) {
+      addL("trend", regimeNudge);
+      rationale.push(`Regime context: ${bullishRegimeConfirmations}/4 lagging indicators confirm bullish structure.`);
+    } else if (bearishRegimeConfirmations >= 3) {
+      addS("trend", regimeNudge);
+      rationale.push(`Regime context: ${bearishRegimeConfirmations}/4 lagging indicators confirm bearish structure.`);
     } else {
-      shortScore += w("trend", emaTrendWeight);
-      rationale.push("EMA20 is below EMA50 (bearish trend).");
+      rationale.push("Regime context: lagging indicators are mixed; no clear directional regime.");
     }
 
-    if (indicators.adx14 >= 25) {
-      if (indicators.ema20 >= indicators.ema50) {
-        longScore += w("trend", 10);
-      } else {
-        shortScore += w("trend", 10);
-      }
-      rationale.push("ADX confirms a strong trend regime.");
-    } else if (indicators.adx14 < 18) {
-      rationale.push("ADX is very low; trend conviction is weak.");
-    } else {
-      rationale.push("ADX indicates a moderate trend regime.");
-    }
-
-    if (indicators.macdHistogram > 0 && indicators.macd > indicators.macdSignal) {
-      longScore += w("momentum", 18);
-      rationale.push("MACD momentum is positive.");
-    } else if (indicators.macdHistogram < 0 && indicators.macd < indicators.macdSignal) {
-      shortScore += w("momentum", 18);
-      rationale.push("MACD momentum is negative.");
-    } else {
-      rationale.push("MACD momentum is mixed.");
-    }
-
-    if (indicators.rsi14 > 55 && indicators.rsi14 < 70) {
-      longScore += w("momentum", 4);
-      rationale.push("RSI supports continuation to the upside.");
-    } else if (indicators.rsi14 < 45 && indicators.rsi14 > 30) {
-      shortScore += w("momentum", 4);
-      rationale.push("RSI supports continuation to the downside.");
+    // RSI extremes as mean-reversion signal (predictive at extremes)
+    if (indicators.rsi14 >= 75) {
+      addS("meanReversion", 6);
+      rationale.push("RSI is at extreme overbought; mean-reversion risk elevated.");
+    } else if (indicators.rsi14 <= 25) {
+      addL("meanReversion", 6);
+      rationale.push("RSI is at extreme oversold; mean-reversion risk elevated.");
     } else if (indicators.rsi14 >= 70) {
-      const confirmedBullTrend =
-        marketRegime === "TREND" &&
-        indicators.ema20 >= indicators.ema50 &&
-        lastPrice >= indicators.vwap &&
-        indicators.macdHistogram > 0;
-      if (confirmedBullTrend) {
-        longScore += w("momentum", 2);
-        rationale.push("RSI is overbought but trend structure is bullish; continuation is favored over reversal.");
-      } else {
-        shortScore += w("meanReversion", 5);
-        rationale.push("RSI is overbought; upside may be exhausted.");
-      }
+      addS("meanReversion", 3);
+      rationale.push("RSI is overbought; upside may be exhausted.");
     } else if (indicators.rsi14 <= 30) {
-      const confirmedBearTrend =
-        marketRegime === "TREND" &&
-        indicators.ema20 <= indicators.ema50 &&
-        lastPrice <= indicators.vwap &&
-        indicators.macdHistogram < 0;
-      if (confirmedBearTrend) {
-        shortScore += w("momentum", 2);
-        rationale.push("RSI is oversold but trend structure is bearish; continuation is favored over reversal.");
-      } else {
-        longScore += w("meanReversion", 5);
-        rationale.push("RSI is oversold; rebound risk is elevated.");
-      }
-    } else {
-      rationale.push("RSI is neutral.");
+      addL("meanReversion", 3);
+      rationale.push("RSI is oversold; rebound risk is elevated.");
     }
 
-    if (indicators.stochRsiK > indicators.stochRsiD && indicators.stochRsiK < 80) {
-      longScore += w("momentum", 3);
-      rationale.push("StochRSI timing is aligned for long continuation.");
-    } else if (indicators.stochRsiK < indicators.stochRsiD && indicators.stochRsiK > 20) {
-      shortScore += w("momentum", 3);
-      rationale.push("StochRSI timing is aligned for short continuation.");
-    } else {
-      rationale.push("StochRSI timing is neutral.");
-    }
-
-    if (lastPrice >= indicators.vwap) {
-      longScore += w("flow", 10);
-      rationale.push("Price is above VWAP (intraday buyer control).");
-    } else {
-      shortScore += w("flow", 10);
-      rationale.push("Price is below VWAP (intraday seller control).");
-    }
-
+    // BB band stretch (only score at extremes)
     if (lastPrice > indicators.bbUpper) {
-      shortScore += w("meanReversion", 3);
+      addS("meanReversion", 3);
       rationale.push("Price is stretched above Bollinger upper band.");
     } else if (lastPrice < indicators.bbLower) {
-      longScore += w("meanReversion", 3);
+      addL("meanReversion", 3);
       rationale.push("Price is stretched below Bollinger lower band.");
-    } else {
-      rationale.push("Price is inside Bollinger bands.");
     }
 
+    // --- Predictive inputs (forward-looking, higher weight) ---
+    const fundingThreshold = assetProfile.fundingSignificanceThreshold;
     const fundingMomentum = perp.fundingRate - perp.fundingRateAvg;
-    const fundingAccelerating = Math.abs(fundingMomentum) > 0.00003;
-    if (perp.fundingRate > 0.00005 && perp.fundingRateAvg > 0) {
-      const pts = fundingAccelerating ? 6 : 4;
-      shortScore += w("flow", pts);
+    const fundingAccelerating = Math.abs(fundingMomentum) > fundingThreshold * 0.6;
+    if (perp.fundingRate > fundingThreshold && perp.fundingRateAvg > 0) {
+      const pts = (fundingAccelerating ? 12 : 8) * fundingHorizonScale;
+      addS("flow", pts);
       rationale.push(
         fundingAccelerating
           ? "Funding is accelerating positive (increasing long crowding risk)."
           : "Funding is persistently positive (long crowding risk)."
       );
-    } else if (perp.fundingRate < -0.00005 && perp.fundingRateAvg < 0) {
-      const pts = fundingAccelerating ? 6 : 4;
-      longScore += w("flow", pts);
+    } else if (perp.fundingRate < -fundingThreshold && perp.fundingRateAvg < 0) {
+      const pts = (fundingAccelerating ? 12 : 8) * fundingHorizonScale;
+      addL("flow", pts);
       rationale.push(
         fundingAccelerating
           ? "Funding is accelerating negative (increasing short crowding risk)."
@@ -204,21 +192,21 @@ export class RecommendationSignalEvaluator {
     }
 
     if (perp.premiumPct > 0.15) {
-      shortScore += w("flow", 4);
+      addS("flow", 6);
       rationale.push("Mark trades at a premium to index (possible long overheating).");
     } else if (perp.premiumPct < -0.15) {
-      longScore += w("flow", 4);
+      addL("flow", 6);
       rationale.push("Mark trades at a discount to index (possible short exhaustion).");
     } else {
       rationale.push("Mark/index premium is balanced.");
     }
 
     if (perp.orderBookImbalance !== undefined) {
-      if (perp.orderBookImbalance >= 0.08) {
-        longScore += w("microstructure", 8);
+      if (perp.orderBookImbalance >= 0.20) {
+        addL("microstructure", 8);
         rationale.push("Orderbook imbalance favors bids.");
-      } else if (perp.orderBookImbalance <= -0.08) {
-        shortScore += w("microstructure", 8);
+      } else if (perp.orderBookImbalance <= -0.20) {
+        addS("microstructure", 8);
         rationale.push("Orderbook imbalance favors asks.");
       } else {
         rationale.push("Orderbook imbalance is neutral.");
@@ -227,24 +215,25 @@ export class RecommendationSignalEvaluator {
 
     if (perp.microPricePremiumPct !== undefined) {
       if (perp.microPricePremiumPct > 0.01) {
-        longScore += w("microstructure", 3);
+        addL("microstructure", 8);
         rationale.push("Microprice sits above mid; near-term pressure is bid-led.");
       } else if (perp.microPricePremiumPct < -0.01) {
-        shortScore += w("microstructure", 3);
+        addS("microstructure", 8);
         rationale.push("Microprice sits below mid; near-term pressure is ask-led.");
       }
     }
 
+    const oiThreshold = assetProfile.oiDeltaSignificanceThreshold;
     if (perp.openInterestDeltaPct !== undefined) {
-      if (perp.openInterestDeltaPct > 0.35 && indicators.macdHistogram > 0) {
-        longScore += w("flow", 3);
+      if (perp.openInterestDeltaPct > oiThreshold && indicators.macdHistogram > 0) {
+        addL("flow", 6);
         rationale.push("Open interest is expanding alongside bullish momentum.");
-      } else if (perp.openInterestDeltaPct > 0.35 && indicators.macdHistogram < 0) {
-        shortScore += w("flow", 3);
+      } else if (perp.openInterestDeltaPct > oiThreshold && indicators.macdHistogram < 0) {
+        addS("flow", 6);
         rationale.push("Open interest is expanding alongside bearish momentum.");
-      } else if (perp.openInterestDeltaPct < -0.35) {
-        longScore -= w("flow", 2);
-        shortScore -= w("flow", 2);
+      } else if (perp.openInterestDeltaPct < -oiThreshold) {
+        addL("flow", -4);
+        addS("flow", -4);
         rationale.push("Open interest is fading; follow-through conviction is reduced.");
       }
     }
@@ -252,31 +241,31 @@ export class RecommendationSignalEvaluator {
     if (biasContext) {
       const htfLabel = biasInterval ?? "HTF";
       if (biasContext.trend === "LONG") {
-        longScore += w("trend", 14);
+        addL("trend", 14);
         rationale.push(`HTF bias (${htfLabel}) is bullish (EMA trend).`);
       } else {
-        shortScore += w("trend", 14);
+        addS("trend", 14);
         rationale.push(`HTF bias (${htfLabel}) is bearish (EMA trend).`);
       }
       if (biasContext.macdDirection === "POSITIVE") {
-        longScore += w("momentum", 4);
+        addL("momentum", 4);
         rationale.push("HTF MACD is positive.");
       } else if (biasContext.macdDirection === "NEGATIVE") {
-        shortScore += w("momentum", 4);
+        addS("momentum", 4);
         rationale.push("HTF MACD is negative.");
       }
       if (biasContext.rsiZone === "OVERBOUGHT" && biasContext.trend === "LONG") {
-        longScore -= w("momentum", 3);
+        addL("momentum", -3);
         rationale.push("HTF RSI is overbought; long continuation risk elevated.");
       } else if (biasContext.rsiZone === "OVERSOLD" && biasContext.trend === "SHORT") {
-        shortScore -= w("momentum", 3);
+        addS("momentum", -3);
         rationale.push("HTF RSI is oversold; short continuation risk elevated.");
       }
       if (biasContext.bbPosition === "ABOVE") {
-        shortScore += w("meanReversion", 2);
+        addS("meanReversion", 2);
         rationale.push("HTF price is above Bollinger upper band.");
       } else if (biasContext.bbPosition === "BELOW") {
-        longScore += w("meanReversion", 2);
+        addL("meanReversion", 2);
         rationale.push("HTF price is below Bollinger lower band.");
       }
     }
@@ -296,13 +285,13 @@ export class RecommendationSignalEvaluator {
 
       if (upImpulse) {
         impulseBias = "UP_IMPULSE";
-        longScore += w("momentum", 12);
-        shortScore -= w("momentum", 10);
+        addL("momentum", 18);
+        addS("momentum", -14);
         rationale.push("Recent candles show a bullish impulse (momentum + close skew + expansion/breakout).");
       } else if (downImpulse) {
         impulseBias = "DOWN_IMPULSE";
-        shortScore += w("momentum", 12);
-        longScore -= w("momentum", 10);
+        addS("momentum", 18);
+        addL("momentum", -14);
         rationale.push("Recent candles show a bearish impulse (momentum + close skew + expansion/breakout).");
       } else {
         rationale.push("Recent candle impulse is neutral.");
@@ -311,10 +300,10 @@ export class RecommendationSignalEvaluator {
       if (recent.breakoutDirection === "UP") {
         const validated = recent.momentumPct3 >= impulseMomentumThreshold * 0.9 && recent.bullishCloseRatio5 >= 0.6;
         if (validated) {
-          longScore += w("momentum", 6);
+          addL("momentum", 6);
           rationale.push("Breakout check: upside breakout has follow-through confirmation.");
         } else {
-          shortScore += w("momentum", 4);
+          addS("momentum", 4);
           breakoutValidationFailed = true;
           breakoutFailureDirection = "UP";
           rationale.push("Breakout check: upside breakout lacks follow-through; fade risk increased.");
@@ -323,10 +312,10 @@ export class RecommendationSignalEvaluator {
         const validated =
           recent.momentumPct3 <= -impulseMomentumThreshold * 0.9 && recent.bearishCloseRatio5 >= 0.6;
         if (validated) {
-          shortScore += w("momentum", 6);
+          addS("momentum", 6);
           rationale.push("Breakout check: downside breakout has follow-through confirmation.");
         } else {
-          longScore += w("momentum", 4);
+          addL("momentum", 4);
           breakoutValidationFailed = true;
           breakoutFailureDirection = "DOWN";
           rationale.push("Breakout check: downside breakout lacks follow-through; fade risk increased.");
@@ -336,12 +325,12 @@ export class RecommendationSignalEvaluator {
 
     if (indicators.rsiDivergence) {
       if (indicators.rsiDivergence.bullish) {
-        longScore += w("meanReversion", 8);
-        shortScore -= w("meanReversion", 4);
+        addL("meanReversion", 8);
+        addS("meanReversion", -4);
         rationale.push("RSI bullish divergence detected (price lower low, RSI higher low).");
       } else if (indicators.rsiDivergence.bearish) {
-        shortScore += w("meanReversion", 8);
-        longScore -= w("meanReversion", 4);
+        addS("meanReversion", 8);
+        addL("meanReversion", -4);
         rationale.push("RSI bearish divergence detected (price higher high, RSI lower high).");
       }
     }
@@ -351,20 +340,39 @@ export class RecommendationSignalEvaluator {
       const vpocDist = (Math.abs(lastPrice - vpoc) / Math.max(vpoc, 1)) * 100;
       if (vpocDist < 0.15) {
         if (marketRegime === "RANGE") {
-          rationale.push("Price is near VPOC (volume fair value) - range mean reversion favored.");
+          if (lastPrice > vpoc) {
+            addS("meanReversion", 6);
+          } else {
+            addL("meanReversion", 6);
+          }
+          rationale.push("Price is near VPOC in range regime; mean reversion toward VPOC favored.");
         } else {
-          longScore -= w("flow", 2);
-          shortScore -= w("flow", 2);
+          addL("flow", -2);
+          addS("flow", -2);
           rationale.push("Price is near VPOC; may act as resistance/support.");
         }
       } else if (lastPrice > vah) {
-        longScore += w("flow", 4);
+        addL("flow", 7);
         rationale.push("Price is above Value Area High; breakout above value area.");
       } else if (lastPrice < val) {
-        shortScore += w("flow", 4);
+        addS("flow", 7);
         rationale.push("Price is below Value Area Low; breakdown below value area.");
       } else {
-        rationale.push(`Price is inside value area (VAL ${val.toFixed(4)} - VAH ${vah.toFixed(4)}).`);
+        const vaWidth = vah - val;
+        if (vaWidth > 0) {
+          const posInVa = (lastPrice - val) / vaWidth;
+          if (posInVa > 0.7) {
+            addS("flow", 2);
+            rationale.push("Price is in upper value area; closer to VAH resistance.");
+          } else if (posInVa < 0.3) {
+            addL("flow", 2);
+            rationale.push("Price is in lower value area; closer to VAL support.");
+          } else {
+            rationale.push(`Price is inside value area (VAL ${val.toFixed(4)} - VAH ${vah.toFixed(4)}).`);
+          }
+        } else {
+          rationale.push(`Price is inside value area (VAL ${val.toFixed(4)} - VAH ${vah.toFixed(4)}).`);
+        }
       }
     }
 
@@ -372,12 +380,12 @@ export class RecommendationSignalEvaluator {
       const btcBullish = btcContext.emaAbove && btcContext.momentumPositive;
       const btcBearish = !btcContext.emaAbove && !btcContext.momentumPositive;
       if (btcBullish) {
-        longScore += w("trend", 5);
-        shortScore -= w("trend", 3);
+        addL("trend", 5);
+        addS("trend", -3);
         rationale.push("BTC is bullish (EMA + MACD); alt long has macro tailwind.");
       } else if (btcBearish) {
-        shortScore += w("trend", 5);
-        longScore -= w("trend", 3);
+        addS("trend", 5);
+        addL("trend", -3);
         rationale.push("BTC is bearish (EMA + MACD); alt long has macro headwind.");
       } else {
         rationale.push("BTC trend is mixed; cross-asset correlation neutral.");
@@ -386,12 +394,12 @@ export class RecommendationSignalEvaluator {
 
     const session = detectTradingSession();
     if (session === "ASIA") {
-      longScore -= w("momentum", 2);
-      shortScore -= w("momentum", 2);
+      addL("momentum", -2);
+      addS("momentum", -2);
       rationale.push("Session: Asian hours - lower volume; impulse follow-through reduced.");
     } else if (session === "DEAD") {
-      longScore -= w("momentum", 4);
-      shortScore -= w("momentum", 4);
+      addL("momentum", -4);
+      addS("momentum", -4);
       rationale.push("Session: dead zone (US close - Asia open) - low volume, avoid breakouts.");
     } else if (session === "US") {
       rationale.push("Session: US peak hours - elevated volatility and volume.");
@@ -400,32 +408,32 @@ export class RecommendationSignalEvaluator {
     }
 
     const bullishStructureSignals = [
-      indicators.ema20 >= indicators.ema50,
-      lastPrice >= indicators.vwap,
-      indicators.macdHistogram > 0 && indicators.macd >= indicators.macdSignal,
+      emaTrend === "LONG",
+      aboveVwap,
+      macdAligned,
       (recent?.momentumPct3 ?? 0) > 0,
       recent?.breakoutDirection === "UP"
     ].filter(Boolean).length;
     const bearishStructureSignals = [
-      indicators.ema20 <= indicators.ema50,
-      lastPrice <= indicators.vwap,
-      indicators.macdHistogram < 0 && indicators.macd <= indicators.macdSignal,
+      emaTrend === "SHORT",
+      !aboveVwap,
+      macdBearAligned,
       (recent?.momentumPct3 ?? 0) < 0,
       recent?.breakoutDirection === "DOWN"
     ].filter(Boolean).length;
     if (shortHorizon && bullishStructureSignals >= 4 && bearishStructureSignals <= 1) {
-      longScore += w("consensus", 10);
-      shortScore -= w("consensus", 14);
+      addL("consensus", 10);
+      addS("consensus", -14);
       rationale.push("Directional consensus: bullish structure dominates trend, momentum, and flow inputs.");
     } else if (shortHorizon && bearishStructureSignals >= 4 && bullishStructureSignals <= 1) {
-      shortScore += w("consensus", 10);
-      longScore -= w("consensus", 14);
+      addS("consensus", 10);
+      addL("consensus", -14);
       rationale.push("Directional consensus: bearish structure dominates trend, momentum, and flow inputs.");
     }
 
     if (atrPct < 0.8) {
-      longScore += w("volatility", 3);
-      shortScore += w("volatility", 3);
+      addL("volatility", 3);
+      addS("volatility", 3);
       rationale.push("ATR indicates controlled intraday volatility.");
     } else {
       rationale.push("ATR indicates elevated volatility; execution risk rises.");
@@ -433,36 +441,36 @@ export class RecommendationSignalEvaluator {
 
     if (indicators.mfi14 !== undefined) {
       if (indicators.mfi14 >= 55 && indicators.mfi14 < 80) {
-        longScore += w("flow", 4);
+        addL("flow", 4);
         rationale.push("MFI confirms buying pressure.");
       } else if (indicators.mfi14 <= 45 && indicators.mfi14 > 20) {
-        shortScore += w("flow", 4);
+        addS("flow", 4);
         rationale.push("MFI confirms selling pressure.");
       } else if (indicators.mfi14 >= 80) {
-        shortScore += w("meanReversion", 2);
+        addS("meanReversion", 2);
         rationale.push("MFI is overbought; exhaustion risk rises.");
       } else if (indicators.mfi14 <= 20) {
-        longScore += w("meanReversion", 2);
+        addL("meanReversion", 2);
         rationale.push("MFI is oversold; rebound risk rises.");
       }
     }
 
     if (indicators.cmf20 !== undefined) {
       if (indicators.cmf20 >= 0.08) {
-        longScore += w("flow", 4);
+        addL("flow", 4);
         rationale.push("CMF indicates sustained accumulation.");
       } else if (indicators.cmf20 <= -0.08) {
-        shortScore += w("flow", 4);
+        addS("flow", 4);
         rationale.push("CMF indicates sustained distribution.");
       }
     }
 
     if (indicators.obvSlope5 !== undefined) {
       if (indicators.obvSlope5 > 0.02) {
-        longScore += w("flow", 3);
+        addL("flow", 3);
         rationale.push("OBV slope is rising.");
       } else if (indicators.obvSlope5 < -0.02) {
-        shortScore += w("flow", 3);
+        addS("flow", 3);
         rationale.push("OBV slope is falling.");
       }
     }
@@ -470,86 +478,95 @@ export class RecommendationSignalEvaluator {
     if (indicators.volumeZScore20 !== undefined && indicators.cvdDeltaPct5 !== undefined) {
       const expansion = indicators.volumeZScore20 >= 1;
       if (expansion && indicators.cvdDeltaPct5 > 10) {
-        longScore += w("flow", 4);
+        addL("flow", 4);
         rationale.push("Volume expansion aligns with positive flow delta.");
       } else if (expansion && indicators.cvdDeltaPct5 < -10) {
-        shortScore += w("flow", 4);
+        addS("flow", 4);
         rationale.push("Volume expansion aligns with negative flow delta.");
       }
     }
 
     if (marketRegime === "TREND") {
-      if (indicators.ema20 >= indicators.ema50) {
-        longScore += w("trend", 8);
+      if (emaTrend === "LONG") {
+        addL("trend", 6);
       } else {
-        shortScore += w("trend", 8);
+        addS("trend", 6);
       }
       rationale.push("Regime model favors trend-follow continuation.");
     } else if (marketRegime === "RANGE") {
       if (lastPrice <= indicators.bbLower) {
-        longScore += w("meanReversion", 8);
+        addL("meanReversion", 8);
         rationale.push("Range regime: price is at lower band, favoring mean reversion long.");
       } else if (lastPrice >= indicators.bbUpper) {
-        shortScore += w("meanReversion", 8);
+        addS("meanReversion", 8);
         rationale.push("Range regime: price is at upper band, favoring mean reversion short.");
       } else {
-        longScore -= w("meanReversion", 2);
-        shortScore -= w("meanReversion", 2);
+        addL("meanReversion", -2);
+        addS("meanReversion", -2);
         rationale.push("Range regime but entry is mid-band; edge is limited.");
       }
     } else if (marketRegime === "VOLATILE_SPIKE") {
-      longScore -= w("volatility", 4);
-      shortScore -= w("volatility", 4);
+      addL("volatility", -4);
+      addS("volatility", -4);
       rationale.push("Volatility spike regime: reduce conviction until expansion settles.");
     }
 
     const emaSpreadPct = (Math.abs(indicators.ema20 - indicators.ema50) / Math.max(lastPrice, 1)) * 100;
     if (shortHorizon && emaSpreadPct < 0.08) {
-      longScore -= w("fastFilters", 8);
-      shortScore -= w("fastFilters", 8);
+      addL("fastFilters", -8);
+      addS("fastFilters", -8);
       rationale.push("Short-horizon filter: EMA spread is tight; likely chop around crossover.");
     }
 
     const bullishFastConfirmations = [
-      indicators.macdHistogram > 0 && indicators.macd > indicators.macdSignal,
-      lastPrice > indicators.vwap,
+      macdAligned,
+      aboveVwap,
       indicators.rsi14 > 52,
       (indicators.recentCandleContext?.momentumPct3 ?? 0) > 0
     ].filter(Boolean).length;
     const bearishFastConfirmations = [
-      indicators.macdHistogram < 0 && indicators.macd < indicators.macdSignal,
-      lastPrice < indicators.vwap,
+      macdBearAligned,
+      !aboveVwap,
       indicators.rsi14 < 48,
       (indicators.recentCandleContext?.momentumPct3 ?? 0) < 0
     ].filter(Boolean).length;
-    const emaTrendDirection: Exclude<Signal, "NO_TRADE"> = indicators.ema20 >= indicators.ema50 ? "LONG" : "SHORT";
+    const emaTrendDirection: Exclude<Signal, "NO_TRADE"> = emaTrend;
     if (shortHorizon) {
       if (emaTrendDirection === "LONG" && bullishFastConfirmations === 0) {
-        longScore -= w("fastFilters", 12);
+        addL("fastFilters", -12);
         rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a long.");
       }
       if (emaTrendDirection === "SHORT" && bearishFastConfirmations === 0) {
-        shortScore -= w("fastFilters", 12);
+        addS("fastFilters", -12);
         rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a short.");
       }
     }
 
     const prevRegimeContext = classifyMarketRegime(indicators, lastPrice, true);
     const prevMarketRegime = prevRegimeContext.marketRegime;
+    // Phase 2b: Regime maturity detection
+    const regimeMaturity: "FRESH" | "MATURE" = prevMarketRegime !== marketRegime ? "FRESH" : "MATURE";
     if (prevMarketRegime !== marketRegime) {
       if (prevMarketRegime === "RANGE" && marketRegime === "TREND") {
-        longScore += w("trend", 5);
-        shortScore += w("trend", 5);
+        addL("trend", 4);
+        addS("trend", 4);
         rationale.push("Regime transition: RANGE -> TREND detected (fresh breakout setup).");
       } else if (prevMarketRegime === "TREND" && marketRegime === "RANGE") {
-        longScore -= w("trend", 4);
-        shortScore -= w("trend", 4);
+        addL("trend", -3);
+        addS("trend", -3);
         rationale.push("Regime transition: TREND -> RANGE detected (exhaustion; reduce trend conviction).");
       } else if (marketRegime === "VOLATILE_SPIKE") {
-        longScore -= w("volatility", 3);
-        shortScore -= w("volatility", 3);
+        addL("volatility", -3);
+        addS("volatility", -3);
         rationale.push("Regime transition: spike detected - caution escalated.");
       }
+    }
+
+    // Phase 1a: Apply channel score caps — limit each channel to ±18 after weight multiplier
+    const CHANNEL_CAP = 18;
+    for (const ch of Object.keys(acc) as WeightChannel[]) {
+      longScore += Math.max(-CHANNEL_CAP, Math.min(CHANNEL_CAP, acc[ch].long));
+      shortScore += Math.max(-CHANNEL_CAP, Math.min(CHANNEL_CAP, acc[ch].short));
     }
 
     const diff = Math.abs(longScore - shortScore);
@@ -578,10 +595,10 @@ export class RecommendationSignalEvaluator {
     if (loserScore > 0) {
       winnerRatio = winnerScore / (winnerScore + loserScore);
     }
-    if (winnerRatio < 0.48) {
+    if (winnerRatio < 0.60) {
       winnerRatioInsufficient = true;
-      rationale.push(`Winner ratio ${winnerRatio.toFixed(2)} is below 0.48; directional edge is insufficient.`);
-    } else if (winnerRatio < 0.55) {
+      rationale.push(`Winner ratio ${winnerRatio.toFixed(2)} is below 0.60; directional edge is insufficient.`);
+    } else if (winnerRatio < 0.65) {
       confidence -= 12;
       rationale.push(`Low winner ratio (${winnerRatio.toFixed(2)}); mixed signals reduce conviction.`);
     }
@@ -590,6 +607,26 @@ export class RecommendationSignalEvaluator {
       lowAbsoluteConviction = true;
       confidence -= 10;
       rationale.push("Few indicators contributed to the winning direction; conviction is low.");
+    }
+
+    // --- Independent channel agreement (Improvement #2: Decorrelate signals) ---
+    // Group indicators into 4 truly independent channels and require 3/4 agreement.
+    const independentChannelAgreement = this.computeIndependentChannelAgreement({
+      signal,
+      indicators,
+      perp,
+      lastPrice,
+      biasContext,
+      btcContext
+    });
+    if (independentChannelAgreement < 3) {
+      confidence -= 15;
+      rationale.push(`Independent channel agreement: only ${independentChannelAgreement}/4 channels confirm ${signal}; insufficient cross-domain confluence.`);
+    } else if (independentChannelAgreement === 4) {
+      confidence += 5;
+      rationale.push(`Independent channel agreement: all 4 channels confirm ${signal}; strong cross-domain confluence.`);
+    } else {
+      rationale.push(`Independent channel agreement: ${independentChannelAgreement}/4 channels confirm ${signal}.`);
     }
 
     const volumeConfirmation = this.computeVolumeConfirmationScore(signal, indicators);
@@ -653,6 +690,21 @@ export class RecommendationSignalEvaluator {
       }
     }
 
+    // Phase 2b: Regime maturity confidence adjustment
+    if (marketRegime === "TREND") {
+      if (regimeMaturity === "FRESH") {
+        confidence += 4;
+        rationale.push("Fresh TREND regime: confidence boosted for fresh directional breakout.");
+      } else {
+        confidence -= 4;
+        rationale.push("Mature TREND regime: confidence reduced for potential trend exhaustion.");
+      }
+    }
+
+    // Capture raw signal strength before setup quality blending.
+    // This represents pure directional edge from scoring — use for win probability.
+    const signalStrength = Math.round(this.clamp(confidence, 1, 99));
+
     const confidenceBreakdown = this.computeConfidenceBreakdown({
       indicators,
       marketRegime,
@@ -666,6 +718,7 @@ export class RecommendationSignalEvaluator {
     return {
       signal,
       confidence,
+      signalStrength,
       confidenceBreakdown,
       rationale,
       regime,
@@ -677,7 +730,9 @@ export class RecommendationSignalEvaluator {
       lowAbsoluteConviction,
       winnerRatioInsufficient,
       htfContradictionCount,
-      regimeSignalMismatch
+      regimeSignalMismatch,
+      independentChannelAgreement,
+      regimeMaturity
     };
   }
 
@@ -867,5 +922,89 @@ export class RecommendationSignalEvaluator {
       count += 1;
     }
     return count;
+  }
+
+  /**
+   * Improvement #2: Decorrelate signals.
+   * Score 4 truly independent channels and count how many agree with the signal direction.
+   *
+   * Channel 1 — Price Structure: EMA position, swing levels, VWAP
+   * Channel 2 — Volume/Flow: OBV delta, CVD, volume z-score (NOT momentum oscillators)
+   * Channel 3 — Perp-specific: Funding, OI delta, premium
+   * Channel 4 — Microstructure: Orderbook imbalance, microprice
+   */
+  private computeIndependentChannelAgreement(input: {
+    signal: Exclude<Signal, "NO_TRADE">;
+    indicators: IndicatorSnapshot;
+    perp: PerpMarketSnapshot;
+    lastPrice: number;
+    biasContext?: BiasContext;
+    btcContext?: { emaAbove: boolean; momentumPositive: boolean };
+  }): number {
+    const { signal, indicators, perp, lastPrice } = input;
+    let agreeing = 0;
+
+    // Channel 1: Price Structure
+    const priceStructureScore = (() => {
+      let bullish = 0;
+      let bearish = 0;
+      if (indicators.ema20 > indicators.ema50) bullish++; else bearish++;
+      if (lastPrice >= indicators.vwap) bullish++; else bearish++;
+      if (indicators.swingLow !== undefined && lastPrice > indicators.swingLow &&
+          (indicators.swingHigh === undefined || lastPrice < indicators.swingHigh)) {
+        bullish++;
+      } else if (indicators.swingHigh !== undefined && lastPrice < indicators.swingHigh) {
+        bearish++;
+      }
+      return bullish > bearish ? "LONG" : bearish > bullish ? "SHORT" : "NEUTRAL";
+    })();
+    if (priceStructureScore === signal) agreeing++;
+
+    // Channel 2: Volume/Flow (pure volume — no momentum oscillators)
+    const volumeFlowScore = (() => {
+      let bullish = 0;
+      let bearish = 0;
+      if ((indicators.obvSlope5 ?? 0) > 0.02) bullish++;
+      else if ((indicators.obvSlope5 ?? 0) < -0.02) bearish++;
+      if ((indicators.cvdDeltaPct5 ?? 0) > 10) bullish++;
+      else if ((indicators.cvdDeltaPct5 ?? 0) < -10) bearish++;
+      if ((indicators.cmf20 ?? 0) > 0.08) bullish++;
+      else if ((indicators.cmf20 ?? 0) < -0.08) bearish++;
+      return bullish > bearish ? "LONG" : bearish > bullish ? "SHORT" : "NEUTRAL";
+    })();
+    if (volumeFlowScore === signal) agreeing++;
+
+    // Channel 3: Perp-specific
+    const perpScore = (() => {
+      let bullish = 0;
+      let bearish = 0;
+      // Funding: negative = short crowding = bullish
+      if (perp.fundingRate < -0.00005) bullish++;
+      else if (perp.fundingRate > 0.00005) bearish++;
+      // Premium: discount = bullish
+      if (perp.premiumPct < -0.1) bullish++;
+      else if (perp.premiumPct > 0.1) bearish++;
+      // OI expansion + MACD direction
+      if (perp.openInterestDeltaPct !== undefined && perp.openInterestDeltaPct > 0.3) {
+        if (indicators.macdHistogram > 0) bullish++;
+        else if (indicators.macdHistogram < 0) bearish++;
+      }
+      return bullish > bearish ? "LONG" : bearish > bullish ? "SHORT" : "NEUTRAL";
+    })();
+    if (perpScore === signal) agreeing++;
+
+    // Channel 4: Microstructure
+    const microScore = (() => {
+      let bullish = 0;
+      let bearish = 0;
+      if ((perp.orderBookImbalance ?? 0) >= 0.15) bullish++;
+      else if ((perp.orderBookImbalance ?? 0) <= -0.15) bearish++;
+      if ((perp.microPricePremiumPct ?? 0) > 0.008) bullish++;
+      else if ((perp.microPricePremiumPct ?? 0) < -0.008) bearish++;
+      return bullish > bearish ? "LONG" : bearish > bullish ? "SHORT" : "NEUTRAL";
+    })();
+    if (microScore === signal) agreeing++;
+
+    return agreeing;
   }
 }

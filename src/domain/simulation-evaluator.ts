@@ -13,6 +13,10 @@ export interface PaperTrade {
   stopLoss: number;
   takeProfit: number;
   openedAtMs: number;
+  /** ATR at entry time — enables trailing stop when provided */
+  atr?: number;
+  /** Time-based exit: close position if TP not hit within this many candles */
+  timeBasedExitCandles?: number;
 }
 
 export interface SimulationOutcome {
@@ -24,6 +28,12 @@ export interface SimulationOutcome {
   pnlPct: number;
   maxFavorableExcursionPct: number;
   maxAdverseExcursionPct: number;
+  /** True if the trailing stop mechanism was active and influenced the exit */
+  trailingStopUsed?: boolean;
+  /** Improvement #4: Which candle (1-indexed) the exit occurred on, for time-of-entry analysis */
+  exitCandleIndex?: number;
+  /** Total candles evaluated in the simulation window */
+  totalCandles?: number;
 }
 
 export function evaluatePaperTrade(params: {
@@ -37,24 +47,128 @@ export function evaluatePaperTrade(params: {
     .filter((candle) => candle.timestamp > params.trade.openedAtMs && candle.timestamp <= params.horizonEndMs);
   const excursions = computeExcursions(params.trade.signal, params.trade.entry, relevant);
 
-  for (const candle of relevant) {
+  const atr = params.trade.atr;
+  const trailingEnabled = atr !== undefined && atr > 0;
+  let currentStop = params.trade.stopLoss;
+  let trailingStopUsed = false;
+  let maxFavorableDistance = 0;
+
+  for (let candleIdx = 0; candleIdx < relevant.length; candleIdx++) {
+    const candle = relevant[candleIdx]!;
+    // Update trailing stop based on max favorable excursion so far
+    if (trailingEnabled) {
+      const favorablePrice = params.trade.signal === "LONG" ? candle.high : candle.low;
+      const favorableDistance = params.trade.signal === "LONG"
+        ? favorablePrice - params.trade.entry
+        : params.trade.entry - favorablePrice;
+
+      if (favorableDistance > maxFavorableDistance) {
+        maxFavorableDistance = favorableDistance;
+      }
+
+      // After 0.5 ATR favorable: trail stop to breakeven (entry)
+      // After 1.0 ATR favorable: trail stop to 0.5 ATR profit
+      if (maxFavorableDistance >= atr) {
+        const trailTarget = params.trade.signal === "LONG"
+          ? params.trade.entry + atr * 0.5
+          : params.trade.entry - atr * 0.5;
+        if (params.trade.signal === "LONG" && trailTarget > currentStop) {
+          currentStop = trailTarget;
+          trailingStopUsed = true;
+        } else if (params.trade.signal === "SHORT" && trailTarget < currentStop) {
+          currentStop = trailTarget;
+          trailingStopUsed = true;
+        }
+      } else if (maxFavorableDistance >= atr * 0.5) {
+        // Trail to breakeven
+        if (params.trade.signal === "LONG" && params.trade.entry > currentStop) {
+          currentStop = params.trade.entry;
+          trailingStopUsed = true;
+        } else if (params.trade.signal === "SHORT" && params.trade.entry < currentStop) {
+          currentStop = params.trade.entry;
+          trailingStopUsed = true;
+        }
+      }
+    }
+
+    // Phase 2c: Time-based exit — close at current price if TP not hit within timeBasedExitCandles
+    if (params.trade.timeBasedExitCandles !== undefined && candleIdx + 1 >= params.trade.timeBasedExitCandles) {
+      const exitPrice = candle.close;
+      const pnl = computePnlPct(params.trade.signal, params.trade.entry, exitPrice);
+      const favorable = pnl >= 0;
+      return buildOutcome({
+        signal: params.trade.signal,
+        entry: params.trade.entry,
+        exitPrice,
+        status: favorable ? "success" : "failure",
+        failureType: favorable ? "NONE" : "TIMEOUT_LOSS",
+        directionalCorrect: favorable,
+        reason: favorable
+          ? "Time-based exit: TP not hit within holding period; closed with positive PnL."
+          : "Time-based exit: TP not hit within holding period; closed with negative PnL.",
+        excursions,
+        trailingStopUsed,
+        exitCandleIndex: candleIdx + 1,
+        totalCandles: relevant.length
+      });
+    }
+
     if (params.trade.signal === "LONG") {
-      const slHit = candle.low <= params.trade.stopLoss;
+      const slHit = candle.low <= currentStop;
       const tpHit = candle.high >= params.trade.takeProfit;
       if (slHit && tpHit) {
+        const closeAboveEntry = candle.close >= params.trade.entry;
+        if (closeAboveEntry) {
+          return buildOutcome({
+            signal: params.trade.signal,
+            entry: params.trade.entry,
+            exitPrice: params.trade.takeProfit,
+            status: "success",
+            failureType: "NONE",
+            directionalCorrect: true,
+            reason: "Both SL and TP touched in same candle; close above entry suggests TP hit first.",
+            excursions,
+            trailingStopUsed,
+            exitCandleIndex: candleIdx + 1,
+            totalCandles: relevant.length
+          });
+        }
+        const exitPrice = trailingStopUsed ? currentStop : params.trade.stopLoss;
+        const isProfit = exitPrice >= params.trade.entry;
         return buildOutcome({
           signal: params.trade.signal,
           entry: params.trade.entry,
-          exitPrice: params.trade.stopLoss,
-          status: "failure",
-          failureType: "WHIPSAW_SL_TP",
-          directionalCorrect: false,
-          reason: "Both SL and TP were touched in the same candle; counted as stop-loss.",
-          excursions
+          exitPrice,
+          status: isProfit ? "success" : "failure",
+          failureType: isProfit ? "NONE" : "WHIPSAW_SL_TP",
+          directionalCorrect: isProfit,
+          reason: isProfit
+            ? "Both SL and TP touched in same candle; trailing stop locked in profit."
+            : "Both SL and TP touched in same candle; close below entry suggests SL hit first.",
+          excursions,
+          trailingStopUsed,
+          exitCandleIndex: candleIdx + 1,
+          totalCandles: relevant.length
         });
       }
       if (slHit) {
-        // Heuristic: if price reclaims entry after SL within the same horizon, treat it as a tight-stop failure.
+        const exitPrice = currentStop;
+        const isTrailingProfit = trailingStopUsed && exitPrice >= params.trade.entry;
+        if (isTrailingProfit) {
+          return buildOutcome({
+            signal: params.trade.signal,
+            entry: params.trade.entry,
+            exitPrice,
+            status: "success",
+            failureType: "NONE",
+            directionalCorrect: true,
+            reason: "Trailing stop locked in profit after favorable move.",
+            excursions,
+            trailingStopUsed: true,
+            exitCandleIndex: candleIdx + 1,
+            totalCandles: relevant.length
+          });
+        }
         const rebound = relevant
           .filter((next) => next.timestamp > candle.timestamp)
           .some((next) => next.high >= params.trade.entry);
@@ -68,7 +182,10 @@ export function evaluatePaperTrade(params: {
           reason: rebound
             ? "Stop-loss hit first, but price later reclaimed entry; likely tight-stop loss."
             : "Stop-loss was hit with no rebound to entry within the horizon.",
-          excursions
+          excursions,
+          trailingStopUsed,
+          exitCandleIndex: candleIdx + 1,
+          totalCandles: relevant.length
         });
       }
       if (tpHit) {
@@ -80,28 +197,71 @@ export function evaluatePaperTrade(params: {
           failureType: "NONE",
           directionalCorrect: true,
           reason: "Take-profit was hit within the simulation window.",
-          excursions
+          excursions,
+          trailingStopUsed,
+          exitCandleIndex: candleIdx + 1,
+          totalCandles: relevant.length
         });
       }
       continue;
     }
 
-    const slHit = candle.high >= params.trade.stopLoss;
+    // SHORT
+    const slHit = candle.high >= currentStop;
     const tpHit = candle.low <= params.trade.takeProfit;
     if (slHit && tpHit) {
+      const closeBelowEntry = candle.close <= params.trade.entry;
+      if (closeBelowEntry) {
+        return buildOutcome({
+          signal: params.trade.signal,
+          entry: params.trade.entry,
+          exitPrice: params.trade.takeProfit,
+          status: "success",
+          failureType: "NONE",
+          directionalCorrect: true,
+          reason: "Both SL and TP touched in same candle; close below entry suggests TP hit first.",
+          excursions,
+          trailingStopUsed,
+          exitCandleIndex: candleIdx + 1,
+          totalCandles: relevant.length
+        });
+      }
+      const exitPrice = trailingStopUsed ? currentStop : params.trade.stopLoss;
+      const isProfit = exitPrice <= params.trade.entry;
       return buildOutcome({
         signal: params.trade.signal,
         entry: params.trade.entry,
-        exitPrice: params.trade.stopLoss,
-        status: "failure",
-        failureType: "WHIPSAW_SL_TP",
-        directionalCorrect: false,
-        reason: "Both SL and TP were touched in the same candle; counted as stop-loss.",
-        excursions
+        exitPrice,
+        status: isProfit ? "success" : "failure",
+        failureType: isProfit ? "NONE" : "WHIPSAW_SL_TP",
+        directionalCorrect: isProfit,
+        reason: isProfit
+          ? "Both SL and TP touched in same candle; trailing stop locked in profit."
+          : "Both SL and TP touched in same candle; close above entry suggests SL hit first.",
+        excursions,
+        trailingStopUsed,
+        exitCandleIndex: candleIdx + 1,
+        totalCandles: relevant.length
       });
     }
     if (slHit) {
-      // Symmetric short-side heuristic: touching entry again after SL implies stop was likely too tight.
+      const exitPrice = currentStop;
+      const isTrailingProfit = trailingStopUsed && exitPrice <= params.trade.entry;
+      if (isTrailingProfit) {
+        return buildOutcome({
+          signal: params.trade.signal,
+          entry: params.trade.entry,
+          exitPrice,
+          status: "success",
+          failureType: "NONE",
+          directionalCorrect: true,
+          reason: "Trailing stop locked in profit after favorable move.",
+          excursions,
+          trailingStopUsed: true,
+          exitCandleIndex: candleIdx + 1,
+          totalCandles: relevant.length
+        });
+      }
       const rebound = relevant
         .filter((next) => next.timestamp > candle.timestamp)
         .some((next) => next.low <= params.trade.entry);
@@ -115,7 +275,10 @@ export function evaluatePaperTrade(params: {
         reason: rebound
           ? "Stop-loss hit first, but price later reclaimed entry; likely tight-stop loss."
           : "Stop-loss was hit with no rebound to entry within the horizon.",
-        excursions
+        excursions,
+        trailingStopUsed,
+        exitCandleIndex: candleIdx + 1,
+        totalCandles: relevant.length
       });
     }
     if (tpHit) {
@@ -127,7 +290,10 @@ export function evaluatePaperTrade(params: {
         failureType: "NONE",
         directionalCorrect: true,
         reason: "Take-profit was hit within the simulation window.",
-        excursions
+        excursions,
+        trailingStopUsed,
+        exitCandleIndex: candleIdx + 1,
+        totalCandles: relevant.length
       });
     }
   }
@@ -160,7 +326,8 @@ export function evaluatePaperTrade(params: {
     exitPrice: finalPrice,
     pnlPct,
     maxFavorableExcursionPct: excursions.maxFavorableExcursionPct,
-    maxAdverseExcursionPct: excursions.maxAdverseExcursionPct
+    maxAdverseExcursionPct: excursions.maxAdverseExcursionPct,
+    trailingStopUsed
   };
 }
 
@@ -173,6 +340,9 @@ function buildOutcome(input: {
   directionalCorrect: boolean;
   reason: string;
   excursions: { maxFavorableExcursionPct: number; maxAdverseExcursionPct: number };
+  trailingStopUsed?: boolean;
+  exitCandleIndex?: number;
+  totalCandles?: number;
 }): SimulationOutcome {
   return {
     status: input.status === "success" ? "SUCCESS" : "FAILURE",
@@ -182,7 +352,10 @@ function buildOutcome(input: {
     exitPrice: input.exitPrice,
     pnlPct: computePnlPct(input.signal, input.entry, input.exitPrice),
     maxFavorableExcursionPct: input.excursions.maxFavorableExcursionPct,
-    maxAdverseExcursionPct: input.excursions.maxAdverseExcursionPct
+    maxAdverseExcursionPct: input.excursions.maxAdverseExcursionPct,
+    trailingStopUsed: input.trailingStopUsed,
+    exitCandleIndex: input.exitCandleIndex,
+    totalCandles: input.totalCandles
   };
 }
 

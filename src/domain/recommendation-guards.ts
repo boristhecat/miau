@@ -17,17 +17,28 @@ export function applyTradeGuards(input: {
   winnerRatioInsufficient: boolean;
   htfContradictionCount: number;
   regimeSignalMismatch: boolean;
+  independentChannelAgreement?: number;
   setupQuality: number;
   confidence: number;
+  /** Raw directional edge score before setup quality blending — used for directional guards */
+  signalStrength?: number;
   riskRewardRatio: number;
+  feeBurdenPct?: number;
+  setupDetected?: boolean;
   bidAskSpreadPct?: number;
+  spreadBlockThreshold?: number;
   skipLegacyTradeabilityChecks?: boolean;
+  /** BTC context for alt correlation hard filter */
+  pair?: string;
+  btcContext?: { emaAbove: boolean; momentumPositive: boolean };
   rationale: readonly string[];
 }): { signal: Signal; blocked: boolean; rationale: readonly string[] } {
   const intervalMinutes = parseIntervalToMinutes(input.interval);
   const session = detectTradingSession();
   const forceActive = input.forcedDirection !== undefined;
   const accumulated: string[] = [...input.rationale];
+  // Use raw signal strength for directional edge checks; fall back to blended confidence
+  const directionalConfidence = input.signalStrength ?? input.confidence;
   const block = (message: string): { signal: Signal; blocked: boolean; rationale: readonly string[] } => {
     if (forceActive) {
       accumulated.push(`Guard advisory: ${message}`);
@@ -62,20 +73,40 @@ export function applyTradeGuards(input: {
     return block("low-liquidity chop regime.");
   }
   if (input.winnerRatioInsufficient) {
-    return block("winner ratio is below 0.48; directional edge is insufficient.");
+    return block("winner ratio is below 0.60; directional edge is insufficient.");
+  }
+  // Improvement #2: Independent channel agreement hard block
+  if (input.independentChannelAgreement !== undefined && input.independentChannelAgreement < 2) {
+    return block(`only ${input.independentChannelAgreement}/4 independent channels agree; no cross-domain confluence.`);
+  }
+  // Improvement #8: BTC correlation hard filter for alts
+  if (input.pair && input.btcContext) {
+    const symbol = input.pair.split("-")[0]?.toUpperCase() ?? "";
+    const isAlt = symbol !== "BTC";
+    if (isAlt) {
+      const btcStrongBearish = !input.btcContext.emaAbove && !input.btcContext.momentumPositive;
+      const btcStrongBullish = input.btcContext.emaAbove && input.btcContext.momentumPositive;
+      if (input.signal === "LONG" && btcStrongBearish) {
+        return block("BTC is strongly bearish; alt long blocked due to high cross-asset correlation.");
+      }
+      if (input.signal === "SHORT" && btcStrongBullish) {
+        return block("BTC is strongly bullish; alt short blocked due to high cross-asset correlation.");
+      }
+    }
   }
   if (input.htfContradictionCount >= 3) {
     return block(`HTF context (${input.htfContradictionCount}/4 dimensions) strongly contradicts signal direction.`);
   }
-  if (input.htfContradictionCount === 2 && input.confidence < 60) {
-    return block("HTF context partially contradicts signal; confidence must be at least 60.");
+  if (input.htfContradictionCount === 2 && directionalConfidence < 60) {
+    return block("HTF context partially contradicts signal; directional strength must be at least 60.");
   }
   if (input.regimeSignalMismatch) {
     accumulated.push(
       `Guard: trend-follow signal in ${input.marketRegime} regime requires higher R/R (1.6) and confidence (55).`
     );
   }
-  if (!input.skipLegacyTradeabilityChecks && input.bidAskSpreadPct !== undefined && input.bidAskSpreadPct > 0.12) {
+  const effectiveSpreadThreshold = input.spreadBlockThreshold ?? 0.12;
+  if (!input.skipLegacyTradeabilityChecks && input.bidAskSpreadPct !== undefined && input.bidAskSpreadPct > effectiveSpreadThreshold) {
     return block("orderbook spread is too wide for clean execution.");
   }
   if (!input.skipLegacyTradeabilityChecks && input.regime === "CHOPPY") {
@@ -87,17 +118,23 @@ export function applyTradeGuards(input: {
   if (input.riskRewardRatio < 1.2) {
     return block("risk/reward below 1.2.");
   }
+  if (input.feeBurdenPct !== undefined && input.feeBurdenPct > 0.30) {
+    return block(`fee burden is ${(input.feeBurdenPct * 100).toFixed(0)}% of gross TP; trade is not economical.`);
+  }
+  if (input.setupDetected === false) {
+    return block("no structural setup detected; no reason to enter.");
+  }
   if (input.setupGrade === "D") {
     return block("setup grade D.");
   }
   if (intervalMinutes <= 10 && input.setupGrade === "C") {
     return block("setup grade C is too weak for <=10m trading.");
   }
-  if (input.lowAbsoluteConviction && input.confidence < 55) {
-    return block("confidence below low-conviction threshold (55).");
+  if (input.lowAbsoluteConviction && directionalConfidence < 55) {
+    return block("directional strength below low-conviction threshold (55).");
   }
-  if (input.regimeSignalMismatch && input.confidence < 55) {
-    return block(`trend-follow signal in ${input.marketRegime} regime requires confidence >= 55.`);
+  if (input.regimeSignalMismatch && directionalConfidence < 55) {
+    return block(`trend-follow signal in ${input.marketRegime} regime requires directional strength >= 55.`);
   }
   let confidenceFloor = 45;
   let setupQualityFloor = 52;
@@ -110,17 +147,17 @@ export function applyTradeGuards(input: {
     setupQualityFloor = Math.max(setupQualityFloor, 58);
     shortConfidenceFloor = Math.max(shortConfidenceFloor, 62);
   }
-  if (input.confidence < confidenceFloor) {
+  if (directionalConfidence < confidenceFloor) {
     if (session === "ASIA" || session === "DEAD") {
-      return block(`confidence below ${session} session threshold (${confidenceFloor}).`);
+      return block(`directional strength below ${session} session threshold (${confidenceFloor}).`);
     }
-    return block("confidence too low.");
+    return block("directional strength too low.");
   }
-  if (intervalMinutes <= 10 && input.confidence < shortConfidenceFloor) {
+  if (intervalMinutes <= 10 && directionalConfidence < shortConfidenceFloor) {
     if (session === "DEAD") {
-      return block(`confidence below DEAD zone short-timeframe threshold (${shortConfidenceFloor}).`);
+      return block(`directional strength below DEAD zone short-timeframe threshold (${shortConfidenceFloor}).`);
     }
-    return block(`confidence below short-timeframe threshold (${shortConfidenceFloor}).`);
+    return block(`directional strength below short-timeframe threshold (${shortConfidenceFloor}).`);
   }
   if (input.setupQuality < setupQualityFloor) {
     if (session === "ASIA" || session === "DEAD") {

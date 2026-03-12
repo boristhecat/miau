@@ -51,14 +51,14 @@ function resolveBaseByHorizon(intervalMinutes: number): IndicatorWeightProfile {
     return {
       horizonBucket: "1-10m",
       multipliers: {
-        trend: 0.95,
-        momentum: 1.2,
+        trend: 0.75,
+        momentum: 1.4,
         meanReversion: 0.85,
         flow: 1.15,
         microstructure: 1.2,
         volatility: 1,
         consensus: 1.15,
-        fastFilters: 1.2
+        fastFilters: 1.3
       }
     };
   }

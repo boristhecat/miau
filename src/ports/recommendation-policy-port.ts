@@ -19,6 +19,8 @@ export interface RecommendationBuildInput {
   objectiveHorizon?: string;
   expectedRangeHorizon?: string;
   baseInterval?: string;
+  riskBudgetUsd?: number;
+  calibratedWinRate?: number;
 }
 
 export interface RecommendationPolicyPort {

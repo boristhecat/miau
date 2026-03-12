@@ -79,6 +79,22 @@ export function assessVwapChop(indicators: IndicatorSnapshot, lastPrice: number)
   };
 }
 
+/** Detect if we're within 15 minutes of a session boundary (transition zone). */
+export function isSessionTransition(now: Date = new Date()): boolean {
+  const utcHour = now.getUTCHours();
+  const utcMinute = now.getUTCMinutes();
+  const totalMinutes = utcHour * 60 + utcMinute;
+  // Session boundaries: 0:00 (ASIA), 8:00 (LONDON), 13:00 (US), 21:00 (DEAD)
+  const boundaries = [0, 480, 780, 1260];
+  for (const boundary of boundaries) {
+    const diff = Math.abs(totalMinutes - boundary);
+    // Also check wrap-around for midnight
+    const wrapDiff = 1440 - diff;
+    if (diff <= 15 || wrapDiff <= 15) return true;
+  }
+  return false;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }

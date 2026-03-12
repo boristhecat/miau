@@ -91,9 +91,24 @@ export interface LearningBucketRow {
   avgPnlUsd: number;
 }
 
+export interface CalibrationWinRateQuery {
+  pair?: string;
+  timeframe?: string;
+  marketRegime?: string;
+  minSamples?: number;
+  lookbackDays?: number;
+}
+
+export interface CalibrationWinRateResult {
+  winRate: number;
+  samples: number;
+  sufficient: boolean;
+}
+
 export interface LearningStorePort {
   recordOutcome(input: LearningOutcomeRecord): Promise<void>;
   getStats(input: LearningStatsQuery): Promise<LearningStatsResult>;
   getOverview(input: { lookbackDays: number }): Promise<LearningOverview>;
   getBucketOverview(input: { lookbackDays: number }): Promise<LearningBucketRow[]>;
+  getCalibrationWinRate?(input: CalibrationWinRateQuery): Promise<CalibrationWinRateResult>;
 }

@@ -1,6 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type {
+  CalibrationWinRateQuery,
+  CalibrationWinRateResult,
   LearningBucketRow,
   LearningOverview,
   LearningOutcomeRecord,
@@ -256,6 +258,45 @@ class SqliteLearningStore implements LearningStorePort {
       winRate: Number(row.winRate ?? 0),
       avgPnlUsd: Number(row.avgPnlUsd ?? 0)
     }));
+  }
+
+  async getCalibrationWinRate(input: CalibrationWinRateQuery): Promise<CalibrationWinRateResult> {
+    const minSamples = input.minSamples ?? 20;
+    const lookbackDays = input.lookbackDays ?? 30;
+    const filters: string[] = [
+      "status IN ('SUCCESS', 'FAILURE')",
+      "recorded_at >= datetime('now', '-' || @lookbackDays || ' days')"
+    ];
+    const params: Record<string, unknown> = { lookbackDays, minSamples };
+    if (input.pair) {
+      filters.push("pair = @pair");
+      params.pair = input.pair;
+    }
+    if (input.timeframe) {
+      filters.push("timeframe = @timeframe");
+      params.timeframe = input.timeframe;
+    }
+    if (input.marketRegime) {
+      filters.push("market_regime = @marketRegime");
+      params.marketRegime = input.marketRegime;
+    }
+    const whereClause = filters.join(" AND ");
+    const row = this.db
+      .prepare(
+        `SELECT
+          COUNT(*) AS samples,
+          AVG(CASE WHEN status = 'SUCCESS' THEN 1.0 ELSE 0.0 END) AS winRate
+        FROM learning_outcomes
+        WHERE ${whereClause}`
+      )
+      .get(params) ?? {};
+    const samples = Number(row.samples ?? 0);
+    const winRate = Number(row.winRate ?? 0);
+    return {
+      winRate,
+      samples,
+      sufficient: samples >= minSamples
+    };
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {

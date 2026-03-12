@@ -1,10 +1,11 @@
-import type { MarketRegime, Signal, TradeAction } from "./types.js";
+import type { IndicatorSnapshot, MarketRegime, Signal, TradeAction } from "./types.js";
 import { parseIntervalToMinutes } from "./interval-utils.js";
 
 export class RecommendationTradeCalculator {
   getAtrProfile(
     atrPct: number,
-    marketRegime: MarketRegime
+    marketRegime: MarketRegime,
+    regimeMaturity?: "FRESH" | "MATURE"
   ): {
     slAtrMultiplier: number;
     tpAtrMultiplier: number;
@@ -18,17 +19,18 @@ export class RecommendationTradeCalculator {
       };
     }
     if (marketRegime === "TREND") {
+      const tpScale = regimeMaturity === "MATURE" ? 0.85 : 1.0;
       return {
         slAtrMultiplier: 1.1,
-        tpAtrMultiplier: 2.4,
-        tpFallbackAtrMultiplier: 2.1
+        tpAtrMultiplier: 2.4 * tpScale,
+        tpFallbackAtrMultiplier: 2.1 * tpScale
       };
     }
     if (marketRegime === "RANGE") {
       return {
         slAtrMultiplier: 1.0,
-        tpAtrMultiplier: 1.6,
-        tpFallbackAtrMultiplier: 1.4
+        tpAtrMultiplier: 1.2,
+        tpFallbackAtrMultiplier: 1.1
       };
     }
     if (marketRegime === "VOLATILE_SPIKE") {
@@ -181,8 +183,11 @@ export class RecommendationTradeCalculator {
     leverage?: number;
     positionSizeUsd?: number;
     confidence: number;
+    signalStrength?: number;
+    calibratedWinRate?: number;
     estimatedPnLAtStopLoss?: number;
     estimatedPnLAtTakeProfit?: number;
+    bidAskSpreadPct?: number;
   }):
     | {
         netEstimatedPnLAtStopLoss: number;
@@ -207,11 +212,14 @@ export class RecommendationTradeCalculator {
       return undefined;
     }
 
-    const roundTripCostRate = 0.0014;
-    const totalCosts = notional * roundTripCostRate;
+    const totalCostRate = this.computeTotalExecutionCostRate(input.bidAskSpreadPct);
+    const totalCosts = notional * totalCostRate;
     const netTp = input.estimatedPnLAtTakeProfit - totalCosts;
     const netSl = input.estimatedPnLAtStopLoss - totalCosts;
-    const winProbability = Math.min(0.95, Math.max(0.05, input.confidence / 100));
+    // Improvement #3: Use 50% base (coin flip) when no empirical calibration.
+    // Confidence/signalStrength measure indicator agreement, not actual win probability.
+    const rawWinProb = input.calibratedWinRate ?? 0.5;
+    const winProbability = Math.min(0.95, Math.max(0.05, rawWinProb));
     const expectedValueUsd = winProbability * netTp + (1 - winProbability) * netSl;
     const netRiskRewardRatio = Math.abs(netSl) > 0 ? Math.abs(netTp / netSl) : 0;
     const expectedValuePerMarginPct =
@@ -264,7 +272,9 @@ export class RecommendationTradeCalculator {
     const totalCosts = notional * roundTripCostRate;
     const netTp = estimatedPnLAtTakeProfit - totalCosts;
     const netSl = estimatedPnLAtStopLoss - totalCosts;
-    const winProbability = Math.min(0.95, Math.max(0.05, rec.confidence / 100));
+    // Improvement #3: Use calibrated win rate or 50% base
+    const rawWinProb = rec.calibratedWinRate ?? 0.5;
+    const winProbability = Math.min(0.95, Math.max(0.05, rawWinProb));
     const expectedValueUsd = winProbability * netTp + (1 - winProbability) * netSl;
 
     return {
@@ -278,6 +288,194 @@ export class RecommendationTradeCalculator {
       expectedValuePerMarginPct:
         rec.positionSizeUsd > 0 ? this.round((expectedValueUsd / rec.positionSizeUsd) * 100) : undefined
     };
+  }
+
+  computeStructureAnchoredLevels(input: {
+    signal: Exclude<Signal, "NO_TRADE">;
+    entry: number;
+    atr: number;
+    indicators: IndicatorSnapshot;
+    atrProfile: { slAtrMultiplier: number; tpAtrMultiplier: number; tpFallbackAtrMultiplier: number };
+  }): { stopLoss: number; takeProfit: number; structureCapped: boolean } {
+    const { signal, entry, atr, indicators, atrProfile } = input;
+    const atrFloorSl = atr * atrProfile.slAtrMultiplier * 0.5;
+    const atrCeilingSl = atr * atrProfile.slAtrMultiplier * 2.0;
+
+    if (signal === "LONG") {
+      let sl = entry - atrProfile.slAtrMultiplier * atr;
+      if (indicators.swingLow !== undefined && indicators.swingLow < entry) {
+        const structureSl = indicators.swingLow - atr * 0.15;
+        const dist = entry - structureSl;
+        if (dist >= atrFloorSl && dist <= atrCeilingSl) {
+          sl = structureSl;
+        }
+      } else if (indicators.nearestSupportLevel !== undefined && indicators.nearestSupportLevel < entry) {
+        const structureSl = indicators.nearestSupportLevel - atr * 0.15;
+        const dist = entry - structureSl;
+        if (dist >= atrFloorSl && dist <= atrCeilingSl) {
+          sl = structureSl;
+        }
+      }
+      sl = Math.min(sl, indicators.bbMiddle);
+
+      // TP: use ATR-based target, then cap at nearest obstacle (not extend beyond it)
+      let tp = entry + atrProfile.tpAtrMultiplier * atr;
+      let structureCapped = false;
+      if (indicators.nearestResistanceLevel !== undefined && indicators.nearestResistanceLevel > entry) {
+        const capped = Math.min(tp, indicators.nearestResistanceLevel);
+        if (capped < tp) structureCapped = true;
+        tp = capped;
+      }
+      if (indicators.bbUpper > entry) {
+        const capped = Math.min(tp, indicators.bbUpper);
+        if (capped < tp) structureCapped = true;
+        tp = capped;
+      }
+      if (tp <= entry) {
+        tp = entry + atrProfile.tpFallbackAtrMultiplier * atr;
+        structureCapped = false;
+      }
+      return { stopLoss: sl, takeProfit: tp, structureCapped };
+    }
+
+    let sl = entry + atrProfile.slAtrMultiplier * atr;
+    if (indicators.swingHigh !== undefined && indicators.swingHigh > entry) {
+      const structureSl = indicators.swingHigh + atr * 0.15;
+      const dist = structureSl - entry;
+      if (dist >= atrFloorSl && dist <= atrCeilingSl) {
+        sl = structureSl;
+      }
+    } else if (indicators.nearestResistanceLevel !== undefined && indicators.nearestResistanceLevel > entry) {
+      const structureSl = indicators.nearestResistanceLevel + atr * 0.15;
+      const dist = structureSl - entry;
+      if (dist >= atrFloorSl && dist <= atrCeilingSl) {
+        sl = structureSl;
+      }
+    }
+    sl = Math.max(sl, indicators.bbMiddle);
+
+    // TP: use ATR-based target, then cap at nearest obstacle (not extend beyond it)
+    let tp = entry - atrProfile.tpAtrMultiplier * atr;
+    let structureCapped = false;
+    if (indicators.nearestSupportLevel !== undefined && indicators.nearestSupportLevel < entry) {
+      const capped = Math.max(tp, indicators.nearestSupportLevel);
+      if (capped > tp) structureCapped = true;
+      tp = capped;
+    }
+    if (indicators.bbLower < entry) {
+      const capped = Math.max(tp, indicators.bbLower);
+      if (capped > tp) structureCapped = true;
+      tp = capped;
+    }
+    if (tp >= entry) {
+      tp = entry - atrProfile.tpFallbackAtrMultiplier * atr;
+      structureCapped = false;
+    }
+    return { stopLoss: sl, takeProfit: tp, structureCapped };
+  }
+
+  computePullbackEntry(input: {
+    signal: Exclude<Signal, "NO_TRADE">;
+    lastPrice: number;
+    atr: number;
+    indicators: IndicatorSnapshot;
+  }): { entry: number; pullbackEntry: boolean } {
+    const { signal, lastPrice, atr, indicators } = input;
+    const pullbackFraction = 0.25;
+    const maxOffset = atr * 0.4;
+
+    if (signal === "LONG") {
+      const anchor = indicators.ema20 < lastPrice ? indicators.ema20 : lastPrice;
+      const gap = lastPrice - anchor;
+      if (gap > atr * 0.15) {
+        const offset = Math.min(gap * pullbackFraction, maxOffset);
+        return { entry: this.round(lastPrice - offset), pullbackEntry: true };
+      }
+    } else {
+      const anchor = indicators.ema20 > lastPrice ? indicators.ema20 : lastPrice;
+      const gap = anchor - lastPrice;
+      if (gap > atr * 0.15) {
+        const offset = Math.min(gap * pullbackFraction, maxOffset);
+        return { entry: this.round(lastPrice + offset), pullbackEntry: true };
+      }
+    }
+    return { entry: lastPrice, pullbackEntry: false };
+  }
+
+  capTakeProfitAtExpectedMove(input: {
+    signal: Exclude<Signal, "NO_TRADE">;
+    entry: number;
+    takeProfit: number;
+    expectedHigh: number;
+    expectedLow: number;
+  }): number {
+    const capMultiplier = 0.85;
+    if (input.signal === "LONG") {
+      const expectedMove = input.expectedHigh - input.entry;
+      const tpMove = input.takeProfit - input.entry;
+      if (tpMove > expectedMove * 1.5 && expectedMove > 0) {
+        return input.entry + expectedMove * capMultiplier;
+      }
+      return input.takeProfit;
+    }
+    const expectedMove = input.entry - input.expectedLow;
+    const tpMove = input.entry - input.takeProfit;
+    if (tpMove > expectedMove * 1.5 && expectedMove > 0) {
+      return input.entry - expectedMove * capMultiplier;
+    }
+    return input.takeProfit;
+  }
+
+  estimateSlippagePct(bidAskSpreadPct?: number): number {
+    if (bidAskSpreadPct === undefined) return 0.02;
+    return Math.max(bidAskSpreadPct * 0.5, 0.02);
+  }
+
+  computeTotalExecutionCostRate(bidAskSpreadPct?: number): number {
+    const exchangeFeeRate = 0.0014;
+    const slippagePerSide = this.estimateSlippagePct(bidAskSpreadPct) / 100;
+    return exchangeFeeRate + slippagePerSide * 2;
+  }
+
+  computeFeeBurden(input: {
+    leverage: number;
+    positionSizeUsd: number;
+    estimatedPnLAtTakeProfit: number;
+    bidAskSpreadPct?: number;
+  }): number {
+    const notional = input.leverage * input.positionSizeUsd;
+    const totalCostRate = this.computeTotalExecutionCostRate(input.bidAskSpreadPct);
+    const totalCosts = notional * totalCostRate;
+    const gross = Math.abs(input.estimatedPnLAtTakeProfit);
+    if (gross <= 1e-8) return 1;
+    return totalCosts / gross;
+  }
+
+  computeRiskBasedPositionSize(input: {
+    riskBudgetUsd: number;
+    entry: number;
+    stopLoss: number;
+    leverage: number;
+  }): number {
+    const riskPerUnit = Math.abs(input.entry - input.stopLoss);
+    if (riskPerUnit <= 1e-8 || input.entry <= 0) return 0;
+    const riskPct = riskPerUnit / input.entry;
+    const margin = input.riskBudgetUsd / (riskPct * input.leverage);
+    return this.round(Math.max(0, margin));
+  }
+
+  computeHoldingPeriod(input: {
+    entry: number;
+    takeProfit: number;
+    atr: number;
+    baseInterval: string;
+  }): { candles: number; minutes: number } {
+    const tpDistance = Math.abs(input.takeProfit - input.entry);
+    const atrPerCandle = Math.max(input.atr, 1e-8);
+    const candlesNeeded = Math.ceil((tpDistance / atrPerCandle) ** 2);
+    const clamped = Math.max(2, Math.min(candlesNeeded, 120));
+    const intervalMinutes = this.parseIntervalToMinutes(input.baseInterval);
+    return { candles: clamped, minutes: clamped * intervalMinutes };
   }
 
   toAction(signal: Signal, _confidence: number, _regime: "TRADEABLE" | "CHOPPY"): TradeAction {
@@ -298,6 +496,10 @@ export class RecommendationTradeCalculator {
       }
     }
     return 15;
+  }
+
+  parseBaseIntervalMinutes(interval: string): number {
+    return parseIntervalToMinutes(interval);
   }
 
   private parseIntervalToMinutes(interval: string): number {

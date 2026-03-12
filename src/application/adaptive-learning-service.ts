@@ -39,6 +39,24 @@ export class AdaptiveLearningService {
     return this.policyService.getPolicy(input);
   }
 
+  async getCalibratedWinRate(input: {
+    pair?: string;
+    timeframe?: string;
+    marketRegime?: string;
+  }): Promise<number | undefined> {
+    if (!this.store.getCalibrationWinRate) {
+      return undefined;
+    }
+    const result = await this.store.getCalibrationWinRate({
+      pair: input.pair,
+      timeframe: input.timeframe,
+      marketRegime: input.marketRegime,
+      minSamples: 20,
+      lookbackDays: 30
+    });
+    return result.sufficient ? result.winRate : undefined;
+  }
+
   async applyPolicy(input: {
     recommendation: Recommendation;
     timeframe: string;
@@ -69,6 +87,20 @@ export class AdaptiveLearningService {
           ...patch,
           rationale: [
             `Learning: widened stop by ${Math.round(policy.stopWideningFactor * 100)}% from tight-stop rebound history.`,
+            ...rec.rationale
+          ]
+        };
+      }
+    }
+
+    if (policy.tpNarrowingFactor > 0 && rec.signal !== "NO_TRADE") {
+      const patch = applyTpNarrowingPatch(rec, policy.tpNarrowingFactor);
+      if (patch) {
+        rec = {
+          ...rec,
+          ...patch,
+          rationale: [
+            `Learning: narrowed TP by ${Math.round(policy.tpNarrowingFactor * 100)}% from timeout-loss history.`,
             ...rec.rationale
           ]
         };
@@ -149,6 +181,21 @@ export class AdaptiveLearningService {
     };
     await this.store.recordOutcome(record);
   }
+}
+
+function applyTpNarrowingPatch(rec: Recommendation, factor: number): Partial<Recommendation> | null {
+  if (factor <= 0 || rec.signal === "NO_TRADE") {
+    return null;
+  }
+  const tpDistance = Math.abs(rec.takeProfit - rec.entry);
+  const narrowedDistance = tpDistance * (1 - factor);
+  if (!Number.isFinite(narrowedDistance) || narrowedDistance <= 0) {
+    return null;
+  }
+
+  const newTakeProfit = rec.signal === "LONG" ? rec.entry + narrowedDistance : rec.entry - narrowedDistance;
+  const newRiskReward = tradeCalculator.computeRiskReward(rec.entry, rec.stopLoss, newTakeProfit);
+  return { takeProfit: newTakeProfit, riskRewardRatio: newRiskReward };
 }
 
 function applyStopWideningPatch(rec: Recommendation, factor: number): Partial<Recommendation> | null {

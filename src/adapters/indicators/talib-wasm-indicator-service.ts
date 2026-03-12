@@ -118,7 +118,9 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
         recentCandleContext,
         rsiDivergence: this.computeRsiDivergence(closes, rsiSeries),
         volumeProfile: this.computeVolumeProfile(candles),
-        medianAtrPct: this.computeMedianAtrPct(candles)
+        medianAtrPct: this.computeMedianAtrPct(candles),
+        ...this.computeSwingLevels(candles),
+        ...this.computeNearestStructuralLevels(candles, this.computeVolumeProfile(candles))
       };
     } catch (error) {
       ensureTalibHealthyOnError(error);
@@ -399,6 +401,64 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       bearishCloseRatio5: this.round(bearishCloseRatio5),
       rangeExpansionRatio: this.round(rangeExpansionRatio),
       breakoutDirection: breakoutUp ? "UP" : breakoutDown ? "DOWN" : "NONE"
+    };
+  }
+
+  private computeSwingLevels(candles: Candle[], lookback = 20): { swingHigh?: number; swingLow?: number } {
+    const recent = candles.slice(-lookback);
+    if (recent.length < 5) {
+      return {};
+    }
+    let swingHigh: number | undefined;
+    let swingLow: number | undefined;
+    for (let i = recent.length - 3; i >= 2; i -= 1) {
+      const c = recent[i]!;
+      if (
+        swingHigh === undefined &&
+        c.high >= recent[i - 1]!.high &&
+        c.high >= recent[i - 2]!.high &&
+        c.high >= recent[i + 1]!.high &&
+        c.high >= recent[i + 2]!.high
+      ) {
+        swingHigh = c.high;
+      }
+      if (
+        swingLow === undefined &&
+        c.low <= recent[i - 1]!.low &&
+        c.low <= recent[i - 2]!.low &&
+        c.low <= recent[i + 1]!.low &&
+        c.low <= recent[i + 2]!.low
+      ) {
+        swingLow = c.low;
+      }
+      if (swingHigh !== undefined && swingLow !== undefined) break;
+    }
+    return {
+      swingHigh: swingHigh !== undefined ? this.round(swingHigh) : undefined,
+      swingLow: swingLow !== undefined ? this.round(swingLow) : undefined
+    };
+  }
+
+  private computeNearestStructuralLevels(
+    candles: Candle[],
+    volumeProfile: { vpoc: number; vah: number; val: number }
+  ): { nearestSupportLevel?: number; nearestResistanceLevel?: number } {
+    const lastPrice = candles[candles.length - 1]?.close;
+    if (!lastPrice) return {};
+    const swings = this.computeSwingLevels(candles, 30);
+    const supports: number[] = [];
+    const resistances: number[] = [];
+    if (volumeProfile.val < lastPrice) supports.push(volumeProfile.val);
+    if (volumeProfile.vpoc < lastPrice) supports.push(volumeProfile.vpoc);
+    if (swings.swingLow !== undefined && swings.swingLow < lastPrice) supports.push(swings.swingLow);
+    if (volumeProfile.vah > lastPrice) resistances.push(volumeProfile.vah);
+    if (volumeProfile.vpoc > lastPrice) resistances.push(volumeProfile.vpoc);
+    if (swings.swingHigh !== undefined && swings.swingHigh > lastPrice) resistances.push(swings.swingHigh);
+    supports.sort((a, b) => b - a);
+    resistances.sort((a, b) => a - b);
+    return {
+      nearestSupportLevel: supports[0] !== undefined ? this.round(supports[0]) : undefined,
+      nearestResistanceLevel: resistances[0] !== undefined ? this.round(resistances[0]) : undefined
     };
   }
 

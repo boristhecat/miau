@@ -102,7 +102,8 @@ describe("RecommendationTradeabilityEvaluator", () => {
     const assessment = evaluator.evaluate({
       indicators: trendIndicators,
       perp: basePerp,
-      lastPrice: 50600
+      lastPrice: 50600,
+      trendOnlyMode: false
     });
 
     expect(assessment.status).toBe("CAUTION");
@@ -117,7 +118,8 @@ describe("RecommendationTradeabilityEvaluator", () => {
     const assessment = evaluator.evaluate({
       indicators: trendIndicators,
       perp: basePerp,
-      lastPrice: 50600
+      lastPrice: 50600,
+      trendOnlyMode: false
     });
 
     expect(assessment.status).toBe("TRADEABLE");

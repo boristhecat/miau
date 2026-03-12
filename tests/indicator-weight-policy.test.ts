@@ -11,7 +11,7 @@ describe("resolveIndicatorWeightProfile", () => {
     expect(profile.horizonBucket).toBe("1-10m");
     expect(profile.multipliers.momentum).toBeGreaterThan(profile.multipliers.trend);
     expect(profile.multipliers.microstructure).toBeGreaterThanOrEqual(1);
-    expect(profile.multipliers.trend).toBeCloseTo(0.95 * 1.25);
+    expect(profile.multipliers.trend).toBeCloseTo(0.75 * 1.25);
     expect(profile.multipliers.meanReversion).toBeCloseTo(0.85 * 0.75);
   });
 
@@ -46,7 +46,7 @@ describe("resolveIndicatorWeightProfile", () => {
     });
 
     expect(profile.multipliers.microstructure).toBeCloseTo(1.2 * 1.25);
-    expect(profile.multipliers.momentum).toBeCloseTo(1.2 * 0.8);
-    expect(profile.multipliers.trend).toBeCloseTo(0.95 * 0.85);
+    expect(profile.multipliers.momentum).toBeCloseTo(1.4 * 0.8);
+    expect(profile.multipliers.trend).toBeCloseTo(0.75 * 0.85);
   });
 });

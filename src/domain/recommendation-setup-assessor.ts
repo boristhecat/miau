@@ -34,14 +34,36 @@ export class RecommendationSetupAssessor {
     const location = (() => {
       if (input.marketRegime === "LOW_LIQ_CHOP") return 20;
       if (input.marketRegime === "VOLATILE_SPIKE") return 40;
+      let baseLocation: number;
       if (input.marketRegime === "RANGE") {
         const nearestBandDistance = Math.min(
           Math.abs(input.entry - input.indicators.bbLower),
           Math.abs(input.indicators.bbUpper - input.entry)
         );
-        return this.clamp(100 - (nearestBandDistance / (atr * 1.6)) * 100, 0, 100);
+        baseLocation = this.clamp(100 - (nearestBandDistance / (atr * 1.6)) * 100, 0, 100);
+      } else {
+        baseLocation = this.clamp(100 - extensionAtr * 55, 0, 100);
       }
-      return this.clamp(100 - extensionAtr * 55, 0, 100);
+      const vp = input.indicators.volumeProfile;
+      if (vp) {
+        if (input.signal === "LONG" && input.entry <= vp.val + atr * 0.3) {
+          baseLocation = Math.min(100, baseLocation + 10);
+        } else if (input.signal === "SHORT" && input.entry >= vp.vah - atr * 0.3) {
+          baseLocation = Math.min(100, baseLocation + 10);
+        }
+      }
+      if (input.signal === "LONG" && input.indicators.swingLow !== undefined) {
+        const distToSwing = Math.abs(input.entry - input.indicators.swingLow) / atr;
+        if (distToSwing < 1.0) {
+          baseLocation = Math.min(100, baseLocation + 8);
+        }
+      } else if (input.signal === "SHORT" && input.indicators.swingHigh !== undefined) {
+        const distToSwing = Math.abs(input.indicators.swingHigh - input.entry) / atr;
+        if (distToSwing < 1.0) {
+          baseLocation = Math.min(100, baseLocation + 8);
+        }
+      }
+      return baseLocation;
     })();
 
     const trigger = (() => {
@@ -134,13 +156,13 @@ export class RecommendationSetupAssessor {
 
     const setupQuality = this.round(
       this.clamp(
-        input.baseSetupQuality * 0.4 +
-          location * 0.14 +
-          trigger * 0.14 +
-          microstructure * 0.1 +
-          regime * 0.1 +
+        input.baseSetupQuality * 0.25 +
+          location * 0.20 +
+          trigger * 0.20 +
+          microstructure * 0.10 +
+          regime * 0.10 +
           riskEfficiency * 0.08 +
-          friction * 0.04,
+          friction * 0.07,
         0,
         100
       )

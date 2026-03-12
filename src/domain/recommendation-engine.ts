@@ -1,10 +1,13 @@
 import type { BiasContext, MarketRegime, Recommendation, Signal } from "./types.js";
 import { applyObjectiveTargeting } from "./targeting-policy.js";
+import { parseIntervalToMinutes } from "./interval-utils.js";
 import { applyTradeGuards } from "./recommendation-guards.js";
 import { RecommendationSignalEvaluator } from "./recommendation-signal-evaluator.js";
 import { RecommendationSetupAssessor } from "./recommendation-setup-assessor.js";
 import { RecommendationTradeCalculator } from "./recommendation-trade-calculator.js";
 import { RecommendationTradeabilityEvaluator } from "./recommendation-tradeability-evaluator.js";
+import { detectStructuralSetup } from "./recommendation-setup-detector.js";
+import { resolveAssetProfile } from "./asset-profile.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -25,6 +28,8 @@ interface BuildRecommendationInput {
   objectiveHorizon?: string;
   expectedRangeHorizon?: string;
   baseInterval?: string;
+  riskBudgetUsd?: number;
+  calibratedWinRate?: number;
 }
 
 export class RecommendationEngine {
@@ -52,18 +57,23 @@ export class RecommendationEngine {
       objectiveUsdc,
       objectiveHorizon,
       expectedRangeHorizon,
-      baseInterval
+      baseInterval,
+      riskBudgetUsd,
+      calibratedWinRate
     } = input;
     const resolvedBaseInterval = baseInterval ?? "1m";
+    const assetProfile = resolveAssetProfile(pair);
     const tradeabilityAssessment = this.tradeabilityEvaluator.evaluate({
       indicators,
       perp,
-      lastPrice
+      lastPrice,
+      spreadBlockThreshold: assetProfile.spreadBlockThreshold
     });
 
     const {
       signal,
       confidence: baseConfidence,
+      signalStrength: rawSignalStrength,
       rationale,
       regime,
       marketRegime,
@@ -75,7 +85,9 @@ export class RecommendationEngine {
       lowAbsoluteConviction,
       winnerRatioInsufficient,
       htfContradictionCount,
-      regimeSignalMismatch
+      regimeSignalMismatch,
+      independentChannelAgreement,
+      regimeMaturity
     } = this.signalEvaluator.evaluate(
       indicators,
       perp,
@@ -83,7 +95,8 @@ export class RecommendationEngine {
       biasContext,
       biasInterval,
       resolvedBaseInterval,
-      btcContext
+      btcContext,
+      pair
     );
 
     let confidence = baseConfidence;
@@ -98,24 +111,31 @@ export class RecommendationEngine {
 
     const atr = indicators.atr14;
     const atrPct = this.signalEvaluator.computeAtrPct(indicators);
-    const atrProfile = this.tradeCalculator.getAtrProfile(atrPct, marketRegime as MarketRegime);
-    const entry = lastPrice;
-    let stopLoss = lastPrice;
-    let takeProfit = lastPrice;
+    const atrProfile = this.tradeCalculator.getAtrProfile(atrPct, marketRegime as MarketRegime, regimeMaturity);
 
-    if (tradeSignal === "LONG") {
-      stopLoss = Math.min(lastPrice - atrProfile.slAtrMultiplier * atr, indicators.bbMiddle);
-      takeProfit = Math.max(lastPrice + atrProfile.tpAtrMultiplier * atr, indicators.bbUpper);
-      if (takeProfit <= entry) {
-        takeProfit = lastPrice + atrProfile.tpFallbackAtrMultiplier * atr;
-      }
-    } else if (tradeSignal === "SHORT") {
-      stopLoss = Math.max(lastPrice + atrProfile.slAtrMultiplier * atr, indicators.bbMiddle);
-      takeProfit = Math.min(lastPrice - atrProfile.tpAtrMultiplier * atr, indicators.bbLower);
-      if (takeProfit >= entry) {
-        takeProfit = lastPrice - atrProfile.tpFallbackAtrMultiplier * atr;
-      }
+    // Honest market entry — use lastPrice as entry, with validity window
+    const entry = lastPrice;
+    const pullbackResult = this.tradeCalculator.computePullbackEntry({
+      signal: tradeSignal,
+      lastPrice,
+      atr,
+      indicators
+    });
+    const entryValidityWindow = pullbackResult.pullbackEntry
+      ? `Limit ${pullbackResult.entry.toFixed(4)} valid ~${Math.ceil(parseIntervalToMinutes(resolvedBaseInterval) * 3)}min`
+      : undefined;
+    if (entryValidityWindow) {
+      rationale.push(`Entry validity: ${entryValidityWindow} (SL/TP computed from market price).`);
     }
+
+    // Improvement #3: Structure-anchored SL/TP
+    let { stopLoss, takeProfit, structureCapped } = this.tradeCalculator.computeStructureAnchoredLevels({
+      signal: tradeSignal,
+      entry,
+      atr,
+      indicators,
+      atrProfile
+    });
 
     let objectiveContext:
       | {
@@ -181,6 +201,39 @@ export class RecommendationEngine {
       });
     }
 
+    // Improvement #5: Cap TP at expected move
+    const expectedRange = this.tradeCalculator.estimateExpectedRange({
+      entry,
+      atr,
+      marketRegime,
+      baseInterval: resolvedBaseInterval,
+      objectiveHorizon: expectedRangeHorizon ?? objectiveHorizon,
+      objectiveHorizonMinutes: expectedRangeHorizon === undefined ? objectiveContext?.horizonMinutes : undefined
+    });
+
+    const hasExplicitOverrides = slPct !== undefined || tpPct !== undefined || slUsd !== undefined || tpUsd !== undefined;
+    if (objectiveContext === undefined && !hasExplicitOverrides && !structureCapped) {
+      // Use a generous horizon for TP capping to avoid over-capping on short defaults
+      const tpCapRange = this.tradeCalculator.estimateExpectedRange({
+        entry,
+        atr,
+        marketRegime,
+        baseInterval: resolvedBaseInterval,
+        objectiveHorizon: expectedRangeHorizon ?? objectiveHorizon,
+        objectiveHorizonMinutes: Math.max(
+          expectedRange.horizonMinutes,
+          this.tradeCalculator.parseBaseIntervalMinutes(resolvedBaseInterval) * 6
+        )
+      });
+      takeProfit = this.tradeCalculator.capTakeProfitAtExpectedMove({
+        signal: tradeSignal,
+        entry,
+        takeProfit,
+        expectedHigh: tpCapRange.high,
+        expectedLow: tpCapRange.low
+      });
+    }
+
     this.tradeCalculator.validateLevels(tradeSignal, entry, stopLoss, takeProfit);
 
     const pnl = this.tradeCalculator.computeEstimatedPnL({
@@ -194,6 +247,39 @@ export class RecommendationEngine {
     const riskRewardRatio = this.tradeCalculator.computeRiskReward(entry, stopLoss, takeProfit);
     const estimatedPnLAtStopLoss = objectiveContext?.expectedPnlAtStopLoss ?? pnl?.atStopLoss;
     const estimatedPnLAtTakeProfit = objectiveContext?.expectedPnlAtTakeProfit ?? pnl?.atTakeProfit;
+
+    // Improvement #6: Fee burden calculation
+    let feeBurdenPct: number | undefined;
+    if (leverage !== undefined && positionSizeUsd !== undefined && estimatedPnLAtTakeProfit !== undefined) {
+      feeBurdenPct = this.tradeCalculator.computeFeeBurden({
+        leverage,
+        positionSizeUsd,
+        estimatedPnLAtTakeProfit,
+        bidAskSpreadPct: perp.bidAskSpreadPct
+      });
+    }
+
+    // Improvement #7: Risk-based position sizing
+    let riskBasedPositionSizeUsd: number | undefined;
+    if (riskBudgetUsd !== undefined && leverage !== undefined) {
+      riskBasedPositionSizeUsd = this.tradeCalculator.computeRiskBasedPositionSize({
+        riskBudgetUsd,
+        entry,
+        stopLoss,
+        leverage
+      });
+    }
+
+    // Improvement #1: Setup detection
+    const setupResult = detectStructuralSetup({
+      signal: tradeSignal,
+      lastPrice,
+      indicators,
+      perp,
+      marketRegime
+    });
+    rationale.push(...setupResult.rationale);
+
     const setupAssessment = this.setupAssessor.assess({
       signal: tradeSignal,
       indicators,
@@ -241,13 +327,20 @@ export class RecommendationEngine {
         winnerRatioInsufficient,
         htfContradictionCount,
         regimeSignalMismatch,
+        independentChannelAgreement,
         interval: resolvedBaseInterval,
         setupGrade: setupAssessment.setupGrade,
         setupQuality: finalConfidenceBreakdown.setupQuality,
         confidence,
+        signalStrength: rawSignalStrength,
         riskRewardRatio,
+        feeBurdenPct,
+        setupDetected: setupResult.hasSetup,
         bidAskSpreadPct: perp.bidAskSpreadPct,
+        spreadBlockThreshold: assetProfile.spreadBlockThreshold,
         skipLegacyTradeabilityChecks: tradeabilityHardBlock,
+        pair,
+        btcContext,
         rationale: tradeabilityRationale
       });
       finalSignal = guardResult.signal;
@@ -261,17 +354,46 @@ export class RecommendationEngine {
       leverage,
       positionSizeUsd,
       confidence,
+      signalStrength: rawSignalStrength,
+      calibratedWinRate,
       estimatedPnLAtStopLoss: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtStopLoss,
-      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit
+      estimatedPnLAtTakeProfit: finalSignal === "NO_TRADE" ? undefined : estimatedPnLAtTakeProfit,
+      bidAskSpreadPct: perp.bidAskSpreadPct
     });
-    const expectedRange = this.tradeCalculator.estimateExpectedRange({
+
+    // Slippage and execution cost estimates
+    const slippageEstimatePct = this.tradeCalculator.estimateSlippagePct(perp.bidAskSpreadPct);
+    const totalExecutionCostPct = this.tradeCalculator.computeTotalExecutionCostRate(perp.bidAskSpreadPct) * 100;
+
+    // Volatility-adjusted holding period
+    const holdingPeriod = this.tradeCalculator.computeHoldingPeriod({
       entry,
+      takeProfit,
       atr,
-      marketRegime,
-      baseInterval: resolvedBaseInterval,
-      objectiveHorizon: expectedRangeHorizon ?? objectiveHorizon,
-      objectiveHorizonMinutes: expectedRangeHorizon === undefined ? objectiveContext?.horizonMinutes : undefined
+      baseInterval: resolvedBaseInterval
     });
+
+    // Improvement #4: Time-based exit rule
+    // If TP not hit within 60% of estimated holding period, exit at breakeven.
+    const timeBasedExitCandles = Math.max(2, Math.round(holdingPeriod.candles * 0.6));
+    const timeBasedExitMinutes = timeBasedExitCandles * parseIntervalToMinutes(resolvedBaseInterval);
+
+    // Improvement #9: Paper trading confidence — only populated when calibrated
+    const paperTradingConfidence = calibratedWinRate !== undefined
+      ? Math.round(clamp(calibratedWinRate * 100, 1, 99))
+      : undefined;
+
+    // Detect BTC correlation block for reporting
+    const btcCorrelationBlocked = (() => {
+      if (!btcContext || !pair) return undefined;
+      const sym = pair.split("-")[0]?.toUpperCase() ?? "";
+      if (sym === "BTC") return undefined;
+      const btcBearish = !btcContext.emaAbove && !btcContext.momentumPositive;
+      const btcBullish = btcContext.emaAbove && btcContext.momentumPositive;
+      if (tradeSignal === "LONG" && btcBearish) return true;
+      if (tradeSignal === "SHORT" && btcBullish) return true;
+      return undefined;
+    })();
 
     return {
       pair,
@@ -316,10 +438,28 @@ export class RecommendationEngine {
       expectedValueUsd: executionStats?.expectedValueUsd,
       expectedValuePerMarginPct: executionStats?.expectedValuePerMarginPct,
       confidence,
+      signalStrength: rawSignalStrength,
+      calibratedWinRate,
       confidenceBreakdown: finalConfidenceBreakdown,
       rationale: finalRationale,
       indicators,
-      perp
+      perp,
+      pullbackEntry: pullbackResult.pullbackEntry || undefined,
+      feeBurdenPct,
+      riskBasedPositionSizeUsd,
+      riskBudgetUsd,
+      setupDetected: setupResult.hasSetup || undefined,
+      setupType: setupResult.setupType,
+      slippageEstimatePct,
+      totalExecutionCostPct,
+      holdingPeriodCandles: holdingPeriod.candles,
+      holdingPeriodMinutes: holdingPeriod.minutes,
+      entryValidityWindow,
+      timeBasedExitCandles,
+      timeBasedExitMinutes,
+      independentChannelAgreement,
+      btcCorrelationBlocked,
+      paperTradingConfidence
     };
   }
 }
