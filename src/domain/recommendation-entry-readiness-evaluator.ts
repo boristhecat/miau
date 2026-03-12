@@ -2,6 +2,7 @@ import type {
   EntryReadinessAssessment,
   IndicatorSnapshot,
   MarketRegime,
+  SequenceAssessment,
   SetupPlaybook,
   Signal
 } from "./types.js";
@@ -13,6 +14,7 @@ interface EvaluateEntryReadinessInput {
   marketRegime: MarketRegime;
   setupPlaybook?: SetupPlaybook;
   pullbackEntryPrice?: number;
+  sequenceAssessment?: SequenceAssessment;
 }
 
 export class RecommendationEntryReadinessEvaluator {
@@ -47,6 +49,15 @@ export class RecommendationEntryReadinessEvaluator {
 
     switch (input.setupPlaybook) {
       case "BREAKOUT_CONTINUATION": {
+        if (input.sequenceAssessment?.status === "FAILED") {
+          return wait("TOO_LATE", input.sequenceAssessment.rationale[0] ?? "Breakout sequence failed.");
+        }
+        if (input.sequenceAssessment?.status === "FORMING") {
+          return wait(
+            "WAIT_CONFIRMATION",
+            input.sequenceAssessment?.rationale[0] ?? "Breakout playbook selected, but breakout confirmation is incomplete."
+          );
+        }
         const breakoutConfirmed =
           recent !== undefined &&
           ((input.signal === "LONG" && recent.breakoutDirection === "UP" && recent.bullishCloseRatio5 >= 0.6) ||
@@ -69,6 +80,16 @@ export class RecommendationEntryReadinessEvaluator {
       case "DIVERGENCE_REVERSAL":
       case "LIQUIDATION_REVERSAL":
       case "RANGE_FADE": {
+        if (input.sequenceAssessment?.status === "FAILED") {
+          return wait("WAIT_CONFIRMATION", input.sequenceAssessment.rationale[0] ?? "Reversal sequence is not confirmed.");
+        }
+        if (input.sequenceAssessment?.status === "FORMING") {
+          return wait(
+            "WAIT_CONFIRMATION",
+            input.sequenceAssessment?.rationale[0] ?? "Reversal setup exists, but confirmation sequence is still forming.",
+            reactionZone
+          );
+        }
         if (reactionZoneDistanceAtr === undefined || reactionZoneDistanceAtr > 0.55) {
           return wait(
             "WAIT_CONFIRMATION",
@@ -90,6 +111,15 @@ export class RecommendationEntryReadinessEvaluator {
       }
       case "TREND_PULLBACK_CONTINUATION":
       default: {
+        if (input.sequenceAssessment?.status === "FAILED") {
+          return wait("WAIT_CONFIRMATION", input.sequenceAssessment.rationale[0] ?? "Continuation reclaim failed.");
+        }
+        if (input.sequenceAssessment?.status === "FORMING" && input.pullbackEntryPrice === undefined) {
+          return wait(
+            "WAIT_CONFIRMATION",
+            input.sequenceAssessment.rationale[0] ?? "Continuation sequence is improving but not confirmed."
+          );
+        }
         if (obstacleDistanceAtr !== undefined && obstacleDistanceAtr < 0.3) {
           return wait("TOO_LATE", "Trend continuation would enter directly into nearby opposing structure.");
         }

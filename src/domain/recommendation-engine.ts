@@ -10,6 +10,7 @@ import { detectStructuralSetup } from "./recommendation-setup-detector.js";
 import { resolveAssetProfile } from "./asset-profile.js";
 import { RecommendationEntryReadinessEvaluator } from "./recommendation-entry-readiness-evaluator.js";
 import { isPlaybookRegimeAligned, resolvePlaybookPolicy } from "./recommendation-playbook-policy.js";
+import { RecommendationSequenceEvaluator } from "./recommendation-sequence-evaluator.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -40,6 +41,7 @@ export class RecommendationEngine {
   private readonly setupAssessor = new RecommendationSetupAssessor();
   private readonly tradeCalculator = new RecommendationTradeCalculator();
   private readonly entryReadinessEvaluator = new RecommendationEntryReadinessEvaluator();
+  private readonly sequenceEvaluator = new RecommendationSequenceEvaluator();
 
   build(input: BuildRecommendationInput): Recommendation {
     const {
@@ -290,13 +292,21 @@ export class RecommendationEngine {
       });
     }
 
+    const sequenceAssessment = this.sequenceEvaluator.evaluate({
+      signal: tradeSignal,
+      indicators,
+      setupPlaybook: setupResult.playbook
+    });
+    rationale.push(`Intraday sequence ${sequenceAssessment.status} (${sequenceAssessment.pattern}): ${sequenceAssessment.rationale.join(" ")}`);
+
     const entryReadiness = this.entryReadinessEvaluator.evaluate({
       signal: tradeSignal,
       lastPrice,
       indicators,
       marketRegime,
       setupPlaybook: setupResult.playbook,
-      pullbackEntryPrice: pullbackResult.pullbackEntry ? pullbackResult.entry : undefined
+      pullbackEntryPrice: pullbackResult.pullbackEntry ? pullbackResult.entry : undefined,
+      sequenceAssessment
     });
     rationale.push(`Entry readiness ${entryReadiness.status}: ${entryReadiness.rationale.join(" ")}`);
     if (entryReadiness.preferredEntryPrice !== undefined && entryReadiness.status !== "READY_NOW" && entryValidityWindow === undefined) {
@@ -493,6 +503,9 @@ export class RecommendationEngine {
       entryReadiness: entryReadiness.status,
       entryReadinessReasons: entryReadiness.rationale,
       preferredEntryPrice: entryReadiness.preferredEntryPrice,
+      sequenceStatus: sequenceAssessment.status,
+      sequencePattern: sequenceAssessment.pattern,
+      sequenceReasons: sequenceAssessment.rationale,
       timeBasedExitCandles,
       timeBasedExitMinutes,
       independentChannelAgreement,

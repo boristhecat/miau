@@ -46,12 +46,18 @@ Last updated: 2026-03-12
 - Structural setup detection now feeds explicit playbooks: `TREND_PULLBACK_CONTINUATION`, `BREAKOUT_CONTINUATION`, `DIVERGENCE_REVERSAL`, `LIQUIDATION_REVERSAL`, and `RANGE_FADE`.
 - The engine no longer treats `RANGE` / `VOLATILE_SPIKE` as blanket no-trade regimes. Instead, tradeability still blocks friction/chop, while playbook-policy decides whether a given setup is valid in the current regime.
 - Entry-readiness is evaluated as a separate domain step from market tradeability and directional bias. Current readiness states are `READY_NOW`, `WAIT_PULLBACK`, `WAIT_BREAKOUT_RETEST`, `WAIT_CONFIRMATION`, and `TOO_LATE`.
+- Intraday trigger-sequence assessment is now a distinct domain step before entry readiness. It interprets recent candle sequences as `CONFIRMED`, `FORMING`, `FAILED`, or `NONE`.
 - Pullback-entry planning now anchors to richer structure (nearest support/resistance, session/day levels, VWAP, value area, swings) instead of only EMA20.
 - Playbook-policy is now a distinct domain concern:
   - each playbook has allowed regimes
   - each playbook can enforce a higher minimum risk/reward floor
   - ATR-based SL/TP multipliers are adjusted by playbook
   - holding-period and time-based exit decay are adjusted by playbook
+- Recent candle context now carries raw sequence facts such as close-in-range, wick balance, prior-range sweeps, and inside-range rejection so domain logic can detect:
+  - VWAP reclaim / loss
+  - EMA20 reclaim / loss
+  - breakout acceptance / breakout failure
+  - sweep rejection
 - Guard behavior is less binary:
   - Pullback-extension blocks are stricter on short horizons and weaker setups.
   - Breakout follow-through failure blocks only when it conflicts with the trade direction; otherwise it is advisory.
@@ -63,7 +69,7 @@ Last updated: 2026-03-12
 - Confidence is deterministic (`0..100`) and blended with setup-quality scoring.
 - Setup grade (`A/B/C/D`) is included with factor-level rationale.
 - `NO_TRADE` is produced by guard failures (regime/chop, quality, confidence, risk-reward, impulse anti-fade, entry-readiness wait states, etc.).
-- Recommendation payloads now also carry `setupType`, `setupPlaybook`, `playbookRegimeAligned`, `playbookMinRiskReward`, `entryReadiness`, `entryReadinessReasons`, and `preferredEntryPrice`.
+- Recommendation payloads now also carry `setupType`, `setupPlaybook`, `playbookRegimeAligned`, `playbookMinRiskReward`, `entryReadiness`, `entryReadinessReasons`, `preferredEntryPrice`, `sequenceStatus`, `sequencePattern`, and `sequenceReasons`.
 
 ## Learning + Persistence
 - Local learning outcomes are stored in SQLite (`data/learning.sqlite`).

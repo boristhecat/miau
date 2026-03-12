@@ -14,6 +14,13 @@
 - [x] Add regression coverage for continuation vs breakout vs reversal handling and run focused/full verification
 - [x] Refresh `docs/CURRENT_STATE.md` if behavior changes materially
 
+## Task: Phase 1d intraday sequence logic (2026-03-12)
+- [x] Re-read the current plan/state and trace how recent candle context flows through setup, readiness, and guards
+- [x] Expand recent candle context with raw sequence facts from candle history
+- [x] Add a dedicated sequence evaluator for reclaim, breakout acceptance/failure, and sweep-rejection patterns
+- [x] Wire sequence assessment into entry readiness, recommendation output, and heuristics without touching watch mode
+- [x] Add regression coverage, run focused/full verification, and refresh `docs/CURRENT_STATE.md`
+
 ## Task: Fix `rec` mode 400 failure (2026-03-08)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace the `rec`-specific request path
 - [x] Harden the `rec` universe prefetch so one Open Interest 400 does not abort the whole mode

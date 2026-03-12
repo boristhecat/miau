@@ -84,6 +84,16 @@ function computeHeuristicProbability(rec: Recommendation): number {
     probability -= 12;
   }
 
+  if (rec.sequenceStatus !== undefined) {
+    if (rec.sequenceStatus === "CONFIRMED") {
+      probability += 6;
+    } else if (rec.sequenceStatus === "FORMING") {
+      probability -= 4;
+    } else if (rec.sequenceStatus === "FAILED") {
+      probability -= 14;
+    }
+  }
+
   if (rec.feeBurdenPct !== undefined && rec.feeBurdenPct > 0.2) {
     probability -= 8;
   }

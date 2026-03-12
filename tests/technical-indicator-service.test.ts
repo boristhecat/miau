@@ -40,6 +40,8 @@ describe("TalibWasmIndicatorService", () => {
     expect(snapshot.volumeZScore20).toBeDefined();
     expect(snapshot.cvdDeltaPct5).toBeDefined();
     expect(Number.isFinite(snapshot.cmf20 ?? Number.NaN)).toBe(true);
+    expect(snapshot.recentCandleContext?.lastClose).toBeDefined();
+    expect(snapshot.recentCandleContext?.lastClosePositionInRange).toBeDefined();
   });
 
   it("computes session and daily structure levels when broader history is available", () => {

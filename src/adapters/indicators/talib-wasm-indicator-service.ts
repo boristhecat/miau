@@ -400,13 +400,34 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
     const prevLow = Math.min(...prev4.map((candle) => candle.low));
     const breakoutUp = last.close > prevHigh;
     const breakoutDown = last.close < prevLow;
+    const lastRange = Math.max(last.high - last.low, 1e-8);
+    const upperBody = Math.max(last.open, last.close);
+    const lowerBody = Math.min(last.open, last.close);
+    const lastClosePositionInRange = (last.close - last.low) / lastRange;
+    const upperWickPct = (last.high - upperBody) / lastRange;
+    const lowerWickPct = (lowerBody - last.low) / lastRange;
+    const sweptPrevHigh = last.high > prevHigh && last.close <= prevHigh;
+    const sweptPrevLow = last.low < prevLow && last.close >= prevLow;
+    const closedBackInsidePrevRange = last.close <= prevHigh && last.close >= prevLow;
+    const previousClose = recent[recent.length - 2]!.close;
 
     return {
       momentumPct3: this.round(momentumPct3),
       bullishCloseRatio5: this.round(bullishCloseRatio5),
       bearishCloseRatio5: this.round(bearishCloseRatio5),
       rangeExpansionRatio: this.round(rangeExpansionRatio),
-      breakoutDirection: breakoutUp ? "UP" : breakoutDown ? "DOWN" : "NONE"
+      breakoutDirection: breakoutUp ? "UP" : breakoutDown ? "DOWN" : "NONE",
+      lastOpen: this.round(last.open),
+      lastHigh: this.round(last.high),
+      lastLow: this.round(last.low),
+      lastClose: this.round(last.close),
+      previousClose: this.round(previousClose),
+      lastClosePositionInRange: this.round(lastClosePositionInRange),
+      upperWickPct: this.round(upperWickPct),
+      lowerWickPct: this.round(lowerWickPct),
+      sweptPrevHigh,
+      sweptPrevLow,
+      closedBackInsidePrevRange
     };
   }
 

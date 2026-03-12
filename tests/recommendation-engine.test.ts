@@ -963,7 +963,18 @@ describe("RecommendationEngine", () => {
         bullishCloseRatio5: 0.8,
         bearishCloseRatio5: 0.2,
         rangeExpansionRatio: 1.4,
-        breakoutDirection: "UP"
+        breakoutDirection: "UP",
+        lastOpen: 50210,
+        lastHigh: 50390,
+        lastLow: 50190,
+        lastClose: 50340,
+        previousClose: 50140,
+        lastClosePositionInRange: 0.75,
+        upperWickPct: 0.12,
+        lowerWickPct: 0.1,
+        sweptPrevHigh: false,
+        sweptPrevLow: false,
+        closedBackInsidePrevRange: false
       }
     };
 
@@ -980,6 +991,8 @@ describe("RecommendationEngine", () => {
 
     expect(rec.setupType).toBe("BREAKOUT");
     expect(rec.setupPlaybook).toBe("BREAKOUT_CONTINUATION");
+    expect(rec.sequenceStatus).toBe("CONFIRMED");
+    expect(rec.sequencePattern).toBe("BREAKOUT_ACCEPTANCE");
   });
 
   it("gives breakout playbooks a faster time-based exit than trend pullback playbooks", () => {

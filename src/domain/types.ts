@@ -17,6 +17,14 @@ export type EntryReadinessStatus =
   | "WAIT_BREAKOUT_RETEST"
   | "WAIT_CONFIRMATION"
   | "TOO_LATE";
+export type SequenceStatus = "CONFIRMED" | "FORMING" | "FAILED" | "NONE";
+export type SequencePattern =
+  | "VWAP_RECLAIM"
+  | "EMA_RECLAIM"
+  | "BREAKOUT_ACCEPTANCE"
+  | "BREAKOUT_FAILURE"
+  | "SWEEP_REJECTION"
+  | "NONE";
 export type TradeabilityReasonCode =
   | "LOW_LIQUIDITY_CHOP"
   | "WIDE_SPREAD"
@@ -81,6 +89,17 @@ export interface IndicatorSnapshot {
     readonly bearishCloseRatio5: number;
     readonly rangeExpansionRatio: number;
     readonly breakoutDirection: ImpulseDirection;
+    readonly lastOpen?: number;
+    readonly lastHigh?: number;
+    readonly lastLow?: number;
+    readonly lastClose?: number;
+    readonly previousClose?: number;
+    readonly lastClosePositionInRange?: number;
+    readonly upperWickPct?: number;
+    readonly lowerWickPct?: number;
+    readonly sweptPrevHigh?: boolean;
+    readonly sweptPrevLow?: boolean;
+    readonly closedBackInsidePrevRange?: boolean;
   };
   readonly rsiDivergence?: {
     readonly bullish: boolean;
@@ -140,6 +159,12 @@ export interface EntryReadinessAssessment {
   readonly rationale: readonly string[];
   readonly preferredEntryPrice?: number;
   readonly invalidationLevel?: number;
+}
+
+export interface SequenceAssessment {
+  readonly status: SequenceStatus;
+  readonly pattern: SequencePattern;
+  readonly rationale: readonly string[];
 }
 
 export interface Recommendation {
@@ -207,6 +232,9 @@ export interface Recommendation {
   readonly entryReadiness?: EntryReadinessStatus;
   readonly entryReadinessReasons?: readonly string[];
   readonly preferredEntryPrice?: number;
+  readonly sequenceStatus?: SequenceStatus;
+  readonly sequencePattern?: SequencePattern;
+  readonly sequenceReasons?: readonly string[];
   /** Time-based exit: close at breakeven if TP not hit within this many candles */
   readonly timeBasedExitCandles?: number;
   readonly timeBasedExitMinutes?: number;
