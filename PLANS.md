@@ -1,5 +1,12 @@
 # Project Plan
 
+## Task: Phase 1b trader-viability improvements (2026-03-12)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then scope the highest-ROI improvements that fit current architecture and public-data limits
+- [x] Expand structural level context in the indicator/domain layer without breaking adapter boundaries
+- [x] Add a dedicated entry-readiness evaluator and wire it into recommendation building and guards
+- [x] Refine setup/playbook semantics so setup classification, readiness, and tradeability are evaluated separately
+- [x] Add regression coverage, run focused/full verification, and refresh `docs/CURRENT_STATE.md`
+
 ## Task: Fix `rec` mode 400 failure (2026-03-08)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace the `rec`-specific request path
 - [x] Harden the `rec` universe prefetch so one Open Interest 400 does not abort the whole mode

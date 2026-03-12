@@ -63,6 +63,16 @@ export class RecommendationSetupAssessor {
           baseLocation = Math.min(100, baseLocation + 8);
         }
       }
+      const structuralReference =
+        input.signal === "LONG"
+          ? input.indicators.sessionLevels?.priorLow ?? input.indicators.dailyLevels?.priorLow
+          : input.indicators.sessionLevels?.priorHigh ?? input.indicators.dailyLevels?.priorHigh;
+      if (structuralReference !== undefined) {
+        const distToStructural = Math.abs(input.entry - structuralReference) / atr;
+        if (distToStructural < 1.1) {
+          baseLocation = Math.min(100, baseLocation + 6);
+        }
+      }
       return baseLocation;
     })();
 
@@ -197,4 +207,3 @@ export class RecommendationSetupAssessor {
     return Math.min(max, Math.max(min, value));
   }
 }
-

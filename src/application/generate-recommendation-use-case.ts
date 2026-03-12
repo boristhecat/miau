@@ -31,7 +31,8 @@ export class GenerateRecommendationUseCase {
   }): Promise<Recommendation> {
     const interval = input.interval ?? "1m";
     const biasInterval = input.biasInterval ?? "15m";
-    const limit = input.limit ?? 180;
+    const requestedLimit = input.limit ?? 180;
+    const limit = resolveStructureAwareLimit(interval, requestedLimit);
     const intervalMins = parseIntervalToMinutes(interval);
     const biasIntervalMins = parseIntervalToMinutes(biasInterval);
 
@@ -92,4 +93,11 @@ export class GenerateRecommendationUseCase {
       btcContext
     });
   }
+}
+
+function resolveStructureAwareLimit(interval: string, requestedLimit: number): number {
+  const intervalMinutes = parseIntervalToMinutes(interval);
+  const targetLookbackMinutes = 24 * 60;
+  const requiredForStructure = Math.ceil(targetLookbackMinutes / Math.max(intervalMinutes, 1));
+  return Math.max(requestedLimit, Math.min(requiredForStructure, 720));
 }

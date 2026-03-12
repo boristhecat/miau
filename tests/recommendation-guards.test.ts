@@ -77,6 +77,18 @@ describe("applyTradeGuards", () => {
     expect(result.rationale.some((line) => line.includes("requires risk/reward >= 1.6"))).toBe(true);
   });
 
+  it("blocks when entry readiness says to wait for pullback", () => {
+    const result = applyTradeGuards({
+      ...baseInput,
+      entryReadinessStatus: "WAIT_PULLBACK",
+      preferredEntryPrice: 99.25,
+      entryReadinessRationale: ["Trend setup is valid, but market entry is extended; wait for pullback toward the preferred entry."]
+    });
+    expect(result.signal).toBe("NO_TRADE");
+    expect(result.rationale.some((line) => line.includes("wait for a cleaner trigger"))).toBe(true);
+    expect(result.rationale.some((line) => line.includes("99.2500"))).toBe(true);
+  });
+
   it("can skip legacy market-level checks when tradeability was handled earlier", () => {
     const result = applyTradeGuards({
       ...baseInput,

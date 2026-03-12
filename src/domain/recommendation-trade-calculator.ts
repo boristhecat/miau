@@ -385,14 +385,14 @@ export class RecommendationTradeCalculator {
     const maxOffset = atr * 0.4;
 
     if (signal === "LONG") {
-      const anchor = indicators.ema20 < lastPrice ? indicators.ema20 : lastPrice;
+      const anchor = this.resolveLongPullbackAnchor(lastPrice, indicators);
       const gap = lastPrice - anchor;
       if (gap > atr * 0.15) {
         const offset = Math.min(gap * pullbackFraction, maxOffset);
         return { entry: this.round(lastPrice - offset), pullbackEntry: true };
       }
     } else {
-      const anchor = indicators.ema20 > lastPrice ? indicators.ema20 : lastPrice;
+      const anchor = this.resolveShortPullbackAnchor(lastPrice, indicators);
       const gap = anchor - lastPrice;
       if (gap > atr * 0.15) {
         const offset = Math.min(gap * pullbackFraction, maxOffset);
@@ -400,6 +400,38 @@ export class RecommendationTradeCalculator {
       }
     }
     return { entry: lastPrice, pullbackEntry: false };
+  }
+
+  private resolveLongPullbackAnchor(lastPrice: number, indicators: IndicatorSnapshot): number {
+    const structuralAnchor = [
+      indicators.nearestSupportLevel,
+      indicators.sessionLevels?.currentLow,
+      indicators.sessionLevels?.priorLow,
+      indicators.dailyLevels?.priorLow,
+      indicators.swingLow,
+      indicators.volumeProfile?.val,
+      indicators.vwap,
+      indicators.ema20
+    ]
+      .filter((value): value is number => value !== undefined && value < lastPrice)
+      .sort((a, b) => b - a)[0];
+    return structuralAnchor ?? lastPrice;
+  }
+
+  private resolveShortPullbackAnchor(lastPrice: number, indicators: IndicatorSnapshot): number {
+    const structuralAnchor = [
+      indicators.nearestResistanceLevel,
+      indicators.sessionLevels?.currentHigh,
+      indicators.sessionLevels?.priorHigh,
+      indicators.dailyLevels?.priorHigh,
+      indicators.swingHigh,
+      indicators.volumeProfile?.vah,
+      indicators.vwap,
+      indicators.ema20
+    ]
+      .filter((value): value is number => value !== undefined && value > lastPrice)
+      .sort((a, b) => a - b)[0];
+    return structuralAnchor ?? lastPrice;
   }
 
   capTakeProfitAtExpectedMove(input: {
@@ -510,4 +542,3 @@ export class RecommendationTradeCalculator {
     return Number(value.toFixed(4));
   }
 }
-

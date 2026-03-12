@@ -895,4 +895,90 @@ describe("RecommendationEngine", () => {
     expect(rec.signal).toBe("NO_TRADE");
     expect(rec.rationale.some((line) => line.includes("orderbook spread is too wide"))).toBe(true);
   });
+
+  it("blocks extended continuation setups until pullback entry is reached", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 60,
+      ema20: 49900,
+      ema50: 49780,
+      macd: 10,
+      macdSignal: 7,
+      macdHistogram: 3,
+      atr14: 120,
+      adx14: 29,
+      bbUpper: 50750,
+      bbMiddle: 49920,
+      bbLower: 49450,
+      stochRsiK: 64,
+      stochRsiD: 57,
+      vwap: 49940,
+      nearestSupportLevel: 49860,
+      nearestResistanceLevel: 50950,
+      swingLow: 49820,
+      recentCandleContext: {
+        momentumPct3: 0.21,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.1,
+        breakoutDirection: "NONE"
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50140,
+      indicators,
+      perp: basePerp,
+      baseInterval: "5m"
+    });
+
+    expect(rec.entryReadiness).toBe("WAIT_PULLBACK");
+    expect(rec.preferredEntryPrice).toBeDefined();
+    expect(rec.signal).toBe("NO_TRADE");
+    expect(
+      rec.rationale.some((line) => line.toLowerCase().includes("pullback") || line.toLowerCase().includes("preferred entry"))
+    ).toBe(true);
+  });
+
+  it("classifies breakout setups into the breakout continuation playbook", () => {
+    const indicators: IndicatorSnapshot = {
+      rsi14: 63,
+      ema20: 50120,
+      ema50: 49940,
+      macd: 12,
+      macdSignal: 8,
+      macdHistogram: 4,
+      atr14: 140,
+      adx14: 31,
+      bbUpper: 51050,
+      bbMiddle: 50150,
+      bbLower: 49500,
+      stochRsiK: 72,
+      stochRsiD: 61,
+      vwap: 50180,
+      nearestSupportLevel: 50080,
+      nearestResistanceLevel: 51280,
+      recentCandleContext: {
+        momentumPct3: 0.38,
+        bullishCloseRatio5: 0.8,
+        bearishCloseRatio5: 0.2,
+        rangeExpansionRatio: 1.4,
+        breakoutDirection: "UP"
+      }
+    };
+
+    const rec = new RecommendationEngine().build({
+      pair: "BTC-USD",
+      lastPrice: 50340,
+      indicators,
+      perp: {
+        ...basePerp,
+        fundingRate: -0.0002
+      },
+      baseInterval: "5m"
+    });
+
+    expect(rec.setupType).toBe("BREAKOUT");
+    expect(rec.setupPlaybook).toBe("BREAKOUT_CONTINUATION");
+  });
 });

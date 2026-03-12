@@ -8,6 +8,7 @@ import { RecommendationTradeCalculator } from "./recommendation-trade-calculator
 import { RecommendationTradeabilityEvaluator } from "./recommendation-tradeability-evaluator.js";
 import { detectStructuralSetup } from "./recommendation-setup-detector.js";
 import { resolveAssetProfile } from "./asset-profile.js";
+import { RecommendationEntryReadinessEvaluator } from "./recommendation-entry-readiness-evaluator.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -37,6 +38,7 @@ export class RecommendationEngine {
   private readonly signalEvaluator = new RecommendationSignalEvaluator();
   private readonly setupAssessor = new RecommendationSetupAssessor();
   private readonly tradeCalculator = new RecommendationTradeCalculator();
+  private readonly entryReadinessEvaluator = new RecommendationEntryReadinessEvaluator();
 
   build(input: BuildRecommendationInput): Recommendation {
     const {
@@ -121,7 +123,7 @@ export class RecommendationEngine {
       atr,
       indicators
     });
-    const entryValidityWindow = pullbackResult.pullbackEntry
+    let entryValidityWindow = pullbackResult.pullbackEntry
       ? `Limit ${pullbackResult.entry.toFixed(4)} valid ~${Math.ceil(parseIntervalToMinutes(resolvedBaseInterval) * 3)}min`
       : undefined;
     if (entryValidityWindow) {
@@ -279,6 +281,18 @@ export class RecommendationEngine {
       marketRegime
     });
     rationale.push(...setupResult.rationale);
+    const entryReadiness = this.entryReadinessEvaluator.evaluate({
+      signal: tradeSignal,
+      lastPrice,
+      indicators,
+      marketRegime,
+      setupPlaybook: setupResult.playbook,
+      pullbackEntryPrice: pullbackResult.pullbackEntry ? pullbackResult.entry : undefined
+    });
+    rationale.push(`Entry readiness ${entryReadiness.status}: ${entryReadiness.rationale.join(" ")}`);
+    if (entryReadiness.preferredEntryPrice !== undefined && entryReadiness.status !== "READY_NOW" && entryValidityWindow === undefined) {
+      entryValidityWindow = `Preferred entry ${entryReadiness.preferredEntryPrice.toFixed(4)} while setup is ${entryReadiness.status.toLowerCase()}.`;
+    }
 
     const setupAssessment = this.setupAssessor.assess({
       signal: tradeSignal,
@@ -336,6 +350,9 @@ export class RecommendationEngine {
         riskRewardRatio,
         feeBurdenPct,
         setupDetected: setupResult.hasSetup,
+        entryReadinessStatus: entryReadiness.status,
+        preferredEntryPrice: entryReadiness.preferredEntryPrice,
+        entryReadinessRationale: entryReadiness.rationale,
         bidAskSpreadPct: perp.bidAskSpreadPct,
         spreadBlockThreshold: assetProfile.spreadBlockThreshold,
         skipLegacyTradeabilityChecks: tradeabilityHardBlock,
@@ -450,11 +467,15 @@ export class RecommendationEngine {
       riskBudgetUsd,
       setupDetected: setupResult.hasSetup || undefined,
       setupType: setupResult.setupType,
+      setupPlaybook: setupResult.playbook,
       slippageEstimatePct,
       totalExecutionCostPct,
       holdingPeriodCandles: holdingPeriod.candles,
       holdingPeriodMinutes: holdingPeriod.minutes,
       entryValidityWindow,
+      entryReadiness: entryReadiness.status,
+      entryReadinessReasons: entryReadiness.rationale,
+      preferredEntryPrice: entryReadiness.preferredEntryPrice,
       timeBasedExitCandles,
       timeBasedExitMinutes,
       independentChannelAgreement,

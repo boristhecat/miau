@@ -3,7 +3,7 @@ import { TalibWasmIndicatorService } from "../src/adapters/indicators/talib-wasm
 import { initializeTalibWasm } from "../src/adapters/indicators/talib-wasm-runtime.js";
 import type { Candle } from "../src/domain/types.js";
 
-function makeCandles(count: number): Candle[] {
+function makeCandles(count: number, stepMs = 60_000): Candle[] {
   const candles: Candle[] = [];
   let price = 100;
   for (let i = 0; i < count; i += 1) {
@@ -13,7 +13,7 @@ function makeCandles(count: number): Candle[] {
     const high = Math.max(open, close) + 0.25;
     const low = Math.min(open, close) - 0.25;
     candles.push({
-      timestamp: 1_700_000_000_000 + i * 60_000,
+      timestamp: 1_700_000_000_000 + i * stepMs,
       open,
       high,
       low,
@@ -40,6 +40,18 @@ describe("TalibWasmIndicatorService", () => {
     expect(snapshot.volumeZScore20).toBeDefined();
     expect(snapshot.cvdDeltaPct5).toBeDefined();
     expect(Number.isFinite(snapshot.cmf20 ?? Number.NaN)).toBe(true);
+  });
+
+  it("computes session and daily structure levels when broader history is available", () => {
+    const snapshot = new TalibWasmIndicatorService().calculate(makeCandles(600, 5 * 60_000), 5);
+
+    expect(snapshot.sessionLevels).toBeDefined();
+    expect(snapshot.dailyLevels).toBeDefined();
+    expect(snapshot.sessionLevels?.currentHigh).toBeGreaterThan(snapshot.sessionLevels?.currentLow ?? Number.NEGATIVE_INFINITY);
+    expect(
+      snapshot.dailyLevels?.priorHigh !== undefined || snapshot.dailyLevels?.priorLow !== undefined
+    ).toBe(true);
+    expect(snapshot.nearestSupportLevel ?? snapshot.nearestResistanceLevel).toBeDefined();
   });
 
   it("rejects non-finite candle values before wasm execution", () => {

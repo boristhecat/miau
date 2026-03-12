@@ -93,6 +93,10 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       const volumeZScore20 = this.computeVolumeZScore(candles, 20);
       const cvdDeltaPct5 = this.computeCvdDeltaPct(candles, 5);
       const recentCandleContext = this.computeRecentCandleContext(candles);
+      const volumeProfile = this.computeVolumeProfile(candles);
+      const swings = this.computeSwingLevels(candles, 30);
+      const sessionLevels = this.computeSessionLevels(candles);
+      const dailyLevels = this.computeDailyLevels(candles);
 
       return {
         rsi14: this.round(rsi),
@@ -117,10 +121,12 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
         cvdDeltaPct5: this.round(cvdDeltaPct5),
         recentCandleContext,
         rsiDivergence: this.computeRsiDivergence(closes, rsiSeries),
-        volumeProfile: this.computeVolumeProfile(candles),
+        volumeProfile,
+        sessionLevels,
+        dailyLevels,
         medianAtrPct: this.computeMedianAtrPct(candles),
-        ...this.computeSwingLevels(candles),
-        ...this.computeNearestStructuralLevels(candles, this.computeVolumeProfile(candles))
+        ...swings,
+        ...this.computeNearestStructuralLevels(candles, volumeProfile, swings, sessionLevels, dailyLevels)
       };
     } catch (error) {
       ensureTalibHealthyOnError(error);
@@ -441,18 +447,26 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
 
   private computeNearestStructuralLevels(
     candles: Candle[],
-    volumeProfile: { vpoc: number; vah: number; val: number }
+    volumeProfile: { vpoc: number; vah: number; val: number },
+    swings: { swingHigh?: number; swingLow?: number },
+    sessionLevels?: IndicatorSnapshot["sessionLevels"],
+    dailyLevels?: IndicatorSnapshot["dailyLevels"]
   ): { nearestSupportLevel?: number; nearestResistanceLevel?: number } {
     const lastPrice = candles[candles.length - 1]?.close;
     if (!lastPrice) return {};
-    const swings = this.computeSwingLevels(candles, 30);
     const supports: number[] = [];
     const resistances: number[] = [];
     if (volumeProfile.val < lastPrice) supports.push(volumeProfile.val);
     if (volumeProfile.vpoc < lastPrice) supports.push(volumeProfile.vpoc);
+    if (sessionLevels?.currentLow !== undefined && sessionLevels.currentLow < lastPrice) supports.push(sessionLevels.currentLow);
+    if (sessionLevels?.priorLow !== undefined && sessionLevels.priorLow < lastPrice) supports.push(sessionLevels.priorLow);
+    if (dailyLevels?.priorLow !== undefined && dailyLevels.priorLow < lastPrice) supports.push(dailyLevels.priorLow);
     if (swings.swingLow !== undefined && swings.swingLow < lastPrice) supports.push(swings.swingLow);
     if (volumeProfile.vah > lastPrice) resistances.push(volumeProfile.vah);
     if (volumeProfile.vpoc > lastPrice) resistances.push(volumeProfile.vpoc);
+    if (sessionLevels?.currentHigh !== undefined && sessionLevels.currentHigh > lastPrice) resistances.push(sessionLevels.currentHigh);
+    if (sessionLevels?.priorHigh !== undefined && sessionLevels.priorHigh > lastPrice) resistances.push(sessionLevels.priorHigh);
+    if (dailyLevels?.priorHigh !== undefined && dailyLevels.priorHigh > lastPrice) resistances.push(dailyLevels.priorHigh);
     if (swings.swingHigh !== undefined && swings.swingHigh > lastPrice) resistances.push(swings.swingHigh);
     supports.sort((a, b) => b - a);
     resistances.sort((a, b) => a - b);
@@ -460,6 +474,83 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       nearestSupportLevel: supports[0] !== undefined ? this.round(supports[0]) : undefined,
       nearestResistanceLevel: resistances[0] !== undefined ? this.round(resistances[0]) : undefined
     };
+  }
+
+  private computeSessionLevels(candles: Candle[]): IndicatorSnapshot["sessionLevels"] {
+    if (candles.length === 0) return undefined;
+    const buckets = this.buildContiguousBuckets(candles, (timestamp) => this.getSessionBucketStart(timestamp));
+    const current = buckets[buckets.length - 1];
+    if (!current) return undefined;
+    const prior = buckets[buckets.length - 2];
+    return {
+      currentOpen: this.round(current.open),
+      currentHigh: this.round(current.high),
+      currentLow: this.round(current.low),
+      priorHigh: prior ? this.round(prior.high) : undefined,
+      priorLow: prior ? this.round(prior.low) : undefined
+    };
+  }
+
+  private computeDailyLevels(candles: Candle[]): IndicatorSnapshot["dailyLevels"] {
+    if (candles.length === 0) return undefined;
+    const buckets = this.buildContiguousBuckets(candles, (timestamp) => this.getUtcDayStart(timestamp));
+    const current = buckets[buckets.length - 1];
+    if (!current) return undefined;
+    const prior = buckets[buckets.length - 2];
+    return {
+      currentOpen: this.round(current.open),
+      currentHigh: this.round(current.high),
+      currentLow: this.round(current.low),
+      priorHigh: prior ? this.round(prior.high) : undefined,
+      priorLow: prior ? this.round(prior.low) : undefined
+    };
+  }
+
+  private buildContiguousBuckets(
+    candles: Candle[],
+    getBucketStart: (timestamp: number) => number
+  ): Array<{ start: number; open: number; high: number; low: number }> {
+    const buckets: Array<{ start: number; open: number; high: number; low: number }> = [];
+    for (const candle of candles) {
+      const bucketStart = getBucketStart(candle.timestamp);
+      const current = buckets[buckets.length - 1];
+      if (!current || current.start !== bucketStart) {
+        buckets.push({
+          start: bucketStart,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low
+        });
+        continue;
+      }
+      current.high = Math.max(current.high, candle.high);
+      current.low = Math.min(current.low, candle.low);
+    }
+    return buckets;
+  }
+
+  private getSessionBucketStart(timestamp: number): number {
+    const date = new Date(timestamp);
+    const bucket = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+    const hour = date.getUTCHours();
+    if (hour >= 21) {
+      bucket.setUTCHours(21, 0, 0, 0);
+      return bucket.getTime();
+    }
+    if (hour >= 13) {
+      bucket.setUTCHours(13, 0, 0, 0);
+      return bucket.getTime();
+    }
+    if (hour >= 8) {
+      bucket.setUTCHours(8, 0, 0, 0);
+      return bucket.getTime();
+    }
+    return bucket.getTime();
+  }
+
+  private getUtcDayStart(timestamp: number): number {
+    const date = new Date(timestamp);
+    return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0);
   }
 
   private round(value: number): number {

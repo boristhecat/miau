@@ -1,10 +1,10 @@
 # CURRENT_STATE
 
-Last updated: 2026-03-03
+Last updated: 2026-03-12
 
 ## Summary
 - `miau-trader` is a TypeScript CLI that produces crypto trade suggestions from Backpack public market data.
-- Main outputs: signal (`LONG`/`SHORT`/`NO_TRADE`), entry/SL/TP, confidence, setup grade, rationale, and optional expected range.
+- Main outputs now include signal (`LONG`/`SHORT`/`NO_TRADE`), entry/SL/TP, confidence, setup grade, setup/playbook classification, entry readiness, rationale, and optional expected range.
 - The app does **not** place orders.
 
 ## Runtime Modes
@@ -35,22 +35,28 @@ Last updated: 2026-03-03
 ## Recommendation Engine (current)
 - Indicator engine selection in CLI is `talib-wasm` only (`INDICATOR_ENGINE` must be `talib-wasm` if set).
 - Indicators use horizon-adaptive periods for RSI / EMA / MACD / ADX on faster timeframes; ATR(14) and Bollinger Bands(20,2) remain fixed.
-- Snapshot data also includes VWAP, OBV slope, MFI(14), CMF(20), volume z-score, short CVD delta proxy, RSI divergence, 20-candle volume profile (VPOC/VAH/VAL), rolling median ATR%, and recent-candle impulse/breakout context.
+- Single-symbol recommendation generation now requests structure-aware candle history (up to ~24h, capped at 720 candles depending on interval) so structural levels are not derived from a tiny window.
+- Snapshot data also includes VWAP, OBV slope, MFI(14), CMF(20), volume z-score, short CVD delta proxy, RSI divergence, 20-candle volume profile (VPOC/VAH/VAL), rolling median ATR%, recent-candle impulse/breakout context, swing highs/lows, nearest support/resistance, current/prior UTC session levels, and current/prior UTC daily levels.
 - Additional context includes funding, premium, open interest (+delta when available), optional orderbook microstructure (spread/imbalance/microprice), richer HTF bias context, BTC correlation for alts, and UTC session classification.
 - Market regime classes: `TREND`, `RANGE`, `VOLATILE_SPIKE`, `LOW_LIQ_CHOP`.
 - Indicator confluence weights are adaptive by horizon bucket (`1-10m`, `10-30m`, `30-90m`, `90m+`) and regime; short horizons emphasize momentum/flow/microstructure, while longer horizons emphasize trend/volatility, with stronger regime-specific discounts/boosts for trend, mean-reversion, volatility, and low-liquidity conditions.
 - Signal scoring now includes directional-consensus weighting to reduce false contrarian flips on clear trend structure.
 - Signal scoring also accounts for richer HTF bias dimensions, funding acceleration, RSI divergence, value-area location, BTC alignment for alts, time-of-day session penalties, conflict scaling when both sides are heavily loaded, and regime-transition detection.
 - Overbought/oversold RSI handling is trend-aware (less aggressive reversal bias when structure strongly confirms continuation).
+- Structural setup detection now feeds explicit playbooks: `TREND_PULLBACK_CONTINUATION`, `BREAKOUT_CONTINUATION`, `DIVERGENCE_REVERSAL`, `LIQUIDATION_REVERSAL`, and `RANGE_FADE`.
+- Entry-readiness is evaluated as a separate domain step from market tradeability and directional bias. Current readiness states are `READY_NOW`, `WAIT_PULLBACK`, `WAIT_BREAKOUT_RETEST`, `WAIT_CONFIRMATION`, and `TOO_LATE`.
+- Pullback-entry planning now anchors to richer structure (nearest support/resistance, session/day levels, VWAP, value area, swings) instead of only EMA20.
 - Guard behavior is less binary:
   - Pullback-extension blocks are stricter on short horizons and weaker setups.
   - Breakout follow-through failure blocks only when it conflicts with the trade direction; otherwise it is advisory.
+- The guard layer can now block trades that are directionally valid but not executable yet because entry readiness says to wait for pullback/retest/confirmation or the move is already too late.
 - Objective targeting includes a minimum stop-distance floor to avoid unrealistically tight SL placement in low-volatility conditions.
 
 ## Output / Confidence
 - Confidence is deterministic (`0..100`) and blended with setup-quality scoring.
 - Setup grade (`A/B/C/D`) is included with factor-level rationale.
-- `NO_TRADE` is produced by guard failures (regime/chop, quality, confidence, risk-reward, impulse anti-fade, etc.).
+- `NO_TRADE` is produced by guard failures (regime/chop, quality, confidence, risk-reward, impulse anti-fade, entry-readiness wait states, etc.).
+- Recommendation payloads now also carry `setupType`, `setupPlaybook`, `entryReadiness`, `entryReadinessReasons`, and `preferredEntryPrice`.
 
 ## Learning + Persistence
 - Local learning outcomes are stored in SQLite (`data/learning.sqlite`).

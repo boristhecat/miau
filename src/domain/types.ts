@@ -5,6 +5,18 @@ export type SetupGrade = "A" | "B" | "C" | "D";
 export type ImpulseDirection = "UP" | "DOWN" | "NONE";
 export type TradingSession = "ASIA" | "LONDON" | "US" | "DEAD";
 export type TradeabilityStatus = "TRADEABLE" | "CAUTION" | "DO_NOT_TRADE";
+export type SetupPlaybook =
+  | "TREND_PULLBACK_CONTINUATION"
+  | "BREAKOUT_CONTINUATION"
+  | "DIVERGENCE_REVERSAL"
+  | "LIQUIDATION_REVERSAL"
+  | "RANGE_FADE";
+export type EntryReadinessStatus =
+  | "READY_NOW"
+  | "WAIT_PULLBACK"
+  | "WAIT_BREAKOUT_RETEST"
+  | "WAIT_CONFIRMATION"
+  | "TOO_LATE";
 export type TradeabilityReasonCode =
   | "LOW_LIQUIDITY_CHOP"
   | "WIDE_SPREAD"
@@ -79,6 +91,20 @@ export interface IndicatorSnapshot {
     readonly vah: number;
     readonly val: number;
   };
+  readonly sessionLevels?: {
+    readonly currentOpen: number;
+    readonly currentHigh: number;
+    readonly currentLow: number;
+    readonly priorHigh?: number;
+    readonly priorLow?: number;
+  };
+  readonly dailyLevels?: {
+    readonly currentOpen: number;
+    readonly currentHigh: number;
+    readonly currentLow: number;
+    readonly priorHigh?: number;
+    readonly priorLow?: number;
+  };
   readonly medianAtrPct?: number;
   readonly swingHigh?: number;
   readonly swingLow?: number;
@@ -107,6 +133,13 @@ export interface TradeabilityAssessment {
   readonly reasonCodes: readonly TradeabilityReasonCode[];
   readonly rationale: readonly string[];
   readonly blocked: boolean;
+}
+
+export interface EntryReadinessAssessment {
+  readonly status: EntryReadinessStatus;
+  readonly rationale: readonly string[];
+  readonly preferredEntryPrice?: number;
+  readonly invalidationLevel?: number;
 }
 
 export interface Recommendation {
@@ -165,9 +198,13 @@ export interface Recommendation {
   readonly riskBudgetUsd?: number;
   readonly setupDetected?: boolean;
   readonly setupType?: string;
+  readonly setupPlaybook?: SetupPlaybook;
   readonly holdingPeriodCandles?: number;
   readonly holdingPeriodMinutes?: number;
   readonly entryValidityWindow?: string;
+  readonly entryReadiness?: EntryReadinessStatus;
+  readonly entryReadinessReasons?: readonly string[];
+  readonly preferredEntryPrice?: number;
   /** Time-based exit: close at breakeven if TP not hit within this many candles */
   readonly timeBasedExitCandles?: number;
   readonly timeBasedExitMinutes?: number;

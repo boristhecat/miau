@@ -1,4 +1,4 @@
-import type { MarketRegime, SetupGrade, Signal, TradingSession } from "./types.js";
+import type { EntryReadinessStatus, MarketRegime, SetupGrade, Signal, TradingSession } from "./types.js";
 import { parseIntervalToMinutes } from "./interval-utils.js";
 import { detectTradingSession } from "./recommendation-market-context.js";
 
@@ -25,6 +25,9 @@ export function applyTradeGuards(input: {
   riskRewardRatio: number;
   feeBurdenPct?: number;
   setupDetected?: boolean;
+  entryReadinessStatus?: EntryReadinessStatus;
+  preferredEntryPrice?: number;
+  entryReadinessRationale?: readonly string[];
   bidAskSpreadPct?: number;
   spreadBlockThreshold?: number;
   skipLegacyTradeabilityChecks?: boolean;
@@ -59,6 +62,15 @@ export function applyTradeGuards(input: {
       return block("trend entry is extended; wait for pullback.");
     }
     accumulated.push("Guard advisory: trend entry is extended; continuation allowed only due to strong setup.");
+  }
+  if (input.entryReadinessStatus && input.entryReadinessStatus !== "READY_NOW") {
+    const readinessMessage = input.entryReadinessRationale?.[0] ?? "entry is not ready yet.";
+    const preferredEntry =
+      input.preferredEntryPrice !== undefined ? ` Preferred entry ${input.preferredEntryPrice.toFixed(4)}.` : "";
+    if (input.entryReadinessStatus === "TOO_LATE") {
+      return block(`${readinessMessage}${preferredEntry}`);
+    }
+    return block(`wait for a cleaner trigger: ${readinessMessage}${preferredEntry}`);
   }
   if (input.breakoutValidationFailed) {
     const breakoutFailureAgainstSignal =

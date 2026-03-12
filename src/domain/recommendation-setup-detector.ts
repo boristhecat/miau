@@ -1,8 +1,9 @@
-import type { IndicatorSnapshot, MarketRegime, PerpMarketSnapshot, Signal } from "./types.js";
+import type { IndicatorSnapshot, MarketRegime, PerpMarketSnapshot, SetupPlaybook, Signal } from "./types.js";
 
 export interface SetupDetectionResult {
   hasSetup: boolean;
   setupType?: "LEVEL_TEST" | "BREAKOUT" | "DIVERGENCE" | "EXTREME_REVERSION" | "LIQUIDATION_CASCADE";
+  playbook?: SetupPlaybook;
   rationale: string[];
 }
 
@@ -26,14 +27,24 @@ export function detectStructuralSetup(input: {
   if (hasInvalidation.present) rationale.push(hasInvalidation.reason);
 
   if (hasLevel.present && hasCatalyst.present && hasInvalidation.present) {
-    return { hasSetup: true, setupType: "LEVEL_TEST", rationale };
+    return {
+      hasSetup: true,
+      setupType: "LEVEL_TEST",
+      playbook: resolvePlaybook("LEVEL_TEST", marketRegime),
+      rationale
+    };
   }
 
   if (indicators.rsiDivergence) {
     if ((signal === "LONG" && indicators.rsiDivergence.bullish) ||
         (signal === "SHORT" && indicators.rsiDivergence.bearish)) {
       rationale.push("Setup: RSI divergence provides structural setup.");
-      return { hasSetup: true, setupType: "DIVERGENCE", rationale };
+      return {
+        hasSetup: true,
+        setupType: "DIVERGENCE",
+        playbook: resolvePlaybook("DIVERGENCE", marketRegime),
+        rationale
+      };
     }
   }
 
@@ -44,7 +55,12 @@ export function detectStructuralSetup(input: {
       (signal === "SHORT" && recent.breakoutDirection === "DOWN" && recent.momentumPct3 < -0.15 && recent.bearishCloseRatio5 >= 0.6);
     if (breakoutWithFollowThrough) {
       rationale.push("Setup: confirmed breakout with follow-through.");
-      return { hasSetup: true, setupType: "BREAKOUT", rationale };
+      return {
+        hasSetup: true,
+        setupType: "BREAKOUT",
+        playbook: resolvePlaybook("BREAKOUT", marketRegime),
+        rationale
+      };
     }
   }
 
@@ -52,13 +68,23 @@ export function detectStructuralSetup(input: {
       (signal === "SHORT" && indicators.rsi14 >= 75)) {
     if (hasCatalyst.present || hasLevel.present) {
       rationale.push("Setup: extreme RSI reversion with partial confluence.");
-      return { hasSetup: true, setupType: "EXTREME_REVERSION", rationale };
+      return {
+        hasSetup: true,
+        setupType: "EXTREME_REVERSION",
+        playbook: resolvePlaybook("EXTREME_REVERSION", marketRegime),
+        rationale
+      };
     }
   }
 
   if (hasLevel.present && hasCatalyst.present) {
     rationale.push("Setup: level test with catalyst (invalidation implicit via ATR).");
-    return { hasSetup: true, setupType: "LEVEL_TEST", rationale };
+    return {
+      hasSetup: true,
+      setupType: "LEVEL_TEST",
+      playbook: resolvePlaybook("LEVEL_TEST", marketRegime),
+      rationale
+    };
   }
 
   // Improvement #10: Liquidation cascade detection
@@ -66,11 +92,35 @@ export function detectStructuralSetup(input: {
   const liquidationCascade = checkLiquidationCascade(signal, indicators, input.perp);
   if (liquidationCascade.present) {
     rationale.push(liquidationCascade.reason);
-    return { hasSetup: true, setupType: "LIQUIDATION_CASCADE", rationale };
+    return {
+      hasSetup: true,
+      setupType: "LIQUIDATION_CASCADE",
+      playbook: resolvePlaybook("LIQUIDATION_CASCADE", marketRegime),
+      rationale
+    };
   }
 
   rationale.push("No structural setup detected: missing level test, catalyst, or invalidation point.");
   return { hasSetup: false, rationale };
+}
+
+function resolvePlaybook(
+  setupType: NonNullable<SetupDetectionResult["setupType"]>,
+  marketRegime: MarketRegime
+): SetupPlaybook {
+  switch (setupType) {
+    case "BREAKOUT":
+      return "BREAKOUT_CONTINUATION";
+    case "DIVERGENCE":
+      return "DIVERGENCE_REVERSAL";
+    case "LIQUIDATION_CASCADE":
+      return "LIQUIDATION_REVERSAL";
+    case "EXTREME_REVERSION":
+      return marketRegime === "RANGE" ? "RANGE_FADE" : "DIVERGENCE_REVERSAL";
+    case "LEVEL_TEST":
+    default:
+      return marketRegime === "RANGE" ? "RANGE_FADE" : "TREND_PULLBACK_CONTINUATION";
+  }
 }
 
 function checkLiquidationCascade(
