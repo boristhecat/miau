@@ -1,4 +1,5 @@
 import type { Recommendation } from "../domain/types.js";
+import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../domain/trade-monitor-types.js";
 import type { AiAdvice } from "../ports/ai-advisor-port.js";
 import type { LearningOverview, LearningBucketRow } from "../ports/learning-store-port.js";
 import type { LearningPolicy } from "./learning-policy-service.js";
@@ -68,6 +69,30 @@ export interface ILearningCycleUseCase {
     positionSizeUsd: number;
     active: () => boolean;
   }): Promise<{ symbols: string[]; candidates: LearningSimulationCandidate[] }>;
+}
+
+export interface IBuildOpenTradeBaselineUseCase {
+  execute(input: {
+    pair: string;
+    side: "LONG" | "SHORT";
+    entry: number;
+    stopLoss: number;
+    takeProfit: number;
+    leverage?: number;
+    positionSizeUsd?: number;
+    objectiveHorizon?: string;
+    intervalOverride?: string;
+    openedAtMs?: number;
+  }): Promise<TradeMonitorBaseline>;
+}
+
+export interface IEvaluateOpenTradeUseCase {
+  execute(input: {
+    baseline: TradeMonitorBaseline;
+    currentAnalysisRecommendation?: Recommendation;
+    previousSnapshot?: TradeMonitorSnapshot;
+    refreshAnalysis?: boolean;
+  }): Promise<{ snapshot: TradeMonitorSnapshot; analysisRecommendation: Recommendation }>;
 }
 
 export interface ISimulationScheduler {

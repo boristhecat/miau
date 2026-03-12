@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { AdaptiveLearningService } from "./application/adaptive-learning-service.js";
+import { BuildOpenTradeBaselineUseCase } from "./application/build-open-trade-baseline-use-case.js";
 import { GenerateRecommendationUseCase } from "./application/generate-recommendation-use-case.js";
 import { RunLearningBucketReportUseCase } from "./application/run-learning-bucket-report-use-case.js";
 import { RunLearningCycleUseCase } from "./application/run-learning-cycle-use-case.js";
@@ -8,6 +9,7 @@ import { RunRecommendationRankingUseCase } from "./application/run-recommendatio
 import { ScheduleSimulationUseCase } from "./application/schedule-simulation-use-case.js";
 import { SelectLearningSymbolsUseCase } from "./application/select-learning-symbols-use-case.js";
 import { EvaluateSimulationUseCase } from "./application/evaluate-simulation-use-case.js";
+import { EvaluateOpenTradeUseCase } from "./application/evaluate-open-trade-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { ReconfigurableAiAdviceService } from "./adapters/ai/reconfigurable-ai-advice-service.js";
 import { parseCliInput, getUsageText } from "./adapters/console/cli-input-parser.js";
@@ -69,6 +71,8 @@ async function main(): Promise<void> {
       learning,
       learningSymbolSelector
     );
+    const buildOpenTradeBaselineUseCase = new BuildOpenTradeBaselineUseCase(recommendationUseCase);
+    const evaluateOpenTradeUseCase = new EvaluateOpenTradeUseCase(marketData, recommendationUseCase);
     const simulationScheduler = new ScheduleSimulationUseCase(new EvaluateSimulationUseCase(marketData));
 
     await runInteractiveSession({
@@ -79,6 +83,8 @@ async function main(): Promise<void> {
       rankingUseCase,
       learningBucketReportUseCase,
       learningCycleUseCase,
+      buildOpenTradeBaselineUseCase,
+      evaluateOpenTradeUseCase,
       simulationScheduler,
       refreshIndicatorRuntime: refreshTalibWasm,
       tradeDefaults,

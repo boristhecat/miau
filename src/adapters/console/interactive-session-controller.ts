@@ -2,6 +2,8 @@ import { SessionPerformanceService } from "../../application/session-performance
 import { resolveAdaptiveTimeframes, resolveSimulationHorizonMinutes } from "../../application/timeframe-policy.js";
 import type {
   IAdaptiveLearningService,
+  IBuildOpenTradeBaselineUseCase,
+  IEvaluateOpenTradeUseCase,
   IGenerateAiAdviceUseCase,
   IGenerateRecommendationUseCase,
   ILearningBucketReportUseCase,
@@ -21,7 +23,9 @@ import {
   ui
 } from "./interactive-console-view.js";
 import { LearningRunnerController, LEARN_HORIZONS_MINUTES, LEARN_CYCLE_INTERVAL_MINUTES } from "./learning-runner-controller.js";
+import { parseMonitorCommand } from "./monitor-command-parser.js";
 import { RecommendationPrinter } from "./recommendation-printer.js";
+import { TradeMonitorController } from "./trade-monitor-controller.js";
 import { parseTradingInput, type TradingInput } from "./trading-input-parser.js";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -34,6 +38,8 @@ export interface InteractiveSessionDeps {
   rankingUseCase: IRankingUseCase;
   learningBucketReportUseCase: ILearningBucketReportUseCase;
   learningCycleUseCase: ILearningCycleUseCase;
+  buildOpenTradeBaselineUseCase: IBuildOpenTradeBaselineUseCase;
+  evaluateOpenTradeUseCase: IEvaluateOpenTradeUseCase;
   simulationScheduler: ISimulationScheduler;
   refreshIndicatorRuntime: () => Promise<void>;
   tradeDefaults: TradeDefaults;
@@ -46,6 +52,12 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
   const rl = readline.createInterface({ input, output });
   const tracker = new SessionPerformanceService();
   const learningRunner = new LearningRunnerController();
+  const tradeMonitorController = new TradeMonitorController({
+    buildBaselineUseCase: deps.buildOpenTradeBaselineUseCase,
+    evaluateOpenTradeUseCase: deps.evaluateOpenTradeUseCase,
+    input,
+    output
+  });
   const dashboard: DashboardState = {
     latestQueryLines: [],
     learning: {
@@ -192,6 +204,33 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
           dashboard.latestQueryLines = [`${ui.red}[learn] ${message}${ui.reset}`];
         }
         syncLearningIndicator();
+        requestRender();
+        continue;
+      }
+      if (normalized.startsWith("monitor ")) {
+        try {
+          const monitor = parseMonitorCommand(raw);
+          rl.pause();
+          await tradeMonitorController.run({
+            pair: `${monitor.symbol}-USD`,
+            side: monitor.side,
+            entry: monitor.entry,
+            stopLoss: monitor.stopLoss,
+            takeProfit: monitor.takeProfit,
+            refreshSeconds: monitor.refreshSeconds,
+            leverage: monitor.leverage ?? tradeDefaults.leverage,
+            positionSizeUsd: monitor.positionSizeUsd ?? tradeDefaults.positionSizeUsd,
+            objectiveHorizon: monitor.objectiveHorizon ?? tradeDefaults.objectiveHorizon,
+            intervalOverride: monitor.intervalOverride,
+            openedAtMs: monitor.openedAtMs
+          });
+          rl.resume();
+          dashboard.latestQueryLines = [`${ui.green}[monitor] session ended for ${monitor.symbol}-USD.${ui.reset}`];
+        } catch (error) {
+          rl.resume();
+          const message = error instanceof Error ? error.message : "Failed to start monitor";
+          dashboard.latestQueryLines = [`${ui.red}[monitor] ${message}${ui.reset}`];
+        }
         requestRender();
         continue;
       }

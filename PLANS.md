@@ -1,5 +1,17 @@
 # Project Plan
 
+## Task: Implement open-trade monitor (2026-03-12)
+- [x] Inspect the reusable recommendation/simulation/runtime pieces and confirm the monitor should be a new flow, not a revived watch mode
+- [x] Add pure domain monitor types, metrics, health, and management evaluators
+- [x] Add application use-cases for baseline creation and per-tick reevaluation
+- [x] Add `monitor` command parsing plus a dedicated blocking monitor controller/view in interactive mode
+- [x] Add focused regression coverage, update current docs/help text, and run build/full test verification
+
+## Task: Open-trade monitor implementation planning (2026-03-12)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md` after watch removal, then inspect the reusable simulation/recommendation/runtime pieces
+- [x] Define an architecture-consistent monitor design for reevaluating a live trade from user-provided entry / SL / TP
+- [x] Write an implementation plan covering command shape, cadence model, new domain/application/adapter modules, tests, and acceptance criteria
+
 ## Task: Remove `watch` mode entirely (2026-03-12)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace every watch-mode reference across CLI, console adapters, docs, and tests
 - [x] Remove watch-mode code paths and delete watch-specific modules/tests without affecting recommendation or learning flows

@@ -57,6 +57,8 @@ export function getInteractiveHelpText(): string {
     "SCANNING",
     "- rec",
     "  Scan top symbols and show ranked recommendations.",
+    "- monitor <SYMBOL> <long|short> --entry N --sl N --tp N [--refresh 0.5|1]",
+    "  Start a live open-trade monitor using your own entry / stop / target levels.",
     "",
     "LEARNING",
     "- learn --start | learn --stop | learn --stats",

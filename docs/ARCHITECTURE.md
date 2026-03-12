@@ -49,6 +49,7 @@ Primary responsibilities:
 - adaptive learning policy orchestration (`adaptive-learning-service.ts`)
 - recommendation ranking orchestration (`run-recommendation-ranking-use-case.ts`)
 - learning cycle orchestration (`run-learning-cycle-use-case.ts`)
+- open-trade monitor orchestration (`build-open-trade-baseline-use-case.ts`, `evaluate-open-trade-use-case.ts`)
 - simulation orchestration (`evaluate-simulation-use-case.ts`)
 - shared timeframe/learning policy helpers (`timeframe-policy.ts`, `learning-gates-policy.ts`)
 
@@ -97,6 +98,7 @@ Concrete implementations:
 1. User starts app with `npm run dev`.
 2. User enters commands at prompt:
    - trading queries (`SYMBOL [minutes] [long|short] [flags]`)
+   - `monitor <SYMBOL> <long|short> --entry ... --sl ... --tp ...`
    - `rec`, `defaults`
    - `learn --start|--stop|--stats`
 3. Parser normalizes symbol input and supported flags (`--custom`, `--horizon`, `--expected`, `--simulate`).
@@ -104,6 +106,27 @@ Concrete implementations:
 5. Learning policy may calibrate confidence/quality gates.
 6. Console adapter renders learning status + latest single-symbol output (including AI secondary opinion when API key is configured).
 7. Optional simulation runs asynchronously and feeds learning persistence.
+
+### Open-trade monitor flow
+
+1. User runs `monitor BTC long --entry ... --sl ... --tp ... [--refresh 0.5|1]`.
+2. Console adapter parses the command and starts a dedicated blocking monitor controller.
+3. Baseline use-case derives adaptive timeframes and builds one recommendation snapshot for the active trade side.
+4. Fast lane polls perp snapshot data for:
+   - mark price
+   - spread / premium
+   - unrealized PnL
+   - current `R`
+   - stop / target distance
+   - MFE / MAE
+5. Slow lane periodically refreshes recommendation context for:
+   - regime
+   - playbook alignment
+   - sequence
+   - key-level interaction
+   - thesis health
+   - management action
+6. Console view redraws one full-screen trade-monitor snapshot until the user exits the session.
 
 ### `rec` flow
 

@@ -18,11 +18,13 @@ Last updated: 2026-03-12
   - `SYMBOL <minutes> long|short`
   - `SYMBOL --expected <minutes>`
   - `SYMBOL --simulate`
+  - `monitor <SYMBOL> <long|short> --entry <price> --sl <price> --tp <price> [--refresh <seconds>]`
   - `rec`, `defaults`, `learn --start|--stop|--stats`, `help`, `exit`
 - AI secondary opinion is included by default for normal trade output when `OPENAI_API_KEY` is configured.
 - AI model selection is persisted in `data/trade-defaults.json` and configurable via `defaults`.
 - AI block now includes structured `agreement` (`AGREE`/`DISAGREE`/`PARTIAL`), `regime` (`TREND`/`RANGE`/`CHOPPY`/`VOLATILE`), and `overruledSignals`.
 - `rec` fetches top 15 PERP symbols by 24h volume from Backpack and prints top 5 ranked opportunities.
+- `monitor` starts a dedicated full-screen session for one active trade and refreshes fast trade-state metrics plus slower setup reevaluation until the user exits.
 
 ## Data Sources (Backpack public API)
 - `/api/v1/markets`
@@ -78,6 +80,14 @@ Last updated: 2026-03-12
 - Setup grade (`A/B/C/D`) is included with factor-level rationale.
 - `NO_TRADE` is produced by guard failures (regime/chop, quality, confidence, risk-reward, impulse anti-fade, entry-readiness wait states, etc.).
 - Recommendation payloads now also carry `setupType`, `setupPlaybook`, `playbookRegimeAligned`, `playbookMinRiskReward`, `entryReadiness`, `entryReadinessReasons`, `preferredEntryPrice`, `sequenceStatus`, `sequencePattern`, `sequenceReasons`, `levelInteractionStatus`, `levelInteractionReference`, and `levelInteractionReasons`.
+
+## Open-Trade Monitor
+- `monitor` is separate from the recommendation flow and does not reuse the removed watch-mode design.
+- The monitor takes manual trade levels (`entry`, `stop loss`, `take profit`) plus side and optional leverage/size/horizon.
+- It runs as a blocking session with two cadences:
+  - fast lane (`0.5s` or `1s`) using `getPerpSnapshot()` for live price, spread, net/gross PnL, current `R`, stop/target distance, and MFE/MAE
+  - slow lane (`5s`) using the existing recommendation pipeline to reevaluate market regime, playbook alignment, sequence, level interaction, thesis health, and management action
+- Current management outputs are advisory only: `HOLD`, `AT_RISK`, `MOVE_TO_BREAKEVEN`, `TAKE_PARTIAL`, `EXIT_EARLY`, `STOP_HIT`, `TARGET_HIT`
 
 ## Learning + Persistence
 - Local learning outcomes are stored in SQLite (`data/learning.sqlite`).
