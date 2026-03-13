@@ -1,4 +1,5 @@
 import type { AdaptiveLearningService } from "./adaptive-learning-service.js";
+import { LearningAwareRecommendationGenerator } from "./learning-aware-recommendation-generator.js";
 import {
   RankTopOpportunitiesUseCase,
   type RecommendationGenerator,
@@ -43,15 +44,10 @@ export class RunRecommendationRankingUseCase {
     const allSelected = await this.marketData.getTopPerpSymbolsByVolumeWithOpenInterest(universeLimit);
     const selected = allSelected.filter((item) => LIQUID_ASSET_WHITELIST.has(item.symbol));
 
-    const learningAwareGenerator: RecommendationGenerator = {
-      execute: async (request) => {
-        const recommendation = await this.recommendationUseCase.execute(request);
-        return this.learning.applyPolicy({
-          recommendation,
-          timeframe: request.interval ?? adaptiveTimeframes.timeframe
-        });
-      }
-    };
+    const learningAwareGenerator: RecommendationGenerator = new LearningAwareRecommendationGenerator(
+      this.recommendationUseCase,
+      this.learning
+    );
 
     const rankUseCase = this.rankTopOpportunitiesFactory(learningAwareGenerator, this.marketData);
     const opportunities = await rankUseCase.execute({
@@ -61,7 +57,8 @@ export class RunRecommendationRankingUseCase {
       leverage: input.defaults.leverage,
       positionSizeUsd: input.defaults.positionSizeUsd,
       objectiveHorizon: input.defaults.objectiveHorizon,
-      top
+      top,
+      concurrency: 1
     });
 
     return {

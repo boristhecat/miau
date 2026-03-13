@@ -1,5 +1,11 @@
 # Project Plan
 
+## Task: Align `rec` with the live single-symbol recommendation path (2026-03-13)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace the exact divergence between `rec` output and direct symbol queries
+- [x] Remove the cache-based approach and make `rec` use the same live recommendation path as a plain single-symbol query, without AI
+- [x] Serialize the `rec` scan to avoid shared-runtime divergence and add regression coverage for the shared generator path
+- [x] Run focused/full verification and refresh current-state docs
+
 ## Task: Move trade defaults from JSON into SQLite (2026-03-13)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then inspect current defaults persistence and all call sites
 - [x] Replace the JSON-backed defaults store with a SQLite-backed store using `data/learning.sqlite`

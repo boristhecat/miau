@@ -1,4 +1,5 @@
 import { SessionPerformanceService } from "../../application/session-performance-service.js";
+import { LearningAwareRecommendationGenerator } from "../../application/learning-aware-recommendation-generator.js";
 import { resolveAdaptiveTimeframes, resolveSimulationHorizonMinutes } from "../../application/timeframe-policy.js";
 import type {
   IAdaptiveLearningService,
@@ -53,6 +54,7 @@ export interface InteractiveSessionDeps {
 export async function runInteractiveSession(deps: InteractiveSessionDeps): Promise<void> {
   const rl = readline.createInterface({ input, output });
   const tracker = new SessionPerformanceService();
+  const learningAwareRecommendationGenerator = new LearningAwareRecommendationGenerator(deps.useCase, deps.learning);
   const learningRunner = new LearningRunnerController();
   const tradeMonitorController = new TradeMonitorController({
     buildBaselineUseCase: deps.buildOpenTradeBaselineUseCase,
@@ -278,7 +280,7 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
                 interval
               })
             : undefined;
-        let recommendation = await deps.useCase.execute({
+        let recommendation = await learningAwareRecommendationGenerator.execute({
           pair,
           forcedDirection: tradeInput.requestedDirection,
           interval,
@@ -291,10 +293,6 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
           tpUsd: tradeInput.tpUsd,
           objectiveHorizon: tradeInput.objectiveHorizon,
           expectedRangeHorizon: tradeInput.expectedRangeHorizon
-        });
-        recommendation = await deps.learning.applyPolicy({
-          recommendation,
-          timeframe: interval
         });
         const calibration = tracker.applyConfidenceCalibration(pair, recommendation.confidence);
         recommendation = {

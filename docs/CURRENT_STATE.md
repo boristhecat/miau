@@ -24,6 +24,7 @@ Last updated: 2026-03-13
 - AI model selection is persisted in SQLite (`data/learning.sqlite`) and configurable via `defaults`.
 - AI block now includes structured `agreement` (`AGREE`/`DISAGREE`/`PARTIAL`), `regime` (`TREND`/`RANGE`/`CHOPPY`/`VOLATILE`), and `overruledSignals`.
 - `rec` fetches top 15 PERP symbols by 24h volume from Backpack and prints top 5 ranked opportunities.
+- `rec` now uses the same live recommendation path as a plain single-symbol query (without AI) and scans serially for consistency.
 - `monitor` starts a dedicated full-screen session for one active trade and refreshes fast trade-state metrics plus slower setup reevaluation until the user exits.
 - The monitor fast lane now prefers Backpack public WebSocket streams and falls back to REST polling only if the live stream cannot be established.
 

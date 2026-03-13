@@ -7,6 +7,7 @@ import type {
   IEvaluateOpenTradeUseCase,
   IGenerateAiAdviceUseCase
 } from "../../application/use-case-interfaces.js";
+import { LearningAwareRecommendationGenerator } from "../../application/learning-aware-recommendation-generator.js";
 import { resolveAdaptiveTimeframes } from "../../application/timeframe-policy.js";
 import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../../domain/trade-monitor-types.js";
 import type { PerpMarketSnapshot, Recommendation } from "../../domain/types.js";
@@ -25,7 +26,14 @@ export interface WebApiDeps {
 }
 
 export class WebApiHandler {
-  constructor(private readonly deps: WebApiDeps) {}
+  private readonly learningAwareRecommendationGenerator: LearningAwareRecommendationGenerator;
+
+  constructor(private readonly deps: WebApiDeps) {
+    this.learningAwareRecommendationGenerator = new LearningAwareRecommendationGenerator(
+      deps.recommendationUseCase,
+      deps.learning
+    );
+  }
 
   async handleAnalyze(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const symbol = String(body.symbol ?? "").trim().toUpperCase();
@@ -42,7 +50,7 @@ export class WebApiHandler {
     const leverage = typeof body.leverage === "number" ? body.leverage : defaults.leverage;
     const positionSizeUsd = typeof body.positionSizeUsd === "number" ? body.positionSizeUsd : defaults.positionSizeUsd;
 
-    let recommendation = await this.deps.recommendationUseCase.execute({
+    let recommendation = await this.learningAwareRecommendationGenerator.execute({
       pair,
       forcedDirection: direction,
       interval: adaptive.timeframe,
@@ -51,11 +59,6 @@ export class WebApiHandler {
       positionSizeUsd,
       objectiveHorizon: effectiveHorizon,
       expectedRangeHorizon: body.expectedRangeHorizon ? String(body.expectedRangeHorizon) : undefined
-    });
-
-    recommendation = await this.deps.learning.applyPolicy({
-      recommendation,
-      timeframe: adaptive.timeframe
     });
 
     let aiAdvice: unknown = undefined;
