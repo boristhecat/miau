@@ -146,7 +146,7 @@ Concrete implementations:
 Local persistence is intentionally used:
 
 - learning outcomes: `data/learning.sqlite`
-- trade defaults: `data/trade-defaults.json`
+- trade defaults: `data/learning.sqlite`
 
 No external database service is used.
 

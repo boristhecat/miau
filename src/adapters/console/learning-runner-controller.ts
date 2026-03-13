@@ -1,6 +1,6 @@
 import type { IAdaptiveLearningService, ILearningCycleUseCase, ISimulationScheduler } from "../../application/use-case-interfaces.js";
 import type { SessionPerformanceService } from "../../application/session-performance-service.js";
-import type { TradeDefaults } from "../persistence/trade-defaults-store.js";
+import type { TradeDefaults } from "../../ports/trade-defaults-store-port.js";
 import type { ConsoleLogger } from "./console-logger.js";
 
 export const LEARN_HORIZONS_MINUTES = [15, 30, 60, 90] as const;

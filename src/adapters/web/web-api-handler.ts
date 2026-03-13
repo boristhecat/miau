@@ -10,7 +10,7 @@ import type {
 import { resolveAdaptiveTimeframes } from "../../application/timeframe-policy.js";
 import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../../domain/trade-monitor-types.js";
 import type { PerpMarketSnapshot, Recommendation } from "../../domain/types.js";
-import type { JsonTradeDefaultsStore } from "../persistence/trade-defaults-store.js";
+import type { TradeDefaultsStorePort } from "../../ports/trade-defaults-store-port.js";
 
 export interface WebApiDeps {
   recommendationUseCase: IGenerateRecommendationUseCase;
@@ -19,7 +19,7 @@ export interface WebApiDeps {
   learningBucketReportUseCase: ILearningBucketReportUseCase;
   buildBaselineUseCase: IBuildOpenTradeBaselineUseCase;
   evaluateOpenTradeUseCase: IEvaluateOpenTradeUseCase;
-  tradeDefaultsStore: JsonTradeDefaultsStore;
+  tradeDefaultsStore: TradeDefaultsStorePort;
   aiAdviceUseCase?: IGenerateAiAdviceUseCase;
   aiEnabled: boolean;
 }

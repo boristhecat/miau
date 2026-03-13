@@ -21,7 +21,7 @@ Last updated: 2026-03-13
   - `monitor <SYMBOL> <long|short> --entry <price> --sl <price> --tp <price> [--refresh <seconds>]`
   - `rec`, `defaults`, `learn --start|--stop|--stats`, `help`, `exit`
 - AI secondary opinion is included by default for normal trade output when `OPENAI_API_KEY` is configured.
-- AI model selection is persisted in `data/trade-defaults.json` and configurable via `defaults`.
+- AI model selection is persisted in SQLite (`data/learning.sqlite`) and configurable via `defaults`.
 - AI block now includes structured `agreement` (`AGREE`/`DISAGREE`/`PARTIAL`), `regime` (`TREND`/`RANGE`/`CHOPPY`/`VOLATILE`), and `overruledSignals`.
 - `rec` fetches top 15 PERP symbols by 24h volume from Backpack and prints top 5 ranked opportunities.
 - `monitor` starts a dedicated full-screen session for one active trade and refreshes fast trade-state metrics plus slower setup reevaluation until the user exits.
@@ -93,6 +93,7 @@ Last updated: 2026-03-13
 
 ## Learning + Persistence
 - Local learning outcomes are stored in SQLite (`data/learning.sqlite`).
+- Saved trade defaults are also stored in SQLite (`data/learning.sqlite`).
 - Adaptive learning adjusts confidence calibration and gating from simulated outcomes.
 - Every single-symbol query now also writes a `PENDING` recommendation snapshot row to learning storage for offline analysis history.
 - Learning policy/stats calculations still use only evaluated `SUCCESS`/`FAILURE` outcomes (pending snapshots are excluded from win/loss math).

@@ -13,7 +13,7 @@ import type {
 } from "../../application/use-case-interfaces.js";
 import type { AiAdvice } from "../../ports/ai-advisor-port.js";
 import type { LiveMarketDataPort } from "../../ports/live-market-data-port.js";
-import { type TradeDefaults } from "../persistence/trade-defaults-store.js";
+import type { TradeDefaults } from "../../ports/trade-defaults-store-port.js";
 import { ConsoleLogger } from "./console-logger.js";
 import {
   getInteractiveHelpText,

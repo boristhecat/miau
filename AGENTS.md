@@ -41,7 +41,7 @@ Also output short rationale bullets explaining the score.
 
 ## Persistence (current)
 - Learning outcomes are persisted locally in SQLite: `data/learning.sqlite`.
-- User defaults are persisted locally in JSON: `data/trade-defaults.json`.
+- User defaults are persisted locally in SQLite: `data/learning.sqlite`.
 
 ## Working style for Codex
 - Always start by creating/updating `PLANS.md` for tasks that touch multiple files.

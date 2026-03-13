@@ -14,7 +14,7 @@ import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
 import { createIndicatorService } from "./adapters/indicators/indicator-service-factory.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
-import { JsonTradeDefaultsStore } from "./adapters/persistence/trade-defaults-store.js";
+import { SqliteTradeDefaultsStore } from "./adapters/persistence/trade-defaults-store.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
 import { WebServer } from "./adapters/web/web-server.js";
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
 
     const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
     const learning = new AdaptiveLearningService(learningStore);
-    const tradeDefaultsStore = new JsonTradeDefaultsStore();
+    const tradeDefaultsStore = new SqliteTradeDefaultsStore();
     const tradeDefaults = await tradeDefaultsStore.load();
     const aiAdviceService = new ReconfigurableAiAdviceService("https://api.openai.com", tradeDefaults.aiModel);
     const aiEnabled = Boolean((process.env.OPENAI_API_KEY ?? "").trim());

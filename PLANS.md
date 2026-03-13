@@ -1,5 +1,11 @@
 # Project Plan
 
+## Task: Move trade defaults from JSON into SQLite (2026-03-13)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then inspect current defaults persistence and all call sites
+- [x] Replace the JSON-backed defaults store with a SQLite-backed store using `data/learning.sqlite`
+- [x] Delete the legacy `data/trade-defaults.json` file from the active runtime, add regression coverage, and update docs
+- [x] Run build/tests, migrate current local defaults into SQLite, and confirm the worktree state
+
 ## Task: Switch open-trade monitor fast lane to Backpack WebSocket (2026-03-13)
 - [x] Re-read the current monitor implementation and isolate a monitor-only live-market integration point
 - [x] Add a live-market stream port and Backpack WebSocket adapter without changing snapshot-based analyze/rec/learning flows
