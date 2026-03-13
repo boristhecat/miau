@@ -3,7 +3,7 @@ import { TradeHealthEvaluator } from "../domain/trade-health-evaluator.js";
 import { TradeManagementEvaluator } from "../domain/trade-management-evaluator.js";
 import { TradeMonitorMetricsEvaluator } from "../domain/trade-monitor-metrics.js";
 import type { TradeMonitorSnapshot } from "../domain/trade-monitor-types.js";
-import type { Recommendation } from "../domain/types.js";
+import type { PerpMarketSnapshot, Recommendation } from "../domain/types.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { IEvaluateOpenTradeUseCase, IGenerateRecommendationUseCase } from "./use-case-interfaces.js";
 
@@ -22,6 +22,7 @@ export class EvaluateOpenTradeUseCase implements IEvaluateOpenTradeUseCase {
     currentAnalysisRecommendation?: Recommendation;
     previousSnapshot?: TradeMonitorSnapshot;
     refreshAnalysis?: boolean;
+    livePerpSnapshot?: PerpMarketSnapshot;
   }): Promise<{ snapshot: TradeMonitorSnapshot; analysisRecommendation: Recommendation }> {
     let analysisRecommendation = input.currentAnalysisRecommendation ?? input.baseline.baselineRecommendation;
     let analysisUpdatedAtMs = input.previousSnapshot?.analysisUpdatedAtMs ?? input.baseline.baselineBuiltAtMs;
@@ -39,9 +40,11 @@ export class EvaluateOpenTradeUseCase implements IEvaluateOpenTradeUseCase {
       analysisUpdatedAtMs = Date.now();
     }
 
-    const perp = await this.marketData.getPerpSnapshot({
-      pair: input.baseline.trade.pair
-    });
+    const perp =
+      input.livePerpSnapshot ??
+      (await this.marketData.getPerpSnapshot({
+        pair: input.baseline.trade.pair
+      }));
     const metrics = this.metricsEvaluator.evaluate({
       baseline: input.baseline,
       perp,

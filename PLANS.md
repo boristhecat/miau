@@ -1,5 +1,10 @@
 # Project Plan
 
+## Task: Switch open-trade monitor fast lane to Backpack WebSocket (2026-03-13)
+- [x] Re-read the current monitor implementation and isolate a monitor-only live-market integration point
+- [x] Add a live-market stream port and Backpack WebSocket adapter without changing snapshot-based analyze/rec/learning flows
+- [x] Wire CLI and web monitor paths to use live snapshots with REST fallback, add regression coverage, and run full verification
+
 ## Task: Implement open-trade monitor (2026-03-12)
 - [x] Inspect the reusable recommendation/simulation/runtime pieces and confirm the monitor should be a new flow, not a revived watch mode
 - [x] Add pure domain monitor types, metrics, health, and management evaluators

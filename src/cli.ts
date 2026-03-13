@@ -11,6 +11,7 @@ import { SelectLearningSymbolsUseCase } from "./application/select-learning-symb
 import { EvaluateSimulationUseCase } from "./application/evaluate-simulation-use-case.js";
 import { EvaluateOpenTradeUseCase } from "./application/evaluate-open-trade-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
+import { BackpackLiveMarketStreamClient } from "./adapters/backpack/backpack-live-market-stream-client.js";
 import { ReconfigurableAiAdviceService } from "./adapters/ai/reconfigurable-ai-advice-service.js";
 import { parseCliInput, getUsageText } from "./adapters/console/cli-input-parser.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
     const httpClient = new AxiosHttpClient("https://api.backpack.exchange");
     const marketData = new BackpackMarketDataClient(httpClient);
     const indicatorEngine = await createIndicatorService(logger);
+    const liveMarketData = new BackpackLiveMarketStreamClient(marketData);
     const recommendationUseCase = new GenerateRecommendationUseCase({
       marketData,
       indicatorService: indicatorEngine.service,
@@ -85,6 +87,7 @@ async function main(): Promise<void> {
       learningCycleUseCase,
       buildOpenTradeBaselineUseCase,
       evaluateOpenTradeUseCase,
+      liveMarketData,
       simulationScheduler,
       refreshIndicatorRuntime: refreshTalibWasm,
       tradeDefaults,

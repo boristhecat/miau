@@ -8,6 +8,7 @@ import { RunLearningBucketReportUseCase } from "./application/run-learning-bucke
 import { RunRecommendationRankingUseCase } from "./application/run-recommendation-ranking-use-case.js";
 import { EvaluateOpenTradeUseCase } from "./application/evaluate-open-trade-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
+import { BackpackLiveMarketStreamClient } from "./adapters/backpack/backpack-live-market-stream-client.js";
 import { ReconfigurableAiAdviceService } from "./adapters/ai/reconfigurable-ai-advice-service.js";
 import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
   try {
     const httpClient = new AxiosHttpClient("https://api.backpack.exchange");
     const marketData = new BackpackMarketDataClient(httpClient);
+    const liveMarketData = new BackpackLiveMarketStreamClient(marketData);
     const { service: indicatorService } = await createIndicatorService(logger);
 
     const recommendationEngine = new RecommendationEngine();
@@ -59,6 +61,7 @@ async function main(): Promise<void> {
       learningBucketReportUseCase,
       buildBaselineUseCase,
       evaluateOpenTradeUseCase,
+      liveMarketData,
       tradeDefaultsStore,
       aiAdviceUseCase: aiEnabled ? aiAdviceService : undefined,
       aiEnabled

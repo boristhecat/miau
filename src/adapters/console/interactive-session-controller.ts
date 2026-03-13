@@ -12,6 +12,7 @@ import type {
   ISimulationScheduler
 } from "../../application/use-case-interfaces.js";
 import type { AiAdvice } from "../../ports/ai-advisor-port.js";
+import type { LiveMarketDataPort } from "../../ports/live-market-data-port.js";
 import { type TradeDefaults } from "../persistence/trade-defaults-store.js";
 import { ConsoleLogger } from "./console-logger.js";
 import {
@@ -40,6 +41,7 @@ export interface InteractiveSessionDeps {
   learningCycleUseCase: ILearningCycleUseCase;
   buildOpenTradeBaselineUseCase: IBuildOpenTradeBaselineUseCase;
   evaluateOpenTradeUseCase: IEvaluateOpenTradeUseCase;
+  liveMarketData: LiveMarketDataPort;
   simulationScheduler: ISimulationScheduler;
   refreshIndicatorRuntime: () => Promise<void>;
   tradeDefaults: TradeDefaults;
@@ -55,6 +57,7 @@ export async function runInteractiveSession(deps: InteractiveSessionDeps): Promi
   const tradeMonitorController = new TradeMonitorController({
     buildBaselineUseCase: deps.buildOpenTradeBaselineUseCase,
     evaluateOpenTradeUseCase: deps.evaluateOpenTradeUseCase,
+    liveMarketData: deps.liveMarketData,
     input,
     output
   });

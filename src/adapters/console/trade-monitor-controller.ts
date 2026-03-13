@@ -5,6 +5,7 @@ import type {
   IEvaluateOpenTradeUseCase
 } from "../../application/use-case-interfaces.js";
 import { clamp, parseIntervalToMinutes } from "../../domain/interval-utils.js";
+import type { LiveMarketDataPort, LivePerpStream } from "../../ports/live-market-data-port.js";
 import { renderTradeMonitor, renderTradeMonitorMessage } from "./trade-monitor-view.js";
 
 export interface StartTradeMonitorInput {
@@ -28,6 +29,7 @@ export class TradeMonitorController {
     private readonly deps: {
       buildBaselineUseCase: IBuildOpenTradeBaselineUseCase;
       evaluateOpenTradeUseCase: IEvaluateOpenTradeUseCase;
+      liveMarketData: LiveMarketDataPort;
       input: NodeJS.ReadStream;
       output: NodeJS.WriteStream;
     }
@@ -60,6 +62,15 @@ export class TradeMonitorController {
       input.slowRefreshSeconds,
       baseline.trade.analysisInterval
     );
+    let liveStream: LivePerpStream | undefined;
+    try {
+      liveStream = await this.deps.liveMarketData.openPerpStream({
+        pair: input.pair,
+        initialSnapshot: baseline.baselineRecommendation.perp
+      });
+    } catch {
+      // Fall back to snapshot polling if the live stream cannot be established.
+    }
     let currentAnalysisRecommendation = baseline.baselineRecommendation;
     let previousSnapshot: import("../../domain/trade-monitor-types.js").TradeMonitorSnapshot | undefined;
     let stopRequested = false;
@@ -95,11 +106,13 @@ export class TradeMonitorController {
           previousSnapshot === undefined ||
           Date.now() - previousSnapshot.analysisUpdatedAtMs >= slowRefreshIntervalMs;
         try {
+          const livePerpSnapshot = this.getLiveSnapshot(liveStream);
           const result = await this.deps.evaluateOpenTradeUseCase.execute({
             baseline,
             currentAnalysisRecommendation,
             previousSnapshot,
-            refreshAnalysis
+            refreshAnalysis,
+            livePerpSnapshot
           });
           currentAnalysisRecommendation = result.analysisRecommendation;
           previousSnapshot = result.snapshot;
@@ -116,6 +129,7 @@ export class TradeMonitorController {
         }
       }
     } finally {
+      liveStream?.close();
       this.deps.input.off("keypress", onKeypress);
       this.deps.input.setRawMode?.(Boolean(previousRawMode));
     }
@@ -129,5 +143,9 @@ export class TradeMonitorController {
     const candleSeconds = parseIntervalToMinutes(analysisInterval) * 60;
     const derivedSeconds = clamp(candleSeconds * 0.8, 3, 30);
     return Math.round(derivedSeconds * 1000);
+  }
+
+  private getLiveSnapshot(liveStream: LivePerpStream | undefined) {
+    return liveStream?.getLatestSnapshot();
   }
 }

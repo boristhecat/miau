@@ -1,5 +1,6 @@
 import type { Recommendation } from "../domain/types.js";
 import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../domain/trade-monitor-types.js";
+import type { PerpMarketSnapshot } from "../domain/types.js";
 import type { AiAdvice } from "../ports/ai-advisor-port.js";
 import type { LearningOverview, LearningBucketRow } from "../ports/learning-store-port.js";
 import type { LearningPolicy } from "./learning-policy-service.js";
@@ -92,6 +93,7 @@ export interface IEvaluateOpenTradeUseCase {
     currentAnalysisRecommendation?: Recommendation;
     previousSnapshot?: TradeMonitorSnapshot;
     refreshAnalysis?: boolean;
+    livePerpSnapshot?: PerpMarketSnapshot;
   }): Promise<{ snapshot: TradeMonitorSnapshot; analysisRecommendation: Recommendation }>;
 }
 

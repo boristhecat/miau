@@ -7,6 +7,7 @@ import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../../domain/tr
 import type { Recommendation } from "../../domain/types.js";
 import { clamp } from "../../domain/interval-utils.js";
 import { parseIntervalToMinutes } from "../../domain/interval-utils.js";
+import type { LiveMarketDataPort, LivePerpStream } from "../../ports/live-market-data-port.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -22,9 +23,11 @@ export class WebServer {
   private readonly handler: WebApiHandler;
   private readonly server: http.Server;
   private readonly staticDir: string;
+  private readonly liveMarketData: LiveMarketDataPort;
 
-  constructor(deps: WebApiDeps) {
+  constructor(deps: WebApiDeps & { liveMarketData: LiveMarketDataPort }) {
     this.handler = new WebApiHandler(deps);
+    this.liveMarketData = deps.liveMarketData;
     this.staticDir = path.join(process.cwd(), "src/adapters/web/static");
     this.server = http.createServer((req, res) => void this.handleRequest(req, res));
   }
@@ -114,6 +117,15 @@ export class WebServer {
     res: http.ServerResponse
   ): Promise<void> {
     const baseline = await this.handler.buildMonitorBaseline(params);
+    let liveStream: LivePerpStream | undefined;
+    try {
+      liveStream = await this.liveMarketData.openPerpStream({
+        pair: baseline.trade.pair,
+        initialSnapshot: baseline.baselineRecommendation.perp
+      });
+    } catch {
+      // Fall back to snapshot polling if the live stream cannot be established.
+    }
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -140,10 +152,15 @@ export class WebServer {
     let currentAnalysisRecommendation: Recommendation | undefined = baseline.baselineRecommendation;
     let previousSnapshot: TradeMonitorSnapshot | undefined;
     let stopped = false;
+    let tickInterval: NodeJS.Timeout | undefined;
 
     const cleanup = (): void => {
       stopped = true;
-      clearInterval(tickInterval);
+      if (tickInterval) {
+        clearInterval(tickInterval);
+        tickInterval = undefined;
+      }
+      liveStream?.close();
     };
     req.on("close", cleanup);
 
@@ -157,7 +174,8 @@ export class WebServer {
           baseline,
           currentAnalysisRecommendation,
           previousSnapshot,
-          refreshAnalysis
+          refreshAnalysis,
+          livePerpSnapshot: this.getLiveSnapshot(liveStream)
         });
         currentAnalysisRecommendation = result.analysisRecommendation;
         previousSnapshot = result.snapshot;
@@ -168,7 +186,7 @@ export class WebServer {
     };
 
     await tick();
-    const tickInterval = setInterval(() => void tick(), refreshMs);
+    tickInterval = setInterval(() => void tick(), refreshMs);
   }
 
   private deriveSlowRefreshMs(explicitSeconds: number | undefined, analysisInterval: string): number {
@@ -204,6 +222,10 @@ export class WebServer {
   private sendJson(res: http.ServerResponse, statusCode: number, data: unknown): void {
     res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify(data));
+  }
+
+  private getLiveSnapshot(liveStream: LivePerpStream | undefined) {
+    return liveStream?.getLatestSnapshot();
   }
 }
 

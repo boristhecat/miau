@@ -66,6 +66,45 @@ describe("EvaluateOpenTradeUseCase", () => {
     expect(result.analysisRecommendation.signal).toBe("NO_TRADE");
     expect(result.snapshot.healthStatus).toBe("BROKEN");
   });
+
+  it("uses the injected live perp snapshot instead of polling REST", async () => {
+    const getPerpSnapshot = vi.fn().mockResolvedValue({
+      symbol: "BTC_USDC_PERP",
+      fundingRate: 0,
+      fundingRateAvg: 0,
+      openInterest: 1000,
+      markPrice: 103,
+      indexPrice: 103,
+      premiumPct: 0.1,
+      bidAskSpreadPct: 0.04
+    });
+    const recommendationUseCase = {
+      execute: vi.fn()
+    };
+    const useCase = new EvaluateOpenTradeUseCase(makeMarketData(getPerpSnapshot), recommendationUseCase);
+    const baseline = makeBaseline();
+
+    const result = await useCase.execute({
+      baseline,
+      currentAnalysisRecommendation: baseline.baselineRecommendation,
+      refreshAnalysis: false,
+      livePerpSnapshot: {
+        symbol: "BTC_USDC_PERP",
+        fundingRate: 0.001,
+        fundingRateAvg: 0,
+        openInterest: 1200,
+        markPrice: 104,
+        indexPrice: 103.8,
+        premiumPct: 0.19,
+        bidAskSpreadPct: 0.03,
+        orderBookImbalance: 0.2,
+        microPricePremiumPct: 0.01
+      }
+    });
+
+    expect(getPerpSnapshot).not.toHaveBeenCalled();
+    expect(result.snapshot.metrics.markPrice).toBe(104);
+  });
 });
 
 function makeMarketData(getPerpSnapshot: ReturnType<typeof vi.fn>): MarketDataPort {

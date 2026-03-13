@@ -112,21 +112,26 @@ Concrete implementations:
 1. User runs `monitor BTC long --entry ... --sl ... --tp ... [--refresh 0.5|1]`.
 2. Console adapter parses the command and starts a dedicated blocking monitor controller.
 3. Baseline use-case derives adaptive timeframes and builds one recommendation snapshot for the active trade side.
-4. Fast lane polls perp snapshot data for:
+4. Fast lane opens a Backpack public WebSocket stream for the monitored symbol and updates live perp state from:
+   - `bookTicker.<symbol>`
+   - `markPrice.<symbol>`
+   - `openInterest.<symbol>`
+5. Fast lane uses the latest live perp snapshot for:
    - mark price
    - spread / premium
    - unrealized PnL
    - current `R`
    - stop / target distance
    - MFE / MAE
-5. Slow lane periodically refreshes recommendation context for:
+6. If the WebSocket stream cannot be established, the monitor falls back to REST snapshot polling for the fast lane instead of failing the session.
+7. Slow lane periodically refreshes recommendation context for:
    - regime
    - playbook alignment
    - sequence
    - key-level interaction
    - thesis health
    - management action
-6. Console view redraws one full-screen trade-monitor snapshot until the user exits the session.
+8. Console view redraws one full-screen trade-monitor snapshot until the user exits the session.
 
 ### `rec` flow
 

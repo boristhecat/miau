@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Last updated: 2026-03-12
+Last updated: 2026-03-13
 
 ## Summary
 - `miau-trader` is a TypeScript CLI that produces crypto trade suggestions from Backpack public market data.
@@ -25,6 +25,7 @@ Last updated: 2026-03-12
 - AI block now includes structured `agreement` (`AGREE`/`DISAGREE`/`PARTIAL`), `regime` (`TREND`/`RANGE`/`CHOPPY`/`VOLATILE`), and `overruledSignals`.
 - `rec` fetches top 15 PERP symbols by 24h volume from Backpack and prints top 5 ranked opportunities.
 - `monitor` starts a dedicated full-screen session for one active trade and refreshes fast trade-state metrics plus slower setup reevaluation until the user exits.
+- The monitor fast lane now prefers Backpack public WebSocket streams and falls back to REST polling only if the live stream cannot be established.
 
 ## Data Sources (Backpack public API)
 - `/api/v1/markets`
@@ -85,8 +86,9 @@ Last updated: 2026-03-12
 - `monitor` is separate from the recommendation flow and does not reuse the removed watch-mode design.
 - The monitor takes manual trade levels (`entry`, `stop loss`, `take profit`) plus side and optional leverage/size/horizon.
 - It runs as a blocking session with two cadences:
-  - fast lane (`0.5s` or `1s`) using `getPerpSnapshot()` for live price, spread, net/gross PnL, current `R`, stop/target distance, and MFE/MAE
+  - fast lane (`0.5s` or `1s`) using Backpack WebSocket (`bookTicker`, `markPrice`, `openInterest`) for live price, spread, net/gross PnL, current `R`, stop/target distance, and MFE/MAE
   - slow lane (`5s`) using the existing recommendation pipeline to reevaluate market regime, playbook alignment, sequence, level interaction, thesis health, and management action
+- If the live stream cannot be opened, the fast lane degrades to the existing REST snapshot polling path instead of failing the monitor outright.
 - Current management outputs are advisory only: `HOLD`, `AT_RISK`, `MOVE_TO_BREAKEVEN`, `TAKE_PARTIAL`, `EXIT_EARLY`, `STOP_HIT`, `TARGET_HIT`
 
 ## Learning + Persistence

@@ -9,7 +9,7 @@ import type {
 } from "../../application/use-case-interfaces.js";
 import { resolveAdaptiveTimeframes } from "../../application/timeframe-policy.js";
 import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../../domain/trade-monitor-types.js";
-import type { Recommendation } from "../../domain/types.js";
+import type { PerpMarketSnapshot, Recommendation } from "../../domain/types.js";
 import type { JsonTradeDefaultsStore } from "../persistence/trade-defaults-store.js";
 
 export interface WebApiDeps {
@@ -151,6 +151,7 @@ export class WebApiHandler {
     currentAnalysisRecommendation?: Recommendation;
     previousSnapshot?: TradeMonitorSnapshot;
     refreshAnalysis: boolean;
+    livePerpSnapshot?: PerpMarketSnapshot;
   }): Promise<{ snapshot: TradeMonitorSnapshot; analysisRecommendation: Recommendation }> {
     return this.deps.evaluateOpenTradeUseCase.execute(input);
   }

@@ -78,6 +78,7 @@ Interactive screen layout:
 - Upper section: learning status and background-learning activity
 - Lower section: single-symbol output showing the latest query result only
 - `monitor ...` temporarily switches to its own full-screen trade-monitor session until you exit it with `q`
+- `monitor` uses Backpack WebSocket streams for its fast lane when available and falls back to REST snapshot polling if the live stream cannot be opened
 
 Background learning mode:
 - On `learn --start`, the app derives symbols from rec-style ranking and starts background simulations.
