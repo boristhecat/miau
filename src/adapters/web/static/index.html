@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>miau trader</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <header id="app-header">
+    <div class="header-left">
+      <h1 class="logo">miau<span class="logo-accent">trader</span></h1>
+    </div>
+    <nav id="main-nav">
+      <button data-tab="analyze" class="tab-btn active">Analyze</button>
+      <button data-tab="scan" class="tab-btn">Scanner</button>
+      <button data-tab="monitor" class="tab-btn">Monitor</button>
+      <button data-tab="learning" class="tab-btn">Learning</button>
+      <button data-tab="settings" class="tab-btn">Settings</button>
+    </nav>
+  </header>
+
+  <main id="app-content">
+    <!-- ======================== ANALYZE ======================== -->
+    <section id="tab-analyze" class="tab-panel active">
+      <form id="analyze-form" class="input-bar">
+        <div class="input-group">
+          <label for="analyze-symbol">Symbol</label>
+          <input id="analyze-symbol" type="text" placeholder="BTC" spellcheck="false" autocomplete="off" required>
+        </div>
+        <div class="input-group">
+          <label for="analyze-direction">Direction</label>
+          <select id="analyze-direction">
+            <option value="">Auto</option>
+            <option value="LONG">Long</option>
+            <option value="SHORT">Short</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="analyze-horizon">Horizon (min)</label>
+          <input id="analyze-horizon" type="text" placeholder="60" value="">
+        </div>
+        <button type="submit" class="btn btn-primary" id="analyze-btn">Analyze</button>
+      </form>
+      <div id="analyze-loading" class="loading hidden">Analyzing<span class="dots"></span></div>
+      <div id="analyze-result"></div>
+    </section>
+
+    <!-- ======================== SCANNER ======================== -->
+    <section id="tab-scan" class="tab-panel">
+      <div class="input-bar">
+        <button id="scan-btn" class="btn btn-primary">Scan Top Opportunities</button>
+      </div>
+      <div id="scan-loading" class="loading hidden">Scanning universe<span class="dots"></span></div>
+      <div id="scan-result"></div>
+    </section>
+
+    <!-- ======================== MONITOR ======================== -->
+    <section id="tab-monitor" class="tab-panel">
+      <form id="monitor-form" class="input-bar">
+        <div class="input-group">
+          <label for="monitor-symbol">Symbol</label>
+          <input id="monitor-symbol" type="text" placeholder="BTC" spellcheck="false" required>
+        </div>
+        <div class="input-group">
+          <label for="monitor-side">Side</label>
+          <select id="monitor-side" required>
+            <option value="LONG">Long</option>
+            <option value="SHORT">Short</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="monitor-entry">Entry</label>
+          <input id="monitor-entry" type="number" step="any" required>
+        </div>
+        <div class="input-group">
+          <label for="monitor-sl">Stop Loss</label>
+          <input id="monitor-sl" type="number" step="any" required>
+        </div>
+        <div class="input-group">
+          <label for="monitor-tp">Take Profit</label>
+          <input id="monitor-tp" type="number" step="any" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="monitor-start-btn">Start Monitor</button>
+        <button type="button" class="btn btn-danger hidden" id="monitor-stop-btn">Stop</button>
+      </form>
+      <div id="monitor-live"></div>
+    </section>
+
+    <!-- ======================== LEARNING ======================== -->
+    <section id="tab-learning" class="tab-panel">
+      <div class="input-bar">
+        <button id="learning-load-btn" class="btn btn-primary">Load Stats</button>
+      </div>
+      <div id="learning-loading" class="loading hidden">Loading stats<span class="dots"></span></div>
+      <div id="learning-result"></div>
+    </section>
+
+    <!-- ======================== SETTINGS ======================== -->
+    <section id="tab-settings" class="tab-panel">
+      <form id="settings-form" class="settings-panel">
+        <h2>Trade Defaults</h2>
+        <div class="settings-grid">
+          <div class="input-group">
+            <label for="settings-leverage">Leverage</label>
+            <input id="settings-leverage" type="number" step="1" min="1">
+          </div>
+          <div class="input-group">
+            <label for="settings-size">Position Size (USDC)</label>
+            <input id="settings-size" type="number" step="1" min="1">
+          </div>
+          <div class="input-group">
+            <label for="settings-horizon">Horizon (minutes)</label>
+            <input id="settings-horizon" type="text">
+          </div>
+          <div class="input-group">
+            <label for="settings-ai-model">AI Model</label>
+            <input id="settings-ai-model" type="text">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+        <span id="settings-status" class="status-msg hidden"></span>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
