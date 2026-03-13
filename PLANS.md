@@ -1,5 +1,11 @@
 # Project Plan
 
+## Task: Remove CLI runtime and make the app web-only (2026-03-13)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace all CLI/runtime references, scripts, and docs
+- [x] Replace the remaining console-specific runtime wiring with web-only equivalents and remove `src/cli.ts`
+- [x] Delete obsolete console adapters/tests and update package metadata, README, `docs/CURRENT_STATE.md`, `docs/ARCHITECTURE.md`, and `AGENTS.md`
+- [x] Run build/tests and confirm the repo is clean with a web-only runtime surface
+
 ## Task: Align `rec` with the live single-symbol recommendation path (2026-03-13)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace the exact divergence between `rec` output and direct symbol queries
 - [x] Remove the cache-based approach and make `rec` use the same live recommendation path as a plain single-symbol query, without AI

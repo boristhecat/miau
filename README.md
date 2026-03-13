@@ -1,13 +1,13 @@
 # miau-trader
 
-`miau-trader` is a TypeScript console app that analyzes Backpack public market data and suggests:
+`miau-trader` is a TypeScript web app for crypto trade analysis and open-trade monitoring using Backpack public market data.
 
-- Entry
-- Stop Loss
-- Take Profit
-- LONG/SHORT signal
-- Confidence score (0-100)
-- Indicator-based rationale
+It provides:
+- single-symbol analysis with trade levels and rationale
+- ranked opportunity scanning
+- open-trade monitoring with live updates
+- learning stats and persistent defaults
+- optional AI secondary opinion for single-symbol analysis
 
 It does **not** place orders or access private/account endpoints.
 
@@ -15,7 +15,7 @@ It does **not** place orders or access private/account endpoints.
 
 - Node.js `>=20`
 - npm
-- `better-sqlite3` (`npm i better-sqlite3`)
+- `better-sqlite3` build support on your machine
 
 ## Install
 
@@ -25,148 +25,82 @@ npm i
 
 ## Run
 
-### Development mode
+### Development server
 
 ```bash
 npm run dev
 ```
 
-### Build + run compiled CLI
+Then open `http://localhost:3000`.
+
+### Build + run compiled app
 
 ```bash
 npm run build
-node dist/cli.js
+npm run start
 ```
 
-### Top recommendations mode (`rec`)
+## Web UI
 
-Fetches the top 15 PERP symbols by 24h volume from Backpack and prints the top 5
-trade suggestions ordered by highest estimated probability of positive PnL to lowest.
-Before scanning, it prints the selected universe with each symbol's 24h volume and open interest.
-The ranked list prints symbol, side/action, probability, confidence, R/R, and entry/SL/TP.
+The application exposes a single web UI with five tabs:
 
-`rec` uses your saved `defaults` values for leverage/size/horizon/AI model.
-Base and bias timeframes are derived automatically from that horizon.
+- `Analyze`: run live analysis for one symbol with optional forced direction and horizon
+- `Scanner`: rank top opportunities from the liquid Backpack universe
+- `Monitor`: reevaluate an already open trade using manual `entry`, `stop loss`, and `take profit`
+- `Learning`: inspect stored learning statistics
+- `Settings`: edit persisted defaults (leverage, position size, horizon, AI model)
 
-Run it from inside the interactive prompt:
+## Open-Trade Monitor
 
-```text
-rec
-```
+The monitor is advisory only. It does not execute or modify trades.
 
-## Interactive usage
+Inputs:
+- symbol
+- side (`LONG` / `SHORT`)
+- entry
+- stop loss
+- take profit
 
-After starting the app, enter input at the `Command` prompt:
+Behavior:
+- fast lane uses Backpack public WebSocket streams when available
+- slow lane reevaluates the trade thesis with the recommendation engine
+- if the live stream cannot be opened, the monitor falls back to REST polling
 
-- `help` or `?` -> show interactive commands + flags
-- `rec` -> run top recommendations scan in-app
-- `defaults` -> set saved defaults for symbol-only runs (including AI model)
-- `BTC` -> run immediately with saved defaults
-- `BTC --custom` -> prompt quick values for this run
-- `BTC --horizon 75` -> horizon-driven objective/TP/SL targeting (minutes)
-- `BTC 30 long` -> shorthand for horizon + direction in one command
-- `BTC --expected 240` -> expected low/high range output for the next 240 minutes
-- `BTC --simulate` -> always run simulation for `--horizon` minutes (fallback: 15m), even if recommendation is `NO_TRADE`
-- `monitor BTC long --entry 69420 --sl 68850 --tp 70800 --refresh 0.5` -> start a dedicated live monitor for an already open trade
-- AI secondary opinion is included by default when `OPENAI_API_KEY` is configured
-- `learn --start` -> start background learning runner
-- `learn --stop` -> stop background learning runner
-- `learn --stats` -> show learning stats (simulated trades, wins/losses, win-rate, avg PnL)
-- `exit` or `quit` -> close the app
+Current monitor outputs include:
+- live price and spread context
+- unrealized gross/net PnL
+- current `R`
+- MFE / MAE
+- thesis health
+- management action (`HOLD`, `AT_RISK`, `MOVE_TO_BREAKEVEN`, `TAKE_PARTIAL`, `EXIT_EARLY`, `STOP_HIT`, `TARGET_HIT`)
 
-Interactive screen layout:
-- Upper section: learning status and background-learning activity
-- Lower section: single-symbol output showing the latest query result only
-- `monitor ...` temporarily switches to its own full-screen trade-monitor session until you exit it with `q`
-- `monitor` uses Backpack WebSocket streams for its fast lane when available and falls back to REST snapshot polling if the live stream cannot be opened
+## Data Sources
 
-Background learning mode:
-- On `learn --start`, the app derives symbols from rec-style ranking and starts background simulations.
-- For each selected symbol it runs horizons: `15, 30, 60, 90` minutes.
-- Use `learn --stop` to stop the runner and cancel pending scheduled simulations.
+Backpack public API only:
+- markets
+- klines
+- mark prices
+- open interest
+- funding rates
+- depth
+- public WebSocket streams for monitor fast-lane updates
 
-### Quick mode
+## Persistence
 
-Symbol-only mode runs with saved defaults (`defaults` command):
-
-- Leverage
-- Position size (USDC margin)
-- Horizon minutes
-- AI model (default: `gpt-5.2`)
-
-Custom prompt mode (`--custom`) prompts for core risk inputs:
-
-- Leverage
-- Position size (USDC margin)
-- Trade horizon minutes (`--horizon`, e.g. `15`, `75`, `90`)
-- Expected-range mode (`--expected <minutes>`, e.g. `240`) for standalone expected low/high output
-- AI secondary commentary is automatic (non-blocking) when `OPENAI_API_KEY` is configured
-- Timeframes are selected automatically from horizon:
-  - `<=10m`: base `1m`, bias `15m`
-  - `<=30m`: base `3m`, bias `15m`
-  - `<=90m`: base `5m`, bias `30m`
-  - `>90m`: base `15m`, bias `1h`
-- Simulation is flag-driven (`--simulate`) and is not prompted interactively
-- Simulation timespan uses `--horizon` minutes when provided (fallback: `15`)
-- Simulation always runs, even when recommendation says `NO_TRADE`
-
-Defaults to:
-
-- Leverage: `20`
-- Position size: `250`
-- Horizon: `15m` (internally `15` minutes)
-- AI model: `gpt-5.2`
-- Timeframes are auto-selected from horizon
-- Detailed output: disabled
-
-## What the output includes
-
-- Default output: compact `TRADE LEVELS` block only
-- Trade Direction (`LONG`/`SHORT`/`NO TRADE`)
-- Market regime classification (`TREND` / `RANGE` / `VOLATILE_SPIKE` / `LOW_LIQ_CHOP`)
-- Entry / Stop Loss / Take Profit
-- Estimated PnL at SL/TP (when leverage + position size are provided)
-- Net PnL at SL/TP, Net R/R, and EV (Expected Value) when leverage + position size are provided
-- No-trade decision + compact guard reason when setup is rejected
-- Optional simulation result (`SUCCESS`/`FAILURE`) based on public candles only
-- Learning calibration note when enough historical outcomes exist
-- Objective/horizon metadata with time-stop rule when objective targeting is enabled
-- Optional `rec` ranking output with top 5 tokens (highest recommendation -> lowest)
-
-## Indicators used
-
-- Engine: `talib-wasm` adapter (`INDICATOR_ENGINE` can be omitted or set to `talib-wasm`)
-- RSI(14)
-- EMA(20), EMA(50)
-- MACD(12,26,9)
-- ATR(14)
-- ADX(14)
-- Bollinger Bands(20, 2)
-- Stochastic RSI
-- VWAP
-- OBV + OBV slope(5)
-- MFI(14)
-- CMF(20)
-- Volume z-score(20) + short CVD delta proxy
-
-Additional market microstructure context:
-- Open interest + OI delta (when available)
-- Funding + funding average
-- Mark/index premium
-- Orderbook spread, imbalance, and microprice premium (when depth endpoint is available)
-- Confluence weights adapt by horizon bucket and market regime (deterministic policy in domain layer)
+Local SQLite database:
+- learning outcomes: `data/learning.sqlite`
+- saved trade defaults: `data/learning.sqlite`
 
 ## Commands
 
 - Install: `npm i`
-- Run dev: `npm run dev`
+- Run dev server: `npm run dev`
 - Build: `npm run build`
+- Run built app: `npm run start`
 - Test: `npm test`
 
 ## Notes
 
-- Input symbol must be base asset only (examples: `BTC`, `ETH`, `SOL`).
-- The app maps symbol input to `<SYMBOL>-USD` internally and resolves Backpack PERP markets.
-- Uses Backpack **public** endpoints only.
-- Learning outcomes are stored locally in `data/learning.sqlite` (SQLite is required at startup).
-- AI secondary opinion requires `OPENAI_API_KEY` in environment.
+- Symbol input is the base asset (for example `BTC`, `ETH`, `SOL`). The app maps it to `<SYMBOL>-USD` internally.
+- AI secondary opinion requires `OPENAI_API_KEY` in the environment.
+- Recommendation and monitor output are advisory only.

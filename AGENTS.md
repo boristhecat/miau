@@ -1,7 +1,7 @@
 # AGENTS.md — miau-trader (agentic build)
 
 ## Project goal
-Build a TypeScript **console application** that suggests **Entry / Stop Loss / Take Profit** for a crypto trading pair using **public market data** (no auth, no account access).
+Build a TypeScript **web application** that suggests **Entry / Stop Loss / Take Profit** for a crypto trading pair using **public market data** (no auth, no account access).
 - First exchange: **Backpack** public API.
 - **No trade execution**, no order placement, no account endpoints.
 
@@ -12,11 +12,11 @@ Build a TypeScript **console application** that suggests **Entry / Stop Loss / T
 
 ## Architecture & boundaries (Clean Architecture style)
 Keep strict separation:
-- `src/domain/` — pure business logic (indicators, scoring, recommendation)
+- `src/domain/` — pure business logic (indicators, scoring, recommendation, monitoring)
 - `src/application/` — use-cases (orchestration)
-- `src/ports/` — interfaces (market data, logger)
-- `src/adapters/` — implementations (Backpack REST/SDK, console UI)
-- `src/cli.ts` — entry point / argument parsing
+- `src/ports/` — interfaces (market data, logging, persistence, live streams)
+- `src/adapters/` — implementations (Backpack REST/WS, web UI, persistence)
+- `src/web.ts` — entry point / composition root
 
 Rules:
 - Domain must not import adapters.
@@ -29,14 +29,15 @@ Produce a deterministic percentage 0..100 based on indicator confluence.
 Also output short rationale bullets explaining the score.
 
 ## Testing policy
-- Tests for parsing/validation of user input.
+- Tests for request parsing/validation at the web/API boundary.
 - Tests for API retrieval using HTTP mocking (e.g. `nock`) — do not hit live endpoints in unit tests.
 - Focus on our integration points and logic, not on verifying indicator libraries.
 
 ## Commands (keep up to date)
 - Install: `npm i`
-- Run dev (interactive): `npm run dev`
+- Run dev server: `npm run dev`
 - Build: `npm run build`
+- Run built app: `npm run start`
 - Test: `npm test`
 
 ## Persistence (current)

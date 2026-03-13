@@ -10,9 +10,9 @@ import { EvaluateOpenTradeUseCase } from "./application/evaluate-open-trade-use-
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { BackpackLiveMarketStreamClient } from "./adapters/backpack/backpack-live-market-stream-client.js";
 import { ReconfigurableAiAdviceService } from "./adapters/ai/reconfigurable-ai-advice-service.js";
-import { ConsoleLogger } from "./adapters/console/console-logger.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
 import { createIndicatorService } from "./adapters/indicators/indicator-service-factory.js";
+import { StdoutLogger } from "./adapters/logging/stdout-logger.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
 import { SqliteTradeDefaultsStore } from "./adapters/persistence/trade-defaults-store.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
@@ -20,7 +20,7 @@ import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunitie
 import { WebServer } from "./adapters/web/web-server.js";
 
 async function main(): Promise<void> {
-  const logger = new ConsoleLogger();
+  const logger = new StdoutLogger();
   const port = Number(process.env.PORT) || 3000;
 
   try {

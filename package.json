@@ -2,16 +2,13 @@
   "name": "miau-trader",
   "version": "0.1.0",
   "private": true,
-  "description": "CLI for crypto Entry/SL/TP recommendations using public market data",
+  "description": "Web app for crypto trade analysis and open-trade monitoring using public market data",
   "type": "module",
-  "main": "dist/cli.js",
-  "bin": {
-    "miau-trader": "dist/cli.js"
-  },
+  "main": "dist/web.js",
   "scripts": {
-    "dev": "tsx src/cli.ts",
+    "dev": "tsx src/web.ts",
+    "start": "node dist/web.js",
     "build": "tsc -p tsconfig.json",
-    "ui": "tsx src/web.ts",
     "test": "vitest run"
   },
   "engines": {
