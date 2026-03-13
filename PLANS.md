@@ -1,5 +1,11 @@
 # Project Plan
 
+## Task: Allow analyze/monitor override of saved defaults (2026-03-13)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace how saved defaults currently flow through web analyze and monitor paths
+- [x] Expose leverage / position size / horizon overrides in the analyze and monitor web forms without exposing AI model there
+- [x] Tighten web API parsing/validation so optional per-request overrides cleanly fall back to defaults or reject invalid values
+- [x] Add regression coverage and update current docs if the web behavior changes materially
+
 ## Task: Remove CLI runtime and make the app web-only (2026-03-13)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace all CLI/runtime references, scripts, and docs
 - [x] Replace the remaining console-specific runtime wiring with web-only equivalents and remove `src/cli.ts`

@@ -43,12 +43,12 @@ export class WebApiHandler {
     if (direction && direction !== "LONG" && direction !== "SHORT") {
       throw new HttpError(400, "Direction must be LONG or SHORT.");
     }
-    const horizon = body.horizon ? String(body.horizon) : undefined;
+    const horizon = parseOptionalString(body.horizon);
     const defaults = await this.deps.tradeDefaultsStore.load();
     const effectiveHorizon = horizon ?? defaults.objectiveHorizon;
     const adaptive = resolveAdaptiveTimeframes(effectiveHorizon);
-    const leverage = typeof body.leverage === "number" ? body.leverage : defaults.leverage;
-    const positionSizeUsd = typeof body.positionSizeUsd === "number" ? body.positionSizeUsd : defaults.positionSizeUsd;
+    const leverage = parseOptionalPositiveNumber(body.leverage, "leverage") ?? defaults.leverage;
+    const positionSizeUsd = parseOptionalPositiveNumber(body.positionSizeUsd, "position size") ?? defaults.positionSizeUsd;
 
     let recommendation = await this.learningAwareRecommendationGenerator.execute({
       pair,
@@ -141,9 +141,9 @@ export class WebApiHandler {
       entry,
       stopLoss,
       takeProfit,
-      leverage: params.leverage ? Number(params.leverage) : defaults.leverage,
-      positionSizeUsd: params.positionSizeUsd ? Number(params.positionSizeUsd) : defaults.positionSizeUsd,
-      objectiveHorizon: params.objectiveHorizon ?? defaults.objectiveHorizon,
+      leverage: parseOptionalPositiveNumber(params.leverage, "leverage") ?? defaults.leverage,
+      positionSizeUsd: parseOptionalPositiveNumber(params.positionSizeUsd, "position size") ?? defaults.positionSizeUsd,
+      objectiveHorizon: parseOptionalString(params.objectiveHorizon) ?? defaults.objectiveHorizon,
       intervalOverride: params.intervalOverride,
       openedAtMs: params.openedAtMs ? Number(params.openedAtMs) : undefined
     });
@@ -168,4 +168,27 @@ export class HttpError extends Error {
     super(message);
     this.name = "HttpError";
   }
+}
+
+function parseOptionalString(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const normalized = String(value).trim();
+  return normalized ? normalized : undefined;
+}
+
+function parseOptionalPositiveNumber(value: unknown, label: string): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "string" && value.trim() === "") {
+    return undefined;
+  }
+
+  const parsed = typeof value === "number" ? value : Number(String(value));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new HttpError(400, `Invalid ${label}.`);
+  }
+  return parsed;
 }

@@ -132,6 +132,51 @@ function toast(msg, type = "success") {
   setTimeout(() => hide(t), 3000);
 }
 
+function readOptionalText(selector) {
+  const value = $(selector).value.trim();
+  return value ? value : undefined;
+}
+
+function readOptionalPositiveNumber(selector, label) {
+  const raw = $(selector).value.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${label}.`);
+  }
+  return parsed;
+}
+
+function setIfEmptyOrForced(selector, value, force = false) {
+  const el = $(selector);
+  if (force || !el.value.trim()) {
+    el.value = value == null ? "" : String(value);
+  }
+}
+
+function applyDefaultsToRuntimeForms(defaults, force = false) {
+  setIfEmptyOrForced("#analyze-horizon", defaults.objectiveHorizon, force);
+  setIfEmptyOrForced("#analyze-leverage", defaults.leverage, force);
+  setIfEmptyOrForced("#analyze-size", defaults.positionSizeUsd, force);
+  setIfEmptyOrForced("#monitor-horizon", defaults.objectiveHorizon, force);
+  setIfEmptyOrForced("#monitor-leverage", defaults.leverage, force);
+  setIfEmptyOrForced("#monitor-size", defaults.positionSizeUsd, force);
+}
+
+function applyDefaultsToSettings(defaults) {
+  $("#settings-leverage").value = defaults.leverage ?? "";
+  $("#settings-size").value = defaults.positionSizeUsd ?? "";
+  $("#settings-horizon").value = defaults.objectiveHorizon ?? "";
+  $("#settings-ai-model").value = defaults.aiModel ?? "";
+}
+
+async function ensureDefaultsLoaded() {
+  if (state.defaults) return state.defaults;
+  const defaults = await api("GET", "/defaults");
+  state.defaults = defaults;
+  return defaults;
+}
+
 // ================================================================
 // TAB NAVIGATION
 // ================================================================
@@ -157,15 +202,19 @@ function initAnalyze() {
     e.preventDefault();
     const symbol = $("#analyze-symbol").value.trim();
     if (!symbol) return;
-    const direction = $("#analyze-direction").value || undefined;
-    const horizon = $("#analyze-horizon").value.trim() || undefined;
 
     show($("#analyze-loading"));
     $("#analyze-result").innerHTML = "";
     $("#analyze-btn").disabled = true;
 
     try {
-      const data = await api("POST", "/analyze", { symbol, direction, horizon });
+      const data = await api("POST", "/analyze", {
+        symbol,
+        direction: $("#analyze-direction").value || undefined,
+        horizon: readOptionalText("#analyze-horizon"),
+        leverage: readOptionalPositiveNumber("#analyze-leverage", "leverage"),
+        positionSizeUsd: readOptionalPositiveNumber("#analyze-size", "position size")
+      });
       $("#analyze-result").innerHTML = renderRecommendation(data.recommendation, data.aiAdvice);
     } catch (err) {
       $("#analyze-result").innerHTML = `<div class="error-msg">${err.message}</div>`;
@@ -507,34 +556,45 @@ function startMonitor() {
 
   if (!symbol || !entry || !stopLoss || !takeProfit) return;
 
-  const params = new URLSearchParams({ symbol, side, entry, stopLoss, takeProfit });
-  const source = new EventSource(`/api/monitor/stream?${params}`);
-  state.monitorSource = source;
+  try {
+    const params = new URLSearchParams({ symbol, side, entry, stopLoss, takeProfit });
+    const objectiveHorizon = readOptionalText("#monitor-horizon");
+    const leverage = readOptionalPositiveNumber("#monitor-leverage", "leverage");
+    const positionSizeUsd = readOptionalPositiveNumber("#monitor-size", "position size");
+    if (objectiveHorizon) params.set("objectiveHorizon", objectiveHorizon);
+    if (leverage !== undefined) params.set("leverage", String(leverage));
+    if (positionSizeUsd !== undefined) params.set("positionSizeUsd", String(positionSizeUsd));
 
-  show($("#monitor-stop-btn"));
-  $("#monitor-start-btn").disabled = true;
-  $("#monitor-live").innerHTML = `<div class="loading">Connecting<span class="dots"></span></div>`;
+    const source = new EventSource(`/api/monitor/stream?${params}`);
+    state.monitorSource = source;
 
-  source.addEventListener("baseline", (e) => {
-    const data = JSON.parse(e.data);
-    $("#monitor-live").innerHTML = `<div class="text-muted" style="padding:12px">Baseline built for ${data.trade?.pair ?? symbol}. Waiting for first tick...</div>`;
-  });
+    show($("#monitor-stop-btn"));
+    $("#monitor-start-btn").disabled = true;
+    $("#monitor-live").innerHTML = `<div class="loading">Connecting<span class="dots"></span></div>`;
 
-  source.addEventListener("snapshot", (e) => {
-    const snap = JSON.parse(e.data);
-    $("#monitor-live").innerHTML = renderMonitorSnapshot(snap);
-  });
+    source.addEventListener("baseline", (e) => {
+      const data = JSON.parse(e.data);
+      $("#monitor-live").innerHTML = `<div class="text-muted" style="padding:12px">Baseline built for ${data.trade?.pair ?? symbol}. Waiting for first tick...</div>`;
+    });
 
-  source.addEventListener("error", (e) => {
-    if (source.readyState === EventSource.CLOSED) {
-      $("#monitor-live").innerHTML += `<div class="error-msg">Connection closed.</div>`;
-      resetMonitorButtons();
-    }
-  });
+    source.addEventListener("snapshot", (e) => {
+      const snap = JSON.parse(e.data);
+      $("#monitor-live").innerHTML = renderMonitorSnapshot(snap);
+    });
 
-  source.onerror = () => {
-    if (source.readyState === EventSource.CLOSED) resetMonitorButtons();
-  };
+    source.addEventListener("error", () => {
+      if (source.readyState === EventSource.CLOSED) {
+        $("#monitor-live").innerHTML += `<div class="error-msg">Connection closed.</div>`;
+        resetMonitorButtons();
+      }
+    });
+
+    source.onerror = () => {
+      if (source.readyState === EventSource.CLOSED) resetMonitorButtons();
+    };
+  } catch (err) {
+    $("#monitor-live").innerHTML = `<div class="error-msg">${err.message}</div>`;
+  }
 }
 
 function stopMonitor() {
@@ -716,12 +776,8 @@ function renderLearningStats(data) {
 
 async function loadSettings() {
   try {
-    const defaults = await api("GET", "/defaults");
-    state.defaults = defaults;
-    $("#settings-leverage").value = defaults.leverage ?? "";
-    $("#settings-size").value = defaults.positionSizeUsd ?? "";
-    $("#settings-horizon").value = defaults.objectiveHorizon ?? "";
-    $("#settings-ai-model").value = defaults.aiModel ?? "";
+    const defaults = await ensureDefaultsLoaded();
+    applyDefaultsToSettings(defaults);
   } catch (err) {
     toast(err.message, "error");
   }
@@ -741,6 +797,8 @@ function initSettings() {
         aiModel: $("#settings-ai-model").value.trim()
       });
       state.defaults = saved;
+      applyDefaultsToSettings(saved);
+      applyDefaultsToRuntimeForms(saved, true);
       status.textContent = "Saved";
       status.className = "status-msg success";
       show(status);
@@ -774,4 +832,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initMonitor();
   initLearning();
   initSettings();
+  void ensureDefaultsLoaded().then((defaults) => {
+    applyDefaultsToRuntimeForms(defaults);
+  }).catch((err) => {
+    toast(err.message, "error");
+  });
 });

@@ -165,9 +165,8 @@ input::placeholder {
   color: var(--text-muted);
 }
 #analyze-symbol, #monitor-symbol { width: 80px; text-transform: uppercase; }
-#analyze-horizon, #analyze-direction { width: 90px; }
-#monitor-entry, #monitor-sl, #monitor-tp { width: 120px; }
-#monitor-side { width: 80px; }
+#analyze-horizon, #analyze-direction, #analyze-leverage, #monitor-horizon, #monitor-side, #monitor-leverage { width: 90px; }
+#analyze-size, #monitor-size, #monitor-entry, #monitor-sl, #monitor-tp { width: 120px; }
 
 .btn {
   font-family: var(--font-sans);

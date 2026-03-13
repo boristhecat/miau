@@ -40,6 +40,14 @@
           <label for="analyze-horizon">Horizon (min)</label>
           <input id="analyze-horizon" type="text" placeholder="60" value="">
         </div>
+        <div class="input-group">
+          <label for="analyze-leverage">Leverage</label>
+          <input id="analyze-leverage" type="number" step="1" min="1" placeholder="20">
+        </div>
+        <div class="input-group">
+          <label for="analyze-size">Position Size (USDC)</label>
+          <input id="analyze-size" type="number" step="1" min="1" placeholder="250">
+        </div>
         <button type="submit" class="btn btn-primary" id="analyze-btn">Analyze</button>
       </form>
       <div id="analyze-loading" class="loading hidden">Analyzing<span class="dots"></span></div>
@@ -80,6 +88,18 @@
         <div class="input-group">
           <label for="monitor-tp">Take Profit</label>
           <input id="monitor-tp" type="number" step="any" required>
+        </div>
+        <div class="input-group">
+          <label for="monitor-horizon">Horizon (min)</label>
+          <input id="monitor-horizon" type="text" placeholder="60">
+        </div>
+        <div class="input-group">
+          <label for="monitor-leverage">Leverage</label>
+          <input id="monitor-leverage" type="number" step="1" min="1" placeholder="20">
+        </div>
+        <div class="input-group">
+          <label for="monitor-size">Position Size (USDC)</label>
+          <input id="monitor-size" type="number" step="1" min="1" placeholder="250">
         </div>
         <button type="submit" class="btn btn-primary" id="monitor-start-btn">Start Monitor</button>
         <button type="button" class="btn btn-danger hidden" id="monitor-stop-btn">Stop</button>

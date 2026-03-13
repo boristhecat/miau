@@ -44,11 +44,13 @@ npm run start
 
 The application exposes a single web UI with five tabs:
 
-- `Analyze`: run live analysis for one symbol with optional forced direction and horizon
+- `Analyze`: run live analysis for one symbol with optional forced direction plus per-request leverage / size / horizon overrides
 - `Scanner`: rank top opportunities from the liquid Backpack universe
-- `Monitor`: reevaluate an already open trade using manual `entry`, `stop loss`, and `take profit`
+- `Monitor`: reevaluate an already open trade using manual `entry`, `stop loss`, `take profit`, and optional leverage / size / horizon overrides
 - `Learning`: inspect stored learning statistics
 - `Settings`: edit persisted defaults (leverage, position size, horizon, AI model)
+
+`Analyze` and `Monitor` preload the saved leverage / position size / horizon values, but you can override those values for one request without changing the persisted defaults. The AI model remains configurable only in `Settings`.
 
 ## Open-Trade Monitor
 
