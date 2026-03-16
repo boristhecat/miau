@@ -3,149 +3,223 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>miau trader</title>
+  <title>miau</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-  <header id="app-header">
-    <div class="header-left">
-      <h1 class="logo">miau<span class="logo-accent">trader</span></h1>
-    </div>
-    <nav id="main-nav">
-      <button data-tab="analyze" class="tab-btn active">Analyze</button>
-      <button data-tab="scan" class="tab-btn">Scanner</button>
-      <button data-tab="monitor" class="tab-btn">Monitor</button>
-      <button data-tab="learning" class="tab-btn">Learning</button>
-      <button data-tab="settings" class="tab-btn">Settings</button>
-    </nav>
-  </header>
+  <div class="app-shell">
+    <header class="appbar">
+      <div class="app-brand">miau</div>
+      <nav id="main-nav" class="topnav" aria-label="Pages">
+        <button data-tab="overview" class="tab active">Overview</button>
+        <button data-tab="scanner" class="tab">Scanner</button>
+        <button data-tab="monitor" class="tab">Monitor</button>
+        <button data-tab="learning" class="tab">Learning</button>
+        <button data-tab="settings" class="tab">Settings</button>
+      </nav>
+      <div class="app-copy">public market analysis dashboard</div>
+      <div class="appbar-right">/ focus symbol | 1 overview | 2 scanner | 3 monitor | 4 learning | 5 settings | shift+esc stop all</div>
+    </header>
 
-  <main id="app-content">
-    <!-- ======================== ANALYZE ======================== -->
-    <section id="tab-analyze" class="tab-panel active">
-      <form id="analyze-form" class="input-bar">
-        <div class="input-group">
-          <label for="analyze-symbol">Symbol</label>
-          <input id="analyze-symbol" type="text" placeholder="BTC" spellcheck="false" autocomplete="off" required>
+    <main class="page-stack">
+      <section id="tab-overview" class="panel active">
+        <div class="summary-row">
+          <section class="summary-card">
+            <div class="summary-key">defaults</div>
+            <div id="status-defaults" class="summary-value">loading...</div>
+          </section>
+          <section class="summary-card">
+            <div class="summary-key">last analysis</div>
+            <div id="status-last-analysis" class="summary-value">no packet loaded</div>
+            <div id="status-last-analysis-meta" class="summary-meta">run a symbol to populate this box</div>
+          </section>
+          <section class="summary-card">
+            <div class="summary-key">runtime</div>
+            <div class="summary-value">public data only / no execution / deterministic confidence</div>
+            <div class="summary-meta">scanner and open-trade monitoring run on dedicated pages</div>
+          </section>
         </div>
-        <div class="input-group">
-          <label for="analyze-direction">Direction</label>
-          <select id="analyze-direction">
-            <option value="">Auto</option>
-            <option value="LONG">Long</option>
-            <option value="SHORT">Short</option>
-          </select>
-        </div>
-        <div class="input-group">
-          <label for="analyze-horizon">Horizon (min)</label>
-          <input id="analyze-horizon" type="text" placeholder="60" value="">
-        </div>
-        <div class="input-group">
-          <label for="analyze-leverage">Leverage</label>
-          <input id="analyze-leverage" type="number" step="1" min="1" placeholder="20">
-        </div>
-        <div class="input-group">
-          <label for="analyze-size">Position Size (USDC)</label>
-          <input id="analyze-size" type="number" step="1" min="1" placeholder="250">
-        </div>
-        <button type="submit" class="btn btn-primary" id="analyze-btn">Analyze</button>
-      </form>
-      <div id="analyze-loading" class="loading hidden">Analyzing<span class="dots"></span></div>
-      <div id="analyze-result"></div>
-    </section>
 
-    <!-- ======================== SCANNER ======================== -->
-    <section id="tab-scan" class="tab-panel">
-      <div class="input-bar">
-        <button id="scan-btn" class="btn btn-primary">Scan Top Opportunities</button>
-      </div>
-      <div id="scan-loading" class="loading hidden">Scanning universe<span class="dots"></span></div>
-      <div id="scan-result"></div>
-    </section>
+        <div class="overview-main">
+          <section id="overview-analyze" class="dash-panel overview-analyze-panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-kicker">Analyze</div>
+                <div class="panel-title">Single Pair</div>
+              </div>
+              <div class="panel-note">Recommendation and context</div>
+            </div>
 
-    <!-- ======================== MONITOR ======================== -->
-    <section id="tab-monitor" class="tab-panel">
-      <form id="monitor-form" class="input-bar">
-        <div class="input-group">
-          <label for="monitor-symbol">Symbol</label>
-          <input id="monitor-symbol" type="text" placeholder="BTC" spellcheck="false" required>
-        </div>
-        <div class="input-group">
-          <label for="monitor-side">Side</label>
-          <select id="monitor-side" required>
-            <option value="LONG">Long</option>
-            <option value="SHORT">Short</option>
-          </select>
-        </div>
-        <div class="input-group">
-          <label for="monitor-entry">Entry</label>
-          <input id="monitor-entry" type="number" step="any" required>
-        </div>
-        <div class="input-group">
-          <label for="monitor-sl">Stop Loss</label>
-          <input id="monitor-sl" type="number" step="any" required>
-        </div>
-        <div class="input-group">
-          <label for="monitor-tp">Take Profit</label>
-          <input id="monitor-tp" type="number" step="any" required>
-        </div>
-        <div class="input-group">
-          <label for="monitor-horizon">Horizon (min)</label>
-          <input id="monitor-horizon" type="text" placeholder="60">
-        </div>
-        <div class="input-group">
-          <label for="monitor-leverage">Leverage</label>
-          <input id="monitor-leverage" type="number" step="1" min="1" placeholder="20">
-        </div>
-        <div class="input-group">
-          <label for="monitor-size">Position Size (USDC)</label>
-          <input id="monitor-size" type="number" step="1" min="1" placeholder="250">
-        </div>
-        <button type="submit" class="btn btn-primary" id="monitor-start-btn">Start Monitor</button>
-        <button type="button" class="btn btn-danger hidden" id="monitor-stop-btn">Stop</button>
-      </form>
-      <div id="monitor-live"></div>
-    </section>
+            <form id="quick-analyze" class="compact-form analyze-form">
+              <label class="field-symbol"><span>symbol</span><input id="qa-symbol" type="text" placeholder="BTC" spellcheck="false" autocomplete="off"></label>
+              <label class="field-side"><span>bias</span><select id="qa-direction"><option value="">auto</option><option value="LONG">long</option><option value="SHORT">short</option></select></label>
+              <label class="field-lev"><span>lev</span><input id="qa-leverage" type="number" step="1" min="1" placeholder="20"></label>
+              <label class="field-size"><span>size</span><input id="qa-size" type="number" step="1" min="1" placeholder="250"></label>
+              <label class="field-hzn"><span>hzn</span><input id="qa-horizon" type="text" placeholder="15"></label>
+              <button type="submit" id="qa-btn" class="btn-primary field-action">Run</button>
+            </form>
 
-    <!-- ======================== LEARNING ======================== -->
-    <section id="tab-learning" class="tab-panel">
-      <div class="input-bar">
-        <button id="learning-load-btn" class="btn btn-primary">Load Stats</button>
-      </div>
-      <div id="learning-loading" class="loading hidden">Loading stats<span class="dots"></span></div>
-      <div id="learning-result"></div>
-    </section>
+            <div id="analyze-echo" class="inline-status">awaiting symbol input</div>
+            <div id="analyze-loading" class="inline-status hidden">running analysis</div>
 
-    <!-- ======================== SETTINGS ======================== -->
-    <section id="tab-settings" class="tab-panel">
-      <form id="settings-form" class="settings-panel">
-        <h2>Trade Defaults</h2>
-        <div class="settings-grid">
-          <div class="input-group">
-            <label for="settings-leverage">Leverage</label>
-            <input id="settings-leverage" type="number" step="1" min="1">
+            <div class="panel-body">
+              <div id="analyze-result" class="output-area">
+                <div class="empty-state">no packet loaded</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-scanner" class="panel">
+        <div class="secondary-page">
+          <div class="page-head">
+            <div>
+              <div class="page-kicker">Scanner</div>
+              <h1 class="page-title">Ranked Board</h1>
+            </div>
+            <div class="page-copy">Serial opportunity scan across the liquid Backpack universe.</div>
           </div>
-          <div class="input-group">
-            <label for="settings-size">Position Size (USDC)</label>
-            <input id="settings-size" type="number" step="1" min="1">
+
+          <section id="scanner-page" class="page-section scanner-page">
+            <div class="panel-head">
+              <div>
+                <div class="panel-kicker">Scanner</div>
+                <div class="panel-title">Ranked Board</div>
+              </div>
+              <button id="scan-btn" class="btn-secondary">Refresh</button>
+            </div>
+
+            <div id="scan-defaults" class="inline-context">
+              <span>loading defaults...</span>
+            </div>
+            <div id="scan-loading" class="inline-status hidden">scanning board</div>
+
+            <div class="section-body">
+              <div id="scan-result" class="output-area">
+                <div class="empty-state">board not loaded</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-monitor" class="panel">
+        <div class="secondary-page">
+          <div class="page-head">
+            <div>
+              <div class="page-kicker">Monitor</div>
+              <h1 class="page-title">Open Trades</h1>
+            </div>
+            <div class="page-copy">Run multiple advisory streams in parallel for manual trades.</div>
           </div>
-          <div class="input-group">
-            <label for="settings-horizon">Horizon (minutes)</label>
-            <input id="settings-horizon" type="text">
-          </div>
-          <div class="input-group">
-            <label for="settings-ai-model">AI Model</label>
-            <input id="settings-ai-model" type="text">
+
+          <div class="monitor-shell">
+            <section id="monitor-compose" class="page-section monitor-compose">
+              <div class="panel-head">
+              <div>
+                <div class="panel-kicker">Monitor</div>
+                <div class="panel-title">Add Trade</div>
+              </div>
+              <div class="panel-note">Each submission opens an independent live advisory stream.</div>
+              </div>
+
+              <form id="monitor-form" class="compact-form monitor-form">
+                <label class="field-symbol"><span>symbol</span><input id="monitor-symbol" type="text" placeholder="BTC" spellcheck="false" required></label>
+                <label class="field-side"><span>side</span><select id="monitor-side" required><option value="LONG">long</option><option value="SHORT">short</option></select></label>
+                <label class="field-price"><span>entry</span><input id="monitor-entry" type="number" step="any" required></label>
+                <label class="field-price"><span>sl</span><input id="monitor-sl" type="number" step="any" required></label>
+                <label class="field-price"><span>tp</span><input id="monitor-tp" type="number" step="any" required></label>
+                <label class="field-lev"><span>lev</span><input id="monitor-leverage" type="number" step="1" min="1" placeholder="20"></label>
+                <label class="field-size"><span>size</span><input id="monitor-size" type="number" step="1" min="1" placeholder="250"></label>
+                <label class="field-hzn"><span>hzn</span><input id="monitor-horizon" type="text" placeholder="15"></label>
+                <button type="submit" id="monitor-start-btn" class="btn-primary field-action">Add Trade</button>
+                <button type="button" id="monitor-stop-all-btn" class="btn-secondary field-action" disabled>Stop All</button>
+              </form>
+
+              <div id="monitor-echo" class="inline-status">no active monitor sessions</div>
+            </section>
+
+            <section class="page-section monitor-board-shell">
+              <div id="monitor-summary" class="inline-context">
+                <span>0 active trades</span>
+                <span>0 connected streams</span>
+                <span>shift+esc stops all live streams</span>
+              </div>
+
+              <div id="monitor-board" class="monitor-board">
+                <div class="empty-state">no active monitor sessions</div>
+              </div>
+            </section>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary">Save</button>
-        <span id="settings-status" class="status-msg hidden"></span>
-      </form>
-    </section>
-  </main>
+      </section>
+
+      <section id="tab-learning" class="panel">
+        <div class="secondary-page">
+          <div class="page-head">
+            <div>
+              <div class="page-kicker">Learning</div>
+              <h1 class="page-title">Outcome Stats</h1>
+            </div>
+            <div class="page-copy">SQLite-backed feedback on deterministic recommendations only.</div>
+          </div>
+
+          <section class="page-section">
+            <form id="learning-form" class="secondary-controls">
+              <label><span>lookback days</span><input id="learning-lookback" type="number" min="1" step="1" value="14"></label>
+              <button id="learning-load-btn" type="submit" class="btn-primary">Load</button>
+            </form>
+            <div id="learning-loading" class="inline-status hidden">loading stats</div>
+            <div id="learning-result" class="output-area">
+              <div class="empty-state">stats not loaded</div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-settings" class="panel">
+        <div class="secondary-page">
+          <div class="page-head">
+            <div>
+              <div class="page-kicker">Settings</div>
+              <h1 class="page-title">Runtime Defaults</h1>
+            </div>
+            <div class="page-copy">Persisted leverage, position size, horizon, and AI model.</div>
+          </div>
+
+          <div class="settings-grid">
+            <section class="page-section">
+              <form id="settings-form" class="settings-form">
+                <label><span>leverage</span><input id="settings-leverage" type="number" step="1" min="1"></label>
+                <label><span>size usdc</span><input id="settings-size" type="number" step="1" min="1"></label>
+                <label><span>horizon min</span><input id="settings-horizon" type="text"></label>
+                <label><span>ai model</span><input id="settings-ai-model" type="text"></label>
+                <div class="settings-actions">
+                  <button type="submit" class="btn-primary">Save</button>
+                  <span id="settings-status" class="status-slot hidden"></span>
+                </div>
+              </form>
+            </section>
+
+            <section class="page-section">
+              <div class="meta-list">
+                <div class="meta-row"><span>storage</span><span>data/learning.sqlite</span></div>
+                <div class="meta-row"><span>exchange</span><span>Backpack public API + WebSocket</span></div>
+                <div class="meta-row"><span>execution</span><span>disabled by design</span></div>
+                <div class="meta-row"><span>ai</span><span>single-symbol advice only</span></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
-
   <script type="module" src="/js/app.js"></script>
 </body>
 </html>

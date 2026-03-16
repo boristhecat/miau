@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Last updated: 2026-03-13
+Last updated: 2026-03-16
 
 ## Summary
 - `miau-trader` is a TypeScript web application that produces crypto trade analysis from Backpack public market data.
@@ -13,12 +13,8 @@ Last updated: 2026-03-13
 ### 1) Web UI (default and only runtime)
 - Start command: `npm run dev`
 - Open: `http://localhost:3000`
-- Available tabs:
-  - `Analyze`
-  - `Scanner`
-  - `Monitor`
-  - `Learning`
-  - `Settings`
+- The default page is a compact overview centered on single-pair `Analyze`.
+- `Scanner`, `Monitor`, `Learning`, and `Settings` are separate pages reached from the top navigation.
 - `Analyze` and `Monitor` preload saved leverage / position size / horizon defaults, but each request can override those values without changing persisted settings.
 - AI secondary opinion is included for single-symbol analysis when `OPENAI_API_KEY` is configured.
 - AI model selection is persisted in SQLite (`data/learning.sqlite`) and configurable in `Settings`.
@@ -68,6 +64,7 @@ Last updated: 2026-03-13
 ## Open-Trade Monitor
 - The monitor is a web workflow, separate from recommendation generation.
 - User supplies manual trade levels (`entry`, `stop loss`, `take profit`) plus side and optional leverage/size/horizon overrides through the UI.
+- The monitor page can host multiple concurrent open-trade sessions, each with its own independent live stream and stop/remove controls.
 - The monitor runs with two cadences:
   - fast lane (`0.5s` or `1s`) using Backpack WebSocket (`bookTicker`, `markPrice`, `openInterest`) for live price, spread, net/gross PnL, current `R`, stop/target distance, and MFE/MAE
   - slow lane using the existing recommendation pipeline to reevaluate market regime, playbook alignment, sequence, level interaction, thesis health, and management action

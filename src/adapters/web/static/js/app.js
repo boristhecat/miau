@@ -1,138 +1,227 @@
-// ================================================================
-// miau trader — Frontend Application
-// ================================================================
-
-// --- State ---
 const state = {
-  monitorSource: null,
-  defaults: null
+  defaults: null,
+  lastAnalysis: null,
+  monitorSessions: new Map(),
+  nextMonitorId: 1,
+  scanLoaded: false
 };
 
-// --- API ---
+let toastTimer = null;
+
 async function api(method, path, body) {
-  const opts = { method, headers: {} };
+  const options = { method, headers: {} };
   if (body) {
-    opts.headers["Content-Type"] = "application/json";
-    opts.body = JSON.stringify(body);
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
   }
-  const res = await fetch(`/api${path}`, opts);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+  const response = await fetch(`/api${path}`, options);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
   return data;
 }
 
-// --- Formatting ---
-function fmtPrice(v) {
-  if (v == null) return "—";
-  return Number(v).toFixed(4);
-}
-function fmtPct(v) {
-  if (v == null) return "—";
-  return Number(v).toFixed(2) + "%";
-}
-function fmtSignedPct(v) {
-  if (v == null) return "—";
-  const n = Number(v);
-  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
-}
-function fmtSignedUsd(v) {
-  if (v == null) return "—";
-  const n = Number(v);
-  return (n >= 0 ? "+" : "") + n.toFixed(2) + " USDC";
-}
-function fmtDuration(sec) {
-  if (sec == null) return "—";
-  const s = Math.floor(sec);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  if (h > 0) return `${h}h ${m}m ${ss}s`;
-  if (m > 0) return `${m}m ${ss}s`;
-  return `${ss}s`;
-}
-function fmtNum(v, dec = 2) {
-  if (v == null) return "—";
-  return Number(v).toFixed(dec);
-}
-function fmtSigned(v, dec = 2) {
-  if (v == null) return "—";
-  const n = Number(v);
-  return (n >= 0 ? "+" : "") + n.toFixed(dec);
+function fP(value) {
+  if (value == null) return "—";
+  const number = Number(value);
+  const absolute = Math.abs(number);
+  if (absolute >= 10000) return number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (absolute >= 100) return number.toFixed(2);
+  if (absolute >= 1) return number.toFixed(4);
+  return number.toPrecision(4);
 }
 
-// --- Signal/status helpers ---
+function fPct(value) {
+  return value == null ? "—" : `${Number(value).toFixed(2)}%`;
+}
+
+function fSPct(value) {
+  if (value == null) return "—";
+  const number = Number(value);
+  return `${number >= 0 ? "+" : ""}${number.toFixed(2)}%`;
+}
+
+function fSUsd(value) {
+  if (value == null) return "—";
+  const number = Number(value);
+  return `${number >= 0 ? "+" : ""}${number.toFixed(2)}`;
+}
+
+function fDur(seconds) {
+  if (seconds == null) return "—";
+  const whole = Math.floor(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const secs = whole % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function fN(value, digits = 2) {
+  return value == null ? "—" : Number(value).toFixed(digits);
+}
+
+function fS(value, digits = 2) {
+  if (value == null) return "—";
+  const number = Number(value);
+  return `${number >= 0 ? "+" : ""}${number.toFixed(digits)}`;
+}
+
+function cC(value) {
+  return value >= 70 ? "c-green" : value >= 50 ? "c-yellow" : "c-red";
+}
+
+function pC(value) {
+  return value >= 0 ? "c-green" : "c-red";
+}
+
+function $(selector) {
+  return document.querySelector(selector);
+}
+
+function $$(selector) {
+  return Array.from(document.querySelectorAll(selector));
+}
+
+function show(element) {
+  element.classList.remove("hidden");
+}
+
+function hide(element) {
+  element.classList.add("hidden");
+}
+
+function esc(value) {
+  const div = document.createElement("div");
+  div.textContent = value;
+  return div.innerHTML;
+}
+
+function attr(value) {
+  return esc(String(value ?? ""));
+}
+
+function prettyToken(value) {
+  if (value == null || value === "") return "—";
+  return String(value)
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function badge(text, tone = "badge-neutral") {
+  return `<span class="badge ${tone}">${esc(text)}</span>`;
+}
+
 function signalBadge(signal) {
-  const s = String(signal ?? "").toUpperCase();
-  if (s === "LONG") return `<span class="badge badge-long">Long</span>`;
-  if (s === "SHORT") return `<span class="badge badge-short">Short</span>`;
-  return `<span class="badge badge-no-trade">No Trade</span>`;
+  const normalized = String(signal ?? "").toUpperCase();
+  if (normalized === "LONG") return badge("Long", "badge-good");
+  if (normalized === "SHORT") return badge("Short", "badge-bad");
+  return badge("No Trade", "badge-muted");
 }
 
-function gradeBadge(grade) {
-  const g = String(grade ?? "").toUpperCase();
-  const cls = g === "A" ? "badge-a" : g === "B" ? "badge-b" : "badge-c";
-  return `<span class="badge ${cls}">${g || "—"}</span>`;
+function scoreBadge(label, score) {
+  return badge(`${label} ${Math.round(score ?? 0)}`, score >= 70 ? "badge-good" : score >= 50 ? "badge-warn" : "badge-bad");
 }
 
-function healthBadge(status) {
-  const s = String(status ?? "").toUpperCase();
-  const map = { INTACT: "badge-intact", DEGRADING: "badge-degrading", BROKEN: "badge-broken", COMPLETED: "badge-completed" };
-  return `<span class="badge ${map[s] || ""}">${s || "—"}</span>`;
+function gradeTone(grade) {
+  const normalized = String(grade ?? "").toUpperCase();
+  if (normalized === "A") return "badge-good";
+  if (normalized === "B") return "badge-accent";
+  if (normalized === "C") return "badge-warn";
+  return "badge-bad";
 }
 
-function actionBadge(action) {
-  const a = String(action ?? "").toUpperCase();
-  const map = {
-    HOLD: "badge-hold", AT_RISK: "badge-at-risk", MOVE_TO_BREAKEVEN: "badge-move-be",
-    TAKE_PARTIAL: "badge-take-partial", EXIT_EARLY: "badge-exit-early",
-    STOP_HIT: "badge-stop-hit", TARGET_HIT: "badge-target-hit"
-  };
-  return `<span class="badge ${map[a] || ""}">${a.replace(/_/g, " ")}</span>`;
+function tradeabilityTone(value) {
+  const normalized = String(value ?? "").toUpperCase();
+  if (normalized === "TRADEABLE") return "badge-good";
+  if (normalized === "CAUTION") return "badge-warn";
+  if (normalized === "DO_NOT_TRADE") return "badge-bad";
+  return "badge-neutral";
 }
 
-function tradeabilityBadge(status) {
-  const s = String(status ?? "").toUpperCase();
-  const map = { TRADEABLE: "badge-tradeable", CAUTION: "badge-caution", DO_NOT_TRADE: "badge-do-not-trade" };
-  return `<span class="badge badge-sm ${map[s] || ""}">${s.replace(/_/g, " ")}</span>`;
+function statusTone(value, good, warn) {
+  const normalized = String(value ?? "").toUpperCase();
+  if (good.includes(normalized)) return "badge-good";
+  if (warn.includes(normalized)) return "badge-warn";
+  return "badge-bad";
 }
 
-function regimeBadge(regime) {
-  return `<span class="badge badge-sm badge-regime">${String(regime ?? "").replace(/_/g, " ")}</span>`;
+function readinessTone(value) {
+  const normalized = String(value ?? "").toUpperCase();
+  if (normalized === "READY_NOW") return "badge-good";
+  if (normalized.startsWith("WAIT")) return "badge-warn";
+  return "badge-bad";
 }
 
-function confidenceColor(v) {
-  if (v >= 70) return "var(--green)";
-  if (v >= 50) return "var(--amber)";
-  return "var(--red)";
+function sequenceTone(value) {
+  const normalized = String(value ?? "").toUpperCase();
+  if (normalized === "CONFIRMED") return "badge-good";
+  if (normalized === "FAILED") return "badge-bad";
+  return "badge-warn";
 }
 
-function pnlClass(v) {
-  return v >= 0 ? "text-green" : "text-red";
+function actionTone(value) {
+  const normalized = String(value ?? "").toUpperCase();
+  if (normalized === "HOLD" || normalized === "TARGET_HIT") return "badge-good";
+  if (normalized === "MOVE_TO_BREAKEVEN" || normalized === "TAKE_PARTIAL") return "badge-warn";
+  return "badge-bad";
 }
 
-function confidenceBar(value) {
-  const c = confidenceColor(value);
-  return `<div class="confidence-wrap">
-    <div class="confidence-bar"><div class="confidence-fill" style="width:${Math.min(100, value)}%;background:${c}"></div></div>
-    <span class="confidence-val" style="color:${c}">${Math.round(value)}%</span>
-  </div>`;
+function meter(value) {
+  const width = Math.max(0, Math.min(100, Number(value ?? 0)));
+  return `<span class="meter"><span class="meter-fill ${cC(width)}" style="width:${width}%"></span></span>`;
 }
 
-// --- DOM ---
-function $(sel) { return document.querySelector(sel); }
-function $$(sel) { return document.querySelectorAll(sel); }
-function show(el) { el.classList.remove("hidden"); }
-function hide(el) { el.classList.add("hidden"); }
-
-function toast(msg, type = "success") {
-  const t = $("#toast");
-  t.textContent = msg;
-  t.className = `toast ${type}`;
-  show(t);
-  setTimeout(() => hide(t), 3000);
+function confidenceRow(label, value) {
+  return `<div class="mix-row"><span class="mix-name">${esc(label)}</span>${meter(value)}<span class="confidence-value ${cC(value ?? 0)}">${Math.round(value ?? 0)}</span></div>`;
 }
 
-function readOptionalText(selector) {
+function metricCell(label, value) {
+  return `<div class="metric-cell"><div class="metric-label">${esc(label)}</div><div class="metric-value">${value}</div></div>`;
+}
+
+function summaryCell(label, value) {
+  return `<div class="summary-cell"><div class="summary-label">${esc(label)}</div><div class="summary-value">${value}</div></div>`;
+}
+
+function kvRow(label, value) {
+  return `<div class="kv-row"><span class="kv-key">${esc(label)}</span><span class="kv-value">${value}</span></div>`;
+}
+
+function inspectPanel(title, content) {
+  if (!content) return "";
+  return `<details class="inspect-panel"><summary>${esc(title)}</summary><div class="inspect-body">${content}</div></details>`;
+}
+
+function listMarkup(items, className = "mini-list") {
+  if (!items.length) return "";
+  return `<ul class="${className}">${items.map(item => `<li>${esc(item)}</li>`).join("")}</ul>`;
+}
+
+function errorMarkup(message) {
+  return `<div class="error-msg">${esc(message)}</div>`;
+}
+
+function toast(message, type = "success") {
+  const element = $("#toast");
+  element.textContent = message;
+  element.className = `toast ${type}`;
+  show(element);
+
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => hide(element), 3000);
+}
+
+function setInputValue(selector, value) {
+  const element = $(selector);
+  if (element) element.value = value ?? "";
+}
+
+function readOptionalString(selector) {
   const value = $(selector).value.trim();
   return value ? value : undefined;
 }
@@ -140,652 +229,993 @@ function readOptionalText(selector) {
 function readOptionalPositiveNumber(selector, label) {
   const raw = $(selector).value.trim();
   if (!raw) return undefined;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number <= 0) {
     throw new Error(`Invalid ${label}.`);
   }
-  return parsed;
+  return number;
 }
 
-function setIfEmptyOrForced(selector, value, force = false) {
-  const el = $(selector);
-  if (force || !el.value.trim()) {
-    el.value = value == null ? "" : String(value);
+function renderDefaultsSummary(defaults) {
+  return [
+    badge(`${defaults.leverage}x`, "badge-accent"),
+    badge(`${fN(defaults.positionSizeUsd, 0)} usdc`, "badge-accent"),
+    badge(`${defaults.objectiveHorizon}m`, "badge-accent"),
+    badge(`AI ${defaults.aiModel || "off"}`, defaults.aiModel ? "badge-neutral" : "badge-muted")
+  ].join("");
+}
+
+function syncDefaultInputs(defaults) {
+  setInputValue("#qa-leverage", defaults.leverage ?? "");
+  setInputValue("#qa-size", defaults.positionSizeUsd ?? "");
+  setInputValue("#qa-horizon", defaults.objectiveHorizon ?? "");
+  setInputValue("#monitor-leverage", defaults.leverage ?? "");
+  setInputValue("#monitor-size", defaults.positionSizeUsd ?? "");
+  setInputValue("#monitor-horizon", defaults.objectiveHorizon ?? "");
+  setInputValue("#settings-leverage", defaults.leverage ?? "");
+  setInputValue("#settings-size", defaults.positionSizeUsd ?? "");
+  setInputValue("#settings-horizon", defaults.objectiveHorizon ?? "");
+  setInputValue("#settings-ai-model", defaults.aiModel ?? "");
+}
+
+function renderDefaultSurfaces(defaults) {
+  $("#status-defaults").innerHTML = `<div class="badge-row">${renderDefaultsSummary(defaults)}</div>`;
+  $("#scan-defaults").innerHTML = [
+    `<span>lev ${defaults.leverage}x</span>`,
+    `<span>size ${fN(defaults.positionSizeUsd, 0)} usdc</span>`,
+    `<span>hzn ${defaults.objectiveHorizon}m</span>`,
+    `<span>ai ${esc(defaults.aiModel || "off")}</span>`
+  ].join("");
+
+  if (!state.lastAnalysis) {
+    $("#analyze-echo").textContent = `Defaults primed: ${defaults.leverage}x / ${fN(defaults.positionSizeUsd, 0)} USDC / ${defaults.objectiveHorizon}m`;
   }
+  renderMonitorBoard();
 }
 
-function applyDefaultsToRuntimeForms(defaults, force = false) {
-  setIfEmptyOrForced("#analyze-horizon", defaults.objectiveHorizon, force);
-  setIfEmptyOrForced("#analyze-leverage", defaults.leverage, force);
-  setIfEmptyOrForced("#analyze-size", defaults.positionSizeUsd, force);
-  setIfEmptyOrForced("#monitor-horizon", defaults.objectiveHorizon, force);
-  setIfEmptyOrForced("#monitor-leverage", defaults.leverage, force);
-  setIfEmptyOrForced("#monitor-size", defaults.positionSizeUsd, force);
+function setDefaults(defaults) {
+  state.defaults = defaults;
+  syncDefaultInputs(defaults);
+  renderDefaultSurfaces(defaults);
 }
 
-function applyDefaultsToSettings(defaults) {
-  $("#settings-leverage").value = defaults.leverage ?? "";
-  $("#settings-size").value = defaults.positionSizeUsd ?? "";
-  $("#settings-horizon").value = defaults.objectiveHorizon ?? "";
-  $("#settings-ai-model").value = defaults.aiModel ?? "";
-}
-
-async function ensureDefaultsLoaded() {
+async function ensureDefaults() {
   if (state.defaults) return state.defaults;
   const defaults = await api("GET", "/defaults");
-  state.defaults = defaults;
+  setDefaults(defaults);
   return defaults;
 }
 
-// ================================================================
-// TAB NAVIGATION
-// ================================================================
+function updateAnalysisStatus(rec) {
+  const confidence = Math.round(rec.confidence ?? 0);
+  $("#status-last-analysis").innerHTML = `<div class="badge-row">${signalBadge(rec.signal)}${badge(rec.pair, "badge-neutral")}${scoreBadge("Conf", confidence)}</div>`;
+  $("#status-last-analysis-meta").textContent = `entry ${fP(rec.entry)} | stop ${fP(rec.stopLoss)} | target ${fP(rec.takeProfit)}`;
+}
+
+function flashPanel(selector) {
+  const element = $(selector);
+  if (!element) return;
+  element.classList.remove("flash");
+  void element.offsetWidth;
+  element.classList.add("flash");
+}
+
+function switchTab(name) {
+  $$(".tab").forEach(button => button.classList.toggle("active", button.dataset.tab === name));
+  $$(".panel").forEach(panel => panel.classList.toggle("active", panel.id === `tab-${name}`));
+
+  if (name === "scanner") {
+    void ensureScanLoaded();
+  }
+
+  if (name === "settings") {
+    void loadSettings();
+  }
+}
 
 function initTabs() {
-  for (const btn of $$(".tab-btn")) {
-    btn.addEventListener("click", () => {
-      $$(".tab-btn").forEach(b => b.classList.remove("active"));
-      $$(".tab-panel").forEach(p => p.classList.remove("active"));
-      btn.classList.add("active");
-      $(`#tab-${btn.dataset.tab}`).classList.add("active");
-      if (btn.dataset.tab === "settings") loadSettings();
-    });
-  }
+  $$(".tab").forEach(button => {
+    button.addEventListener("click", () => switchTab(button.dataset.tab));
+  });
 }
 
-// ================================================================
-// ANALYZE VIEW
-// ================================================================
+function initKeyboard() {
+  const tabs = ["overview", "scanner", "monitor", "learning", "settings"];
+
+  document.addEventListener("keydown", event => {
+    if (event.target.matches("input, select, textarea")) {
+      if (event.key === "Escape") event.target.blur();
+      return;
+    }
+
+    if (event.key === "/") {
+      event.preventDefault();
+      $("#qa-symbol").focus();
+      $("#qa-symbol").select();
+      return;
+    }
+
+    if (/^[1-5]$/.test(event.key)) {
+      switchTab(tabs[Number(event.key) - 1]);
+      return;
+    }
+
+    if (event.key === "Escape" && event.shiftKey) {
+      const stopped = stopAllMonitorSessions("stopped from keyboard");
+      if (stopped > 0) {
+        toast(`Stopped ${stopped} monitor stream${stopped === 1 ? "" : "s"}`);
+      }
+    }
+  });
+}
+
+function initActionDelegates() {
+  document.addEventListener("click", event => {
+    const monitorTrigger = event.target.closest("[data-monitor-id]");
+    if (monitorTrigger) {
+      const id = Number(monitorTrigger.getAttribute("data-monitor-id"));
+      if (!Number.isFinite(id)) return;
+
+      if (monitorTrigger.getAttribute("data-monitor-action") === "remove") {
+        removeMonitorSession(id);
+      } else {
+        stopMonitorSession(id, "stopped manually");
+      }
+      return;
+    }
+
+    const analyzeTrigger = event.target.closest("[data-analyze-symbol]");
+    if (analyzeTrigger) {
+      const symbol = analyzeTrigger.getAttribute("data-analyze-symbol");
+      if (symbol) {
+        $("#qa-symbol").value = symbol;
+        void runAnalysis(symbol);
+      }
+      return;
+    }
+
+    if (event.target.closest("[data-monitor-last-analysis]")) {
+      monitorFromAnalysis();
+    }
+  });
+}
 
 function initAnalyze() {
-  $("#analyze-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const symbol = $("#analyze-symbol").value.trim();
+  $("#quick-analyze").addEventListener("submit", async event => {
+    event.preventDefault();
+    const symbol = $("#qa-symbol").value.trim();
     if (!symbol) return;
-
-    show($("#analyze-loading"));
-    $("#analyze-result").innerHTML = "";
-    $("#analyze-btn").disabled = true;
-
-    try {
-      const data = await api("POST", "/analyze", {
-        symbol,
-        direction: $("#analyze-direction").value || undefined,
-        horizon: readOptionalText("#analyze-horizon"),
-        leverage: readOptionalPositiveNumber("#analyze-leverage", "leverage"),
-        positionSizeUsd: readOptionalPositiveNumber("#analyze-size", "position size")
-      });
-      $("#analyze-result").innerHTML = renderRecommendation(data.recommendation, data.aiAdvice);
-    } catch (err) {
-      $("#analyze-result").innerHTML = `<div class="error-msg">${err.message}</div>`;
-    } finally {
-      hide($("#analyze-loading"));
-      $("#analyze-btn").disabled = false;
-    }
+    $("#qa-symbol").blur();
+    await runAnalysis(symbol, $("#qa-direction").value || undefined);
   });
 }
 
-function renderRecommendation(rec, aiAdvice) {
-  const signal = rec.signal;
-  const conf = rec.confidence ?? 0;
-  const grade = rec.setupGrade;
-  const regime = rec.marketRegime;
-  const tradeability = rec.marketTradeability;
+async function runAnalysis(symbol, direction) {
+  switchTab("overview");
+  flashPanel("#overview-analyze");
+  show($("#analyze-loading"));
+  $("#analyze-result").innerHTML = "";
+  $("#qa-btn").disabled = true;
 
-  let html = "";
+  try {
+    await ensureDefaults();
 
-  // Signal header
-  html += `<div class="signal-header">
-    <span class="signal-pair">${rec.pair}</span>
-    ${signalBadge(signal)}
-    ${confidenceBar(conf)}
-    ${gradeBadge(grade)}
-    ${regimeBadge(regime)}
-    ${tradeability ? tradeabilityBadge(tradeability) : ""}
-    ${rec.regime === "CHOPPY" ? `<span class="badge badge-sm badge-caution">CHOPPY</span>` : ""}
-    ${rec.qualityVerdict === "WEAK" ? `<span class="badge badge-sm badge-do-not-trade">WEAK</span>` : ""}
-  </div>`;
+    const payload = { symbol };
+    if (direction) payload.direction = direction;
 
-  // Trade levels
-  const isNoTrade = signal === "NO_TRADE";
-  html += `<div class="card">
-    <div class="card-header">Trade Levels</div>
-    <div class="trade-levels">
-      <div class="level-card entry">
-        <div class="level-label">Entry</div>
-        <div class="level-price">${fmtPrice(rec.entry)}</div>
-        ${rec.pullbackEntry ? `<div class="level-sub text-cyan">Pullback: ${fmtPrice(rec.pullbackEntry)}</div>` : ""}
-      </div>
-      <div class="level-card stop">
-        <div class="level-label">Stop Loss</div>
-        <div class="level-price text-red">${fmtPrice(rec.stopLoss)}</div>
-        ${rec.estimatedPnLAtStopLoss != null ? `<div class="level-sub text-red">${fmtSignedUsd(rec.estimatedPnLAtStopLoss)}</div>` : ""}
-      </div>
-      <div class="level-card target">
-        <div class="level-label">Take Profit</div>
-        <div class="level-price text-green">${fmtPrice(rec.takeProfit)}</div>
-        ${rec.estimatedPnLAtTakeProfit != null ? `<div class="level-sub text-green">${fmtSignedUsd(rec.estimatedPnLAtTakeProfit)}</div>` : ""}
-      </div>
-      ${rec.expectedLow != null ? `<div class="level-card">
-        <div class="level-label">Expected Range</div>
-        <div class="level-price text-secondary" style="font-size:14px">${fmtPrice(rec.expectedLow)} — ${fmtPrice(rec.expectedHigh)}</div>
-        <div class="level-sub text-muted">${rec.expectedRangeHorizonMinutes ?? ""}m · ${rec.expectedRangeCandles ?? ""}c</div>
-      </div>` : ""}
-    </div>
-  </div>`;
+    const leverage = readOptionalPositiveNumber("#qa-leverage", "leverage");
+    const positionSizeUsd = readOptionalPositiveNumber("#qa-size", "position size");
+    const horizon = readOptionalString("#qa-horizon");
 
-  // Setup & Quality
-  const bd = rec.confidenceBreakdown ?? {};
-  html += `<div class="two-col">
-    <div class="card">
-      <div class="card-header">Setup Quality</div>
-      <div class="data-grid">
-        <div class="data-item"><span class="data-label">Setup Quality</span><span class="data-value" style="color:${confidenceColor(bd.setupQuality ?? 0)}">${fmtNum(bd.setupQuality)}%</span></div>
-        <div class="data-item"><span class="data-label">Grade</span><span class="data-value">${gradeBadge(grade)}</span></div>
-        <div class="data-item"><span class="data-label">R:R</span><span class="data-value">${fmtNum(rec.riskRewardRatio)}</span></div>
-        <div class="data-item"><span class="data-label">Signal Strength</span><span class="data-value">${rec.signalStrength ?? "—"}</span></div>
-        ${rec.independentChannelAgreement != null ? `<div class="data-item"><span class="data-label">Channel Agreement</span><span class="data-value">${rec.independentChannelAgreement}/4</span></div>` : ""}
-        ${rec.feeBurdenPct != null ? `<div class="data-item"><span class="data-label">Fee Burden</span><span class="data-value">${fmtPct(rec.feeBurdenPct)}</span></div>` : ""}
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header">Confidence Breakdown</div>
-      <div class="breakdown-grid">
-        ${renderBreakdownItem("Trend", bd.trend)}
-        ${renderBreakdownItem("Momentum", bd.momentum)}
-        ${renderBreakdownItem("Volatility", bd.volatility)}
-        ${renderBreakdownItem("Structure", bd.structure)}
-        ${renderBreakdownItem("Context", bd.context)}
-        ${renderBreakdownItem("Setup", bd.setupQuality)}
-      </div>
-    </div>
-  </div>`;
+    if (leverage !== undefined) payload.leverage = leverage;
+    if (positionSizeUsd !== undefined) payload.positionSizeUsd = positionSizeUsd;
+    if (horizon) payload.horizon = horizon;
 
-  // Entry readiness + Sequence + Level interaction
-  const hasReadiness = rec.entryReadiness || rec.sequenceStatus || rec.levelInteractionStatus;
-  if (hasReadiness) {
-    html += `<div class="card">
-      <div class="card-header">Entry Assessment</div>
-      <div class="data-grid">
-        ${rec.entryReadiness ? `<div class="data-item"><span class="data-label">Entry Readiness</span><span class="data-value"><span class="badge badge-sm ${readinessBadgeClass(rec.entryReadiness)}">${rec.entryReadiness.replace(/_/g, " ")}</span></span></div>` : ""}
-        ${rec.preferredEntryPrice != null ? `<div class="data-item"><span class="data-label">Preferred Entry</span><span class="data-value text-mono">${fmtPrice(rec.preferredEntryPrice)}</span></div>` : ""}
-        ${rec.sequenceStatus ? `<div class="data-item"><span class="data-label">Sequence</span><span class="data-value"><span class="badge badge-sm ${sequenceBadgeClass(rec.sequenceStatus)}">${rec.sequenceStatus}</span> ${rec.sequencePattern && rec.sequencePattern !== "NONE" ? `<span class="text-muted">${rec.sequencePattern.replace(/_/g, " ")}</span>` : ""}</span></div>` : ""}
-        ${rec.levelInteractionStatus && rec.levelInteractionStatus !== "NONE" ? `<div class="data-item"><span class="data-label">Level</span><span class="data-value"><span class="badge badge-sm">${rec.levelInteractionStatus}</span> <span class="text-muted">${(rec.levelInteractionReference ?? "").replace(/_/g, " ")}</span></span></div>` : ""}
-        ${rec.setupPlaybook ? `<div class="data-item"><span class="data-label">Playbook</span><span class="data-value"><span class="badge badge-sm badge-regime">${rec.setupPlaybook.replace(/_/g, " ")}</span>${rec.playbookRegimeAligned === false ? ` <span class="text-red text-muted">misaligned</span>` : ""}</span></div>` : ""}
-      </div>
-    </div>`;
+    $("#analyze-echo").textContent = `Dispatch ${symbol.toUpperCase()} | ${direction || "AUTO"} | ${payload.leverage ?? "default"}x | ${payload.positionSizeUsd ?? "default"} USDC | ${payload.horizon ?? "default"}m`;
+
+    const data = await api("POST", "/analyze", payload);
+    state.lastAnalysis = data;
+    updateAnalysisStatus(data.recommendation);
+    $("#analyze-result").innerHTML = renderRec(data.recommendation, data.aiAdvice);
+    $("#analyze-echo").textContent = `Loaded ${data.recommendation.pair} at ${Math.round(data.recommendation.confidence ?? 0)} confidence`;
+  } catch (error) {
+    $("#analyze-result").innerHTML = errorMarkup(error.message);
+    $("#analyze-echo").textContent = `Analysis error: ${error.message}`;
+  } finally {
+    hide($("#analyze-loading"));
+    $("#qa-btn").disabled = false;
   }
+}
 
-  // Position config
-  if (rec.leverage || rec.positionSizeUsd) {
-    const notional = (rec.leverage ?? 1) * (rec.positionSizeUsd ?? 0);
-    html += `<div class="card">
-      <div class="card-header">Position</div>
-      <div class="data-grid">
-        <div class="data-item"><span class="data-label">Leverage</span><span class="data-value">${rec.leverage}x</span></div>
-        <div class="data-item"><span class="data-label">Margin</span><span class="data-value">${fmtNum(rec.positionSizeUsd, 0)} USDC</span></div>
-        <div class="data-item"><span class="data-label">Notional</span><span class="data-value">${fmtNum(notional, 0)} USDC</span></div>
-        ${rec.netRiskRewardRatio != null ? `<div class="data-item"><span class="data-label">Net R:R</span><span class="data-value">${fmtNum(rec.netRiskRewardRatio)}</span></div>` : ""}
-        ${rec.netEstimatedPnLAtTakeProfit != null ? `<div class="data-item"><span class="data-label">Net PnL TP</span><span class="data-value ${pnlClass(rec.netEstimatedPnLAtTakeProfit)}">${fmtSignedUsd(rec.netEstimatedPnLAtTakeProfit)}</span></div>` : ""}
-        ${rec.netEstimatedPnLAtStopLoss != null ? `<div class="data-item"><span class="data-label">Net PnL SL</span><span class="data-value ${pnlClass(rec.netEstimatedPnLAtStopLoss)}">${fmtSignedUsd(rec.netEstimatedPnLAtStopLoss)}</span></div>` : ""}
-        ${rec.expectedValueUsd != null ? `<div class="data-item"><span class="data-label">Expected Value</span><span class="data-value ${pnlClass(rec.expectedValueUsd)}">${fmtSignedUsd(rec.expectedValueUsd)}</span></div>` : ""}
-        ${rec.holdingPeriodMinutes != null ? `<div class="data-item"><span class="data-label">Holding</span><span class="data-value">${rec.holdingPeriodMinutes}m (${rec.holdingPeriodCandles}c)</span></div>` : ""}
-        ${rec.timeBasedExitMinutes != null ? `<div class="data-item"><span class="data-label">Time Stop</span><span class="data-value">${rec.timeBasedExitMinutes}m</span></div>` : ""}
-        ${rec.slippageEstimatePct != null ? `<div class="data-item"><span class="data-label">Slippage Est</span><span class="data-value">${fmtPct(rec.slippageEstimatePct)}</span></div>` : ""}
-        ${rec.totalExecutionCostPct != null ? `<div class="data-item"><span class="data-label">Exec Cost</span><span class="data-value">${fmtPct(rec.totalExecutionCostPct)}</span></div>` : ""}
-      </div>
-    </div>`;
-  }
+function renderRec(rec, aiAdvice) {
+  const confidence = Math.round(rec.confidence ?? 0);
+  const summaryBadges = [
+    signalBadge(rec.signal),
+    rec.setupGrade ? badge(`Grade ${rec.setupGrade}`, gradeTone(rec.setupGrade)) : "",
+    rec.marketRegime ? badge(prettyToken(rec.marketRegime), "badge-neutral") : "",
+    rec.marketTradeability ? badge(prettyToken(rec.marketTradeability), tradeabilityTone(rec.marketTradeability)) : "",
+    rec.setupPlaybook ? badge(prettyToken(rec.setupPlaybook), rec.playbookRegimeAligned === false ? "badge-bad" : "badge-accent") : ""
+  ].filter(Boolean).join("");
 
-  // Indicators
-  const ind = rec.indicators;
-  if (ind) {
-    html += `<div class="two-col">
-      <div class="card">
-        <div class="card-header">Indicators</div>
-        <div class="data-grid">
-          <div class="data-item"><span class="data-label">RSI(14)</span><span class="data-value">${fmtNum(ind.rsi14)}</span></div>
-          <div class="data-item"><span class="data-label">ADX(14)</span><span class="data-value">${fmtNum(ind.adx14)}</span></div>
-          <div class="data-item"><span class="data-label">ATR(14)</span><span class="data-value">${fmtNum(ind.atr14, 4)}</span></div>
-          <div class="data-item"><span class="data-label">EMA(20)</span><span class="data-value">${fmtPrice(ind.ema20)}</span></div>
-          <div class="data-item"><span class="data-label">EMA(50)</span><span class="data-value">${fmtPrice(ind.ema50)}</span></div>
-          <div class="data-item"><span class="data-label">VWAP</span><span class="data-value">${fmtPrice(ind.vwap)}</span></div>
-          <div class="data-item"><span class="data-label">MACD</span><span class="data-value">${fmtNum(ind.macd, 4)}</span></div>
-          <div class="data-item"><span class="data-label">MACD Sig</span><span class="data-value">${fmtNum(ind.macdSignal, 4)}</span></div>
-          <div class="data-item"><span class="data-label">MACD Hist</span><span class="data-value ${ind.macdHistogram >= 0 ? "text-green" : "text-red"}">${fmtSigned(ind.macdHistogram, 4)}</span></div>
-          <div class="data-item"><span class="data-label">BB Upper</span><span class="data-value">${fmtPrice(ind.bbUpper)}</span></div>
-          <div class="data-item"><span class="data-label">BB Mid</span><span class="data-value">${fmtPrice(ind.bbMiddle)}</span></div>
-          <div class="data-item"><span class="data-label">BB Lower</span><span class="data-value">${fmtPrice(ind.bbLower)}</span></div>
-          <div class="data-item"><span class="data-label">StochRSI K</span><span class="data-value">${fmtNum(ind.stochRsiK)}</span></div>
-          <div class="data-item"><span class="data-label">StochRSI D</span><span class="data-value">${fmtNum(ind.stochRsiD)}</span></div>
-          ${ind.obvSlope5 != null ? `<div class="data-item"><span class="data-label">OBV Slope</span><span class="data-value">${fmtSigned(ind.obvSlope5, 4)}</span></div>` : ""}
-          ${ind.mfi14 != null ? `<div class="data-item"><span class="data-label">MFI(14)</span><span class="data-value">${fmtNum(ind.mfi14)}</span></div>` : ""}
-          ${ind.cmf20 != null ? `<div class="data-item"><span class="data-label">CMF(20)</span><span class="data-value">${fmtSigned(ind.cmf20, 4)}</span></div>` : ""}
+  const highlightItems = [
+    ...(rec.entryReadinessReasons ?? []),
+    ...(rec.sequenceReasons ?? []),
+    ...(rec.levelInteractionReasons ?? []),
+    ...(rec.rationale ?? [])
+  ].filter(Boolean).slice(0, 6);
+
+  const planMetrics = [
+    metricCell("entry", fP(rec.entry)),
+    metricCell("stop", `<span class="c-red">${fP(rec.stopLoss)}</span>`),
+    metricCell("target", `<span class="c-green">${fP(rec.takeProfit)}</span>`),
+    metricCell("conf", `<span class="${cC(confidence)}">${confidence}</span>`),
+    metricCell("r:r", fN(rec.riskRewardRatio)),
+    metricCell("ev", rec.expectedValueUsd != null ? `<span class="${pC(rec.expectedValueUsd)}">${fSUsd(rec.expectedValueUsd)}</span>` : "—"),
+    metricCell("hold", rec.holdingPeriodMinutes != null ? `${rec.holdingPeriodMinutes}m` : "—"),
+    rec.expectedLow != null ? metricCell("range", `${fP(rec.expectedLow)} — ${fP(rec.expectedHigh)}`) : ""
+  ].filter(Boolean).join("");
+
+  const contextRows = [
+    rec.entryReadiness ? kvRow("entry", badge(prettyToken(rec.entryReadiness), readinessTone(rec.entryReadiness))) : "",
+    rec.preferredEntryPrice != null ? kvRow("preferred", fP(rec.preferredEntryPrice)) : "",
+    rec.sequenceStatus ? kvRow("sequence", badge(prettyToken(rec.sequenceStatus), sequenceTone(rec.sequenceStatus))) : "",
+    rec.sequencePattern && rec.sequencePattern !== "NONE" ? kvRow("pattern", esc(prettyToken(rec.sequencePattern))) : "",
+    rec.levelInteractionStatus && rec.levelInteractionStatus !== "NONE" ? kvRow("level", `${esc(prettyToken(rec.levelInteractionStatus))}${rec.levelInteractionReference ? ` / ${esc(prettyToken(rec.levelInteractionReference))}` : ""}`) : "",
+    rec.playbookMinRiskReward != null ? kvRow("playbook min r:r", fN(rec.playbookMinRiskReward)) : "",
+    rec.independentChannelAgreement != null ? kvRow("channel agreement", `${rec.independentChannelAgreement}/4`) : "",
+    rec.calibratedWinRate != null ? kvRow("calibrated win%", fPct(rec.calibratedWinRate * 100)) : ""
+  ].filter(Boolean).join("");
+
+  const confidenceBlock = rec.confidenceBreakdown ?? {};
+  const positionRows = [
+    rec.leverage != null ? kvRow("leverage", `${rec.leverage}x`) : "",
+    rec.positionSizeUsd != null ? kvRow("margin", `${fN(rec.positionSizeUsd, 0)} USDC`) : "",
+    rec.leverage != null && rec.positionSizeUsd != null ? kvRow("notional", `${fN(rec.leverage * rec.positionSizeUsd, 0)} USDC`) : "",
+    rec.netRiskRewardRatio != null ? kvRow("net r:r", fN(rec.netRiskRewardRatio)) : "",
+    rec.netEstimatedPnLAtTakeProfit != null ? kvRow("net tp", `<span class="${pC(rec.netEstimatedPnLAtTakeProfit)}">${fSUsd(rec.netEstimatedPnLAtTakeProfit)}</span>`) : "",
+    rec.netEstimatedPnLAtStopLoss != null ? kvRow("net sl", `<span class="${pC(rec.netEstimatedPnLAtStopLoss)}">${fSUsd(rec.netEstimatedPnLAtStopLoss)}</span>`) : "",
+    rec.feeBurdenPct != null ? kvRow("fees", fPct(rec.feeBurdenPct)) : "",
+    rec.slippageEstimatePct != null ? kvRow("slippage", fPct(rec.slippageEstimatePct)) : "",
+    rec.timeBasedExitMinutes != null ? kvRow("time stop", `${rec.timeBasedExitMinutes}m`) : ""
+  ].filter(Boolean).join("");
+
+  const indicators = rec.indicators;
+  const indicatorRows = indicators ? [
+    kvRow("rsi 14", indicators.rsi14 != null ? fN(indicators.rsi14) : "—"),
+    kvRow("adx 14", indicators.adx14 != null ? fN(indicators.adx14) : "—"),
+    kvRow("atr 14", indicators.atr14 != null ? fN(indicators.atr14, 4) : "—"),
+    kvRow("ema 20", indicators.ema20 != null ? fP(indicators.ema20) : "—"),
+    kvRow("ema 50", indicators.ema50 != null ? fP(indicators.ema50) : "—"),
+    kvRow("vwap", indicators.vwap != null ? fP(indicators.vwap) : "—"),
+    kvRow("macd", indicators.macd != null ? fN(indicators.macd, 4) : "—"),
+    kvRow("macd hist", indicators.macdHistogram != null ? `<span class="${pC(indicators.macdHistogram)}">${fS(indicators.macdHistogram, 4)}</span>` : "—"),
+    kvRow("stoch k", indicators.stochRsiK != null ? fN(indicators.stochRsiK) : "—"),
+    kvRow("stoch d", indicators.stochRsiD != null ? fN(indicators.stochRsiD) : "—"),
+    indicators.mfi14 != null ? kvRow("mfi 14", fN(indicators.mfi14)) : "",
+    indicators.cmf20 != null ? kvRow("cmf 20", fS(indicators.cmf20, 4)) : ""
+  ].filter(Boolean).join("") : "";
+
+  const marketRows = rec.perp ? [
+    kvRow("mark", fP(rec.perp.markPrice)),
+    kvRow("index", fP(rec.perp.indexPrice)),
+    kvRow("funding", fPct(rec.perp.fundingRate)),
+    kvRow("funding avg", fPct(rec.perp.fundingRateAvg)),
+    kvRow("premium", rec.perp.premiumPct != null ? fPct(rec.perp.premiumPct) : "—"),
+    kvRow("open interest", rec.perp.openInterest != null ? fN(rec.perp.openInterest, 0) : "—"),
+    rec.perp.openInterestDeltaPct != null ? kvRow("oi delta", fSPct(rec.perp.openInterestDeltaPct)) : "",
+    rec.perp.bidAskSpreadPct != null ? kvRow("spread", fPct(rec.perp.bidAskSpreadPct)) : ""
+  ].filter(Boolean).join("") : "";
+
+  const aiAgreement = String(aiAdvice?.agreement ?? "").toUpperCase();
+  const aiConfidence = String(aiAdvice?.confidenceBand ?? "").toUpperCase();
+  const appReasons = highlightItems.length
+    ? listMarkup(highlightItems.slice(0, 4), "rationale-list")
+    : `<div class="dim">no primary rationale bullets</div>`;
+
+  const appDetailBody = [
+    contextRows ? `
+      <section class="analysis-detail-group">
+        <div class="board-box-head">
+          <span>execution context</span>
+          <span>timing and readiness</span>
         </div>
-      </div>
-      <div class="card">
-        <div class="card-header">Perp Context</div>
-        <div class="data-grid">
-          <div class="data-item"><span class="data-label">Mark Price</span><span class="data-value">${fmtPrice(rec.perp?.markPrice)}</span></div>
-          <div class="data-item"><span class="data-label">Index Price</span><span class="data-value">${fmtPrice(rec.perp?.indexPrice)}</span></div>
-          <div class="data-item"><span class="data-label">Funding</span><span class="data-value">${fmtPct(rec.perp?.fundingRate)}</span></div>
-          <div class="data-item"><span class="data-label">Funding Avg</span><span class="data-value">${fmtPct(rec.perp?.fundingRateAvg)}</span></div>
-          <div class="data-item"><span class="data-label">Premium</span><span class="data-value ${(rec.perp?.premiumPct ?? 0) > 0.1 ? "text-amber" : ""}">${fmtPct(rec.perp?.premiumPct)}</span></div>
-          <div class="data-item"><span class="data-label">Open Interest</span><span class="data-value">${fmtNum(rec.perp?.openInterest, 0)}</span></div>
-          ${rec.perp?.openInterestDeltaPct != null ? `<div class="data-item"><span class="data-label">OI Delta</span><span class="data-value">${fmtSignedPct(rec.perp.openInterestDeltaPct)}</span></div>` : ""}
-          ${rec.perp?.bidAskSpreadPct != null ? `<div class="data-item"><span class="data-label">Spread</span><span class="data-value">${fmtPct(rec.perp.bidAskSpreadPct)}</span></div>` : ""}
-          ${rec.perp?.orderBookImbalance != null ? `<div class="data-item"><span class="data-label">Book Imbal</span><span class="data-value">${fmtSigned(rec.perp.orderBookImbalance, 4)}</span></div>` : ""}
+        <div class="kv-grid">${contextRows}</div>
+      </section>` : "",
+    `
+      <section class="analysis-detail-group">
+        <div class="board-box-head">
+          <span>confidence mix</span>
+          <span>0..100 deterministic</span>
         </div>
-      </div>
+        <div class="mix-table">
+          ${confidenceRow("trend", confidenceBlock.trend)}
+          ${confidenceRow("momentum", confidenceBlock.momentum)}
+          ${confidenceRow("volatility", confidenceBlock.volatility)}
+          ${confidenceRow("structure", confidenceBlock.structure)}
+          ${confidenceRow("context", confidenceBlock.context)}
+          ${confidenceRow("setup", confidenceBlock.setupQuality)}
+        </div>
+      </section>`,
+    positionRows ? `
+      <section class="analysis-detail-group">
+        <div class="board-box-head">
+          <span>position vector</span>
+          <span>risk and sizing</span>
+        </div>
+        <div class="kv-grid">${positionRows}</div>
+      </section>` : "",
+    indicatorRows ? `
+      <section class="analysis-detail-group">
+        <div class="board-box-head">
+          <span>indicator stack</span>
+          <span>market internals</span>
+        </div>
+        <div class="kv-grid">${indicatorRows}</div>
+      </section>` : "",
+    marketRows ? `
+      <section class="analysis-detail-group">
+        <div class="board-box-head">
+          <span>perp market data</span>
+          <span>funding and open interest</span>
+        </div>
+        <div class="kv-grid">${marketRows}</div>
+      </section>` : ""
+  ].filter(Boolean).join("");
+
+  const aiMetricStrip = aiAdvice ? [
+    aiAdvice.suggestedEntry != null ? metricCell("entry", fP(aiAdvice.suggestedEntry)) : "",
+    aiAdvice.suggestedStopLoss != null ? metricCell("stop", `<span class="c-red">${fP(aiAdvice.suggestedStopLoss)}</span>`) : "",
+    aiAdvice.suggestedTakeProfit != null ? metricCell("target", `<span class="c-green">${fP(aiAdvice.suggestedTakeProfit)}</span>`) : ""
+  ].filter(Boolean).join("") : "";
+
+  const aiReasons = aiAdvice?.reasons?.length
+    ? listMarkup(aiAdvice.reasons.slice(0, 4), "rationale-list")
+    : `<div class="dim">no AI reasoning returned</div>`;
+
+  const aiOverrides = aiAdvice?.overruledSignals?.length
+    ? listMarkup(aiAdvice.overruledSignals, "rationale-list")
+    : `<div class="dim">no overruled signals</div>`;
+
+  const aiVisibleNotes = aiAdvice ? `
+    <div class="analysis-note-grid">
+      ${aiAdvice.invalidation ? `<div class="analysis-note-row"><span class="analysis-note-label">invalidation</span><span class="analysis-note-value">${esc(aiAdvice.invalidation)}</span></div>` : ""}
+      ${aiAdvice.riskNote ? `<div class="analysis-note-row"><span class="analysis-note-label">risk</span><span class="analysis-note-value">${esc(aiAdvice.riskNote)}</span></div>` : ""}
+    </div>` : `
+    <div class="ai-empty-state">
+      <div class="dim">No AI advisory was returned for this analysis.</div>
+      <div class="dim">Check that OPENAI_API_KEY is configured and the selected model is reachable.</div>
     </div>`;
-  }
 
-  // AI Advice
-  if (aiAdvice) {
-    html += `<div class="card">
-      <div class="card-header">AI Secondary Opinion</div>
-      <div class="data-grid">
-        <div class="data-item"><span class="data-label">Agrees</span><span class="data-value">${aiAdvice.agrees ? `<span class="text-green">Yes</span>` : `<span class="text-red">No</span>`}</span></div>
-        ${aiAdvice.suggestedDirection ? `<div class="data-item"><span class="data-label">Direction</span><span class="data-value">${signalBadge(aiAdvice.suggestedDirection)}</span></div>` : ""}
-        ${aiAdvice.note ? `<div class="data-item" style="grid-column: 1/-1"><span class="data-label">Note</span><span class="data-value text-secondary">${escapeHtml(aiAdvice.note)}</span></div>` : ""}
-      </div>
+  const aiDetailBody = aiAdvice ? [
+    `
+      <section class="analysis-detail-group">
+        <div class="board-box-head">
+          <span>advisory metadata</span>
+          <span>model and response</span>
+        </div>
+        <div class="kv-grid">
+          ${aiAdvice.bias ? kvRow("bias", signalBadge(aiAdvice.bias)) : ""}
+          ${aiAdvice.agreement ? kvRow("agreement", badge(prettyToken(aiAdvice.agreement), aiAgreement === "AGREE" ? "badge-good" : aiAgreement === "PARTIAL" ? "badge-warn" : "badge-bad")) : ""}
+          ${aiAdvice.confidenceBand ? kvRow("confidence", badge(prettyToken(aiAdvice.confidenceBand), aiConfidence === "HIGH" ? "badge-good" : aiConfidence === "MEDIUM" ? "badge-warn" : "badge-muted")) : ""}
+          ${aiAdvice.regime ? kvRow("regime", esc(prettyToken(aiAdvice.regime))) : ""}
+          ${aiAdvice.model ? kvRow("model", esc(aiAdvice.model)) : ""}
+          ${aiAdvice.latencyMs != null ? kvRow("latency", `${Math.round(aiAdvice.latencyMs)}ms`) : ""}
+        </div>
+      </section>`,
+    `
+      <section class="analysis-detail-group">
+        <div class="board-box-head">
+          <span>overruled signals</span>
+          <span>${aiAdvice.overruledSignals?.length ?? 0}</span>
+        </div>
+        ${aiOverrides}
+      </section>`
+  ].join("") : `
+    <section class="analysis-detail-group">
+      <div class="dim">AI details are unavailable because no advisory response was returned.</div>
+    </section>`;
+
+  return `
+    <div class="analysis-compare-grid">
+      <section class="analysis-panel">
+        <div class="analysis-panel-head">
+          <div>
+            <div class="panel-kicker">Application Analysis</div>
+            <div class="panel-title">Deterministic Engine</div>
+          </div>
+          <div class="panel-note">primary recommendation output</div>
+        </div>
+
+        <section class="board-box">
+          <div class="board-box-head">
+            <span>signal snapshot</span>
+            <span>${rec.objectiveHorizon ? `${esc(rec.objectiveHorizon)}m horizon` : "live packet"}</span>
+          </div>
+          <div class="pair-line">
+            <span class="pair-name">${esc(rec.pair)}</span>
+            <span class="pair-meta">${rec.qualityVerdict ? prettyToken(rec.qualityVerdict) : "quality gate"}</span>
+          </div>
+          <div class="badge-row">${summaryBadges}</div>
+          <div class="metric-strip">${planMetrics}</div>
+          ${rec.signal !== "NO_TRADE" ? `<div class="action-row"><button type="button" class="btn-secondary" data-monitor-last-analysis="true">Monitor</button></div>` : ""}
+        </section>
+
+        <section class="board-box">
+          <div class="board-box-head">
+            <span>thesis</span>
+            <span>${highlightItems.length} visible signals</span>
+          </div>
+          ${appReasons}
+        </section>
+
+        <section class="board-box">
+          <details class="analysis-detail-panel">
+            <summary>Show application details</summary>
+            <div class="analysis-detail-body">${appDetailBody}</div>
+          </details>
+        </section>
+      </section>
+
+      <section class="analysis-panel">
+        <div class="analysis-panel-head">
+          <div>
+            <div class="panel-kicker">AI Analysis</div>
+            <div class="panel-title">Advisory Response</div>
+          </div>
+          <div class="panel-note">${aiAdvice?.model ? esc(aiAdvice.model) : "optional layer"}</div>
+        </div>
+
+        <section class="board-box">
+          <div class="board-box-head">
+            <span>ai stance</span>
+            <span>${aiAdvice?.latencyMs != null ? `${Math.round(aiAdvice.latencyMs)}ms` : "response packet"}</span>
+          </div>
+          <div class="badge-row">
+            ${aiAdvice?.bias ? signalBadge(aiAdvice.bias) : badge("Unavailable", "badge-muted")}
+            ${aiAdvice?.agreement ? badge(prettyToken(aiAdvice.agreement), aiAgreement === "AGREE" ? "badge-good" : aiAgreement === "PARTIAL" ? "badge-warn" : "badge-bad") : ""}
+            ${aiAdvice?.confidenceBand ? badge(prettyToken(aiAdvice.confidenceBand), aiConfidence === "HIGH" ? "badge-good" : aiConfidence === "MEDIUM" ? "badge-warn" : "badge-muted") : ""}
+            ${aiAdvice?.regime ? badge(prettyToken(aiAdvice.regime), "badge-neutral") : ""}
+          </div>
+          ${aiMetricStrip ? `<div class="metric-strip">${aiMetricStrip}</div>` : ""}
+        </section>
+
+        <section class="board-box">
+          <div class="board-box-head">
+            <span>thesis</span>
+            <span>${aiAdvice?.reasons?.length ?? 0} visible reasons</span>
+          </div>
+          ${aiReasons}
+          ${aiVisibleNotes}
+        </section>
+
+        <section class="board-box">
+          <details class="analysis-detail-panel">
+            <summary>Show AI details</summary>
+            <div class="analysis-detail-body">${aiDetailBody}</div>
+          </details>
+        </section>
+      </section>
     </div>`;
-  }
-
-  // Rationale
-  const rationale = rec.rationale ?? [];
-  if (rationale.length > 0) {
-    html += `<div class="card">
-      <div class="card-header">Rationale (${rationale.length})</div>
-      <ul class="rationale-list">
-        ${rationale.map(r => `<li class="rationale-item">${escapeHtml(r)}</li>`).join("")}
-      </ul>
-    </div>`;
-  }
-
-  return html;
 }
 
-function renderBreakdownItem(label, value) {
-  const v = value ?? 0;
-  const c = confidenceColor(v);
-  return `<div class="breakdown-item">
-    <span class="breakdown-label">${label}</span>
-    <div class="breakdown-bar-wrap">
-      <div class="breakdown-bar"><div class="breakdown-fill" style="width:${Math.min(100, v)}%;background:${c}"></div></div>
-      <span class="breakdown-val" style="color:${c}">${Math.round(v)}</span>
-    </div>
-  </div>`;
-}
+function monitorFromAnalysis() {
+  const rec = state.lastAnalysis?.recommendation;
+  if (!rec) return;
 
-function readinessBadgeClass(status) {
-  if (status === "READY_NOW") return "badge-tradeable";
-  if (status === "TOO_LATE") return "badge-do-not-trade";
-  return "badge-caution";
+  $("#monitor-symbol").value = rec.pair.replace(/-USD$/, "");
+  $("#monitor-side").value = rec.signal === "SHORT" ? "SHORT" : "LONG";
+  $("#monitor-entry").value = rec.entry ?? "";
+  $("#monitor-sl").value = rec.stopLoss ?? "";
+  $("#monitor-tp").value = rec.takeProfit ?? "";
+  $("#monitor-leverage").value = rec.leverage ?? state.defaults?.leverage ?? "";
+  $("#monitor-size").value = rec.positionSizeUsd ?? state.defaults?.positionSizeUsd ?? "";
+  $("#monitor-horizon").value = rec.objectiveHorizon ?? state.defaults?.objectiveHorizon ?? "";
+  $("#monitor-echo").textContent = `Seeded from ${rec.pair} ${rec.signal}`;
+  switchTab("monitor");
+  flashPanel("#monitor-compose");
 }
-
-function sequenceBadgeClass(status) {
-  if (status === "CONFIRMED") return "badge-tradeable";
-  if (status === "FAILED") return "badge-do-not-trade";
-  if (status === "FORMING") return "badge-caution";
-  return "";
-}
-
-// ================================================================
-// SCANNER VIEW
-// ================================================================
 
 function initScan() {
-  $("#scan-btn").addEventListener("click", async () => {
-    show($("#scan-loading"));
-    $("#scan-result").innerHTML = "";
-    $("#scan-btn").disabled = true;
-
-    try {
-      const data = await api("GET", "/scan");
-      $("#scan-result").innerHTML = renderScanResults(data);
-    } catch (err) {
-      $("#scan-result").innerHTML = `<div class="error-msg">${err.message}</div>`;
-    } finally {
-      hide($("#scan-loading"));
-      $("#scan-btn").disabled = false;
-    }
+  $("#scan-btn").addEventListener("click", () => {
+    void loadScan();
   });
 }
 
-function renderScanResults(data) {
-  let html = "";
-
-  // Universe
-  const universe = data.universe ?? [];
-  if (universe.length > 0) {
-    html += `<div class="card">
-      <div class="card-header">Universe (${universe.length} symbols by 24h volume)</div>
-      <table class="data-table">
-        <thead><tr>
-          <th>#</th><th>Symbol</th><th class="text-right">Vol 24h</th><th class="text-right">OI</th>
-        </tr></thead>
-        <tbody>
-          ${universe.map((u, i) => `<tr>
-            <td class="text-muted">${i + 1}</td>
-            <td><span class="text-cyan">${u.symbol ?? u.pair ?? "—"}</span></td>
-            <td class="text-right">${fmtNum(u.volume24h, 0)}</td>
-            <td class="text-right">${fmtNum(u.openInterest, 0)}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
-    </div>`;
-  }
-
-  // Ranked opportunities
-  const ranked = data.opportunities?.ranked ?? [];
-  if (ranked.length > 0) {
-    html += `<div class="card">
-      <div class="card-header">Top Opportunities</div>
-      <table class="data-table">
-        <thead><tr>
-          <th>#</th><th>Symbol</th><th>Signal</th>
-          <th class="text-right">Prob</th><th class="text-right">Conf</th><th class="text-right">R:R</th>
-          <th class="text-right">Entry</th><th class="text-right">SL</th><th class="text-right">TP</th>
-        </tr></thead>
-        <tbody>
-          ${ranked.map((o, i) => {
-            const rec = o.recommendation ?? o;
-            const prob = o.probabilityPositivePnl ?? o.probability;
-            return `<tr>
-              <td class="text-muted">${i + 1}</td>
-              <td><span class="text-cyan" style="cursor:pointer" onclick="analyzeFromScan('${rec.pair}')">${rec.pair}</span></td>
-              <td>${signalBadge(rec.signal)}</td>
-              <td class="text-right ${pnlClass((prob ?? 50) - 50)}">${prob != null ? fmtPct(prob * 100) : "—"}</td>
-              <td class="text-right">${rec.confidence ?? "—"}%</td>
-              <td class="text-right">${fmtNum(rec.riskRewardRatio)}</td>
-              <td class="text-right">${fmtPrice(rec.entry)}</td>
-              <td class="text-right text-red">${fmtPrice(rec.stopLoss)}</td>
-              <td class="text-right text-green">${fmtPrice(rec.takeProfit)}</td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>`;
-  }
-
-  // Skipped
-  const skipped = data.opportunities?.skipped ?? [];
-  if (skipped.length > 0) {
-    html += `<div class="card">
-      <div class="card-header">Skipped (${skipped.length})</div>
-      <div class="data-grid">
-        ${skipped.map(s => `<div class="data-item"><span class="data-label">${s.pair ?? s.symbol}</span><span class="data-value text-muted">${s.reason ?? "—"}</span></div>`).join("")}
-      </div>
-    </div>`;
-  }
-
-  return html || `<div class="text-muted" style="padding:20px">No results.</div>`;
+async function ensureScanLoaded() {
+  if (state.scanLoaded) return;
+  await loadScan();
 }
 
-// Global for onclick in scan results
-window.analyzeFromScan = function(pair) {
-  const symbol = pair.replace("-USD", "");
-  $("#analyze-symbol").value = symbol;
-  $$(".tab-btn").forEach(b => b.classList.remove("active"));
-  $$(".tab-panel").forEach(p => p.classList.remove("active"));
-  $('[data-tab="analyze"]').classList.add("active");
-  $("#tab-analyze").classList.add("active");
-  $("#analyze-form").dispatchEvent(new Event("submit"));
-};
+async function loadScan() {
+  show($("#scan-loading"));
+  $("#scan-result").innerHTML = "";
+  $("#scan-btn").disabled = true;
 
-// ================================================================
-// MONITOR VIEW
-// ================================================================
+  try {
+    const data = await api("GET", "/scan");
+    $("#scan-result").innerHTML = renderScan(data);
+    state.scanLoaded = true;
+  } catch (error) {
+    $("#scan-result").innerHTML = errorMarkup(error.message);
+    state.scanLoaded = false;
+  } finally {
+    hide($("#scan-loading"));
+    $("#scan-btn").disabled = false;
+  }
+}
+
+function renderScan(data) {
+  const ranked = data.opportunities?.ranked ?? [];
+  const skipped = data.opportunities?.skipped ?? [];
+
+  if (!ranked.length) {
+    return `<div class="empty-state">no tradeable pairs under the current filters</div>`;
+  }
+
+  const rows = ranked.map((opportunity, index) => {
+    const rec = opportunity.recommendation ?? opportunity;
+    const symbol = rec.pair.replace(/-USD$/, "");
+    const confidence = Math.round(rec.confidence ?? 0);
+    return `
+      <button type="button" class="scan-row body" data-analyze-symbol="${attr(symbol)}">
+        <span>${String(index + 1).padStart(2, "0")}</span>
+        <span class="scan-pair">${esc(symbol)}</span>
+        <span>${signalBadge(rec.signal)}</span>
+        <span class="${cC(confidence)}">${confidence}</span>
+        <span>${fN(rec.riskRewardRatio)}</span>
+        <span>${rec.setupPlaybook ? esc(prettyToken(rec.setupPlaybook)) : "—"}</span>
+      </button>`;
+  }).join("");
+
+  const skippedPanel = skipped.length
+    ? `<details class="skip-panel"><summary>${skipped.length} skipped symbols</summary><ul class="skip-list">${skipped.map(item => `<li>${esc((item.symbol ?? item.pair) || "unknown")}: ${esc(item.reason ?? "n/a")}</li>`).join("")}</ul></details>`
+    : "";
+
+  return `
+    <div class="scan-table">
+      <div class="scan-row head">
+        <span>rank</span>
+        <span>pair</span>
+        <span>signal</span>
+        <span>conf</span>
+        <span>r:r</span>
+        <span>playbook</span>
+      </div>
+      ${rows}
+    </div>
+    ${skippedPanel}`;
+}
 
 function initMonitor() {
-  $("#monitor-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  $("#monitor-form").addEventListener("submit", event => {
+    event.preventDefault();
     startMonitor();
   });
-  $("#monitor-stop-btn").addEventListener("click", stopMonitor);
+  $("#monitor-stop-all-btn").addEventListener("click", () => {
+    const stopped = stopAllMonitorSessions("stopped manually");
+    if (stopped > 0) {
+      toast(`Stopped ${stopped} monitor stream${stopped === 1 ? "" : "s"}`);
+    }
+  });
 }
 
 function startMonitor() {
-  stopMonitor();
-  const symbol = $("#monitor-symbol").value.trim().toUpperCase();
-  const side = $("#monitor-side").value;
-  const entry = $("#monitor-entry").value;
-  const stopLoss = $("#monitor-sl").value;
-  const takeProfit = $("#monitor-tp").value;
-
-  if (!symbol || !entry || !stopLoss || !takeProfit) return;
+  switchTab("monitor");
+  flashPanel("#monitor-compose");
+  let session = null;
 
   try {
+    const symbol = $("#monitor-symbol").value.trim().toUpperCase();
+    const side = $("#monitor-side").value;
+    const entry = $("#monitor-entry").value.trim();
+    const stopLoss = $("#monitor-sl").value.trim();
+    const takeProfit = $("#monitor-tp").value.trim();
+
+    if (!symbol || !entry || !stopLoss || !takeProfit) return;
+
     const params = new URLSearchParams({ symbol, side, entry, stopLoss, takeProfit });
-    const objectiveHorizon = readOptionalText("#monitor-horizon");
     const leverage = readOptionalPositiveNumber("#monitor-leverage", "leverage");
     const positionSizeUsd = readOptionalPositiveNumber("#monitor-size", "position size");
-    if (objectiveHorizon) params.set("objectiveHorizon", objectiveHorizon);
+    const objectiveHorizon = readOptionalString("#monitor-horizon");
+
     if (leverage !== undefined) params.set("leverage", String(leverage));
     if (positionSizeUsd !== undefined) params.set("positionSizeUsd", String(positionSizeUsd));
+    if (objectiveHorizon) params.set("objectiveHorizon", objectiveHorizon);
 
-    const source = new EventSource(`/api/monitor/stream?${params}`);
-    state.monitorSource = source;
+    session = {
+      id: state.nextMonitorId++,
+      symbol,
+      pair: `${symbol}-USD`,
+      side,
+      entry: Number(entry),
+      stopLoss: Number(stopLoss),
+      takeProfit: Number(takeProfit),
+      leverage: leverage ?? state.defaults?.leverage ?? null,
+      positionSizeUsd: positionSizeUsd ?? state.defaults?.positionSizeUsd ?? null,
+      objectiveHorizon: objectiveHorizon ?? state.defaults?.objectiveHorizon ?? null,
+      source: null,
+      snapshot: null,
+      statusText: `connecting ${symbol} ${side.toLowerCase()} stream`,
+      active: true,
+      connected: false,
+      stopReason: "",
+      startedAt: Date.now()
+    };
 
-    show($("#monitor-stop-btn"));
-    $("#monitor-start-btn").disabled = true;
-    $("#monitor-live").innerHTML = `<div class="loading">Connecting<span class="dots"></span></div>`;
+    state.monitorSessions.set(session.id, session);
+    renderMonitorBoard(session.id);
 
-    source.addEventListener("baseline", (e) => {
-      const data = JSON.parse(e.data);
-      $("#monitor-live").innerHTML = `<div class="text-muted" style="padding:12px">Baseline built for ${data.trade?.pair ?? symbol}. Waiting for first tick...</div>`;
+    const source = new EventSource(`/api/monitor/stream?${params.toString()}`);
+    session.source = source;
+    $("#monitor-echo").textContent = `Opening ${symbol} ${side} | ${params.get("leverage") ?? "default"}x | ${params.get("positionSizeUsd") ?? "default"} USDC | ${params.get("objectiveHorizon") ?? "default"}m`;
+
+    source.addEventListener("baseline", event => {
+      const data = JSON.parse(event.data);
+      if (!state.monitorSessions.has(session.id)) return;
+      session.connected = true;
+      session.pair = data.trade?.pair ?? session.pair;
+      session.statusText = `baseline ready for ${session.pair}`;
+      renderMonitorBoard(session.id);
     });
 
-    source.addEventListener("snapshot", (e) => {
-      const snap = JSON.parse(e.data);
-      $("#monitor-live").innerHTML = renderMonitorSnapshot(snap);
-    });
+    source.addEventListener("snapshot", event => {
+      const snapshot = JSON.parse(event.data);
+      if (!state.monitorSessions.has(session.id)) return;
+      session.snapshot = snapshot;
+      session.connected = true;
+      session.pair = snapshot.trade?.pair ?? session.pair;
+      session.statusText = `${prettyToken(snapshot.healthStatus ?? "live")} / ${prettyToken(snapshot.managementAction ?? "hold")}`;
+      renderMonitorBoard(session.id);
 
-    source.addEventListener("error", () => {
-      if (source.readyState === EventSource.CLOSED) {
-        $("#monitor-live").innerHTML += `<div class="error-msg">Connection closed.</div>`;
-        resetMonitorButtons();
+      const terminalAction = String(snapshot.managementAction ?? "").toUpperCase();
+      if (terminalAction === "STOP_HIT" || terminalAction === "TARGET_HIT") {
+        stopMonitorSession(session.id, prettyToken(terminalAction));
       }
     });
 
     source.onerror = () => {
-      if (source.readyState === EventSource.CLOSED) resetMonitorButtons();
+      if (!state.monitorSessions.has(session.id)) return;
+
+      if (source.readyState === EventSource.CLOSED) {
+        stopMonitorSession(session.id, "connection closed");
+        return;
+      }
+
+      session.connected = false;
+      session.statusText = "reconnecting";
+      renderMonitorBoard(session.id);
     };
-  } catch (err) {
-    $("#monitor-live").innerHTML = `<div class="error-msg">${err.message}</div>`;
+  } catch (error) {
+    if (session && state.monitorSessions.has(session.id)) {
+      state.monitorSessions.delete(session.id);
+      renderMonitorBoard();
+    }
+    $("#monitor-echo").textContent = `Monitor error: ${error.message}`;
   }
 }
 
-function stopMonitor() {
-  if (state.monitorSource) {
-    state.monitorSource.close();
-    state.monitorSource = null;
+function stopMonitorSession(id, reason = "stopped") {
+  const session = state.monitorSessions.get(id);
+  if (!session) return false;
+
+  if (session.source) {
+    session.source.close();
+    session.source = null;
   }
-  resetMonitorButtons();
+
+  session.active = false;
+  session.connected = false;
+  session.stopReason = reason;
+  session.statusText = reason;
+  renderMonitorBoard(id);
+  return true;
 }
 
-function resetMonitorButtons() {
-  hide($("#monitor-stop-btn"));
-  $("#monitor-start-btn").disabled = false;
+function stopAllMonitorSessions(reason = "stopped") {
+  let stopped = 0;
+
+  state.monitorSessions.forEach(session => {
+    if (!session.active) return;
+
+    if (session.source) {
+      session.source.close();
+      session.source = null;
+    }
+
+    session.active = false;
+    session.connected = false;
+    session.stopReason = reason;
+    session.statusText = reason;
+    stopped += 1;
+  });
+
+  renderMonitorBoard();
+  return stopped;
 }
 
-function renderMonitorSnapshot(snap) {
-  const m = snap.metrics ?? {};
-  const trade = snap.trade ?? {};
-  const side = trade.side;
-  const isLong = side === "LONG";
+function removeMonitorSession(id) {
+  const session = state.monitorSessions.get(id);
+  if (!session) return;
 
-  // Action banner
-  const actionBg = {
-    HOLD: "rgba(63,185,80,0.08)", AT_RISK: "rgba(210,153,34,0.12)", EXIT_EARLY: "rgba(248,81,73,0.12)",
-    MOVE_TO_BREAKEVEN: "rgba(88,166,255,0.1)", TAKE_PARTIAL: "rgba(88,166,255,0.1)",
-    STOP_HIT: "rgba(188,140,255,0.12)", TARGET_HIT: "rgba(188,140,255,0.12)"
-  };
+  if (session.source) {
+    session.source.close();
+  }
 
-  let html = `<div class="monitor-action-banner" style="background:${actionBg[snap.managementAction] ?? "transparent"}">
-    ${healthBadge(snap.healthStatus)}
-    ${actionBadge(snap.managementAction)}
-    <span class="text-secondary" style="font-size:12px;margin-left:auto">${fmtDuration(m.timeInTradeSeconds)}</span>
-  </div>`;
+  state.monitorSessions.delete(id);
+  renderMonitorBoard();
+}
 
-  // Trade header
-  html += `<div class="signal-header" style="margin-bottom:var(--gap)">
-    <span class="signal-pair">${trade.pair}</span>
-    ${signalBadge(side)}
-    <span class="text-muted">entry ${fmtPrice(trade.entry)} · sl ${fmtPrice(trade.stopLoss)} · tp ${fmtPrice(trade.takeProfit)}</span>
-  </div>`;
+function renderMonitorBoard(flashId) {
+  const sessions = Array.from(state.monitorSessions.values()).sort((left, right) => right.startedAt - left.startedAt);
+  const board = $("#monitor-board");
 
-  html += `<div class="monitor-grid">`;
+  board.innerHTML = sessions.length
+    ? sessions.map(renderMonitorSessionCard).join("")
+    : `<div class="empty-state">no active monitor sessions</div>`;
 
-  // P&L card
-  const grossPnl = m.grossUnrealizedPnlPct ?? 0;
-  html += `<div class="card">
-    <div class="card-header">P&L</div>
-    <div class="monitor-pnl ${pnlClass(grossPnl)}">${fmtSignedPct(grossPnl)}</div>
-    <div style="margin-top:8px">
-      <div class="data-grid">
-        <div class="data-item"><span class="data-label">Gross</span><span class="data-value ${pnlClass(grossPnl)}">${fmtSignedPct(grossPnl)}</span></div>
-        <div class="data-item"><span class="data-label">Net</span><span class="data-value ${pnlClass(m.netUnrealizedPnlPct ?? 0)}">${fmtSignedPct(m.netUnrealizedPnlPct)}</span></div>
-        <div class="data-item"><span class="data-label">R</span><span class="data-value ${pnlClass(m.currentR ?? 0)}">${fmtSigned(m.currentR)}</span></div>
-        ${m.grossUnrealizedPnlUsd != null ? `<div class="data-item"><span class="data-label">Gross USD</span><span class="data-value ${pnlClass(m.grossUnrealizedPnlUsd)}">${fmtSignedUsd(m.grossUnrealizedPnlUsd)}</span></div>` : ""}
-        <div class="data-item"><span class="data-label">MFE</span><span class="data-value text-green">${fmtSignedPct(m.maxFavorableExcursionPct)}</span></div>
-        <div class="data-item"><span class="data-label">MAE</span><span class="data-value text-red">-${fmtPct(m.maxAdverseExcursionPct)}</span></div>
+  renderMonitorStatusBar(sessions);
+
+  if (flashId && state.monitorSessions.has(flashId)) {
+    flashPanel(`#monitor-session-${flashId}`);
+  }
+}
+
+function renderMonitorStatusBar(sessions = Array.from(state.monitorSessions.values())) {
+  const active = sessions.filter(session => session.active).length;
+  const connected = sessions.filter(session => session.active && session.connected).length;
+  const stopped = sessions.filter(session => !session.active).length;
+
+  const summaryBits = [
+    `<span>${active} active trade${active === 1 ? "" : "s"}</span>`,
+    `<span>${connected} connected stream${connected === 1 ? "" : "s"}</span>`
+  ];
+
+  if (!sessions.length) {
+    summaryBits.push("<span>board empty</span>");
+  } else if (stopped > 0) {
+    summaryBits.push(`<span>${stopped} stopped</span>`);
+  } else {
+    summaryBits.push(`<span>${sessions.length} on board</span>`);
+  }
+
+  $("#monitor-summary").innerHTML = summaryBits.join("");
+
+  $("#monitor-stop-all-btn").disabled = active === 0;
+
+  if (!sessions.length) {
+    $("#monitor-echo").textContent = state.defaults
+      ? `Ready: ${state.defaults.leverage}x / ${fN(state.defaults.positionSizeUsd, 0)} USDC / ${state.defaults.objectiveHorizon}m`
+      : "No active monitor sessions.";
+    return;
+  }
+
+  const visiblePairs = sessions
+    .filter(session => session.active)
+    .slice(0, 3)
+    .map(session => session.symbol)
+    .join(", ");
+
+  if (active > 0) {
+    $("#monitor-echo").textContent = `${active} active trade${active === 1 ? "" : "s"}${visiblePairs ? ` | ${visiblePairs}` : ""}`;
+    return;
+  }
+
+  $("#monitor-echo").textContent = `${stopped} stopped trade${stopped === 1 ? "" : "s"} on board`;
+}
+
+function renderMonitorSessionCard(session) {
+  const stateBadge = session.active
+    ? badge(session.connected ? "Live" : "Opening", session.connected ? "badge-good" : "badge-warn")
+    : badge(prettyToken(session.stopReason || "stopped"), "badge-muted");
+
+  const summaryValues = [
+    `<span>entry ${fP(session.entry)}</span>`,
+    `<span>sl ${fP(session.stopLoss)}</span>`,
+    `<span>tp ${fP(session.takeProfit)}</span>`,
+    session.leverage != null ? `<span>${fN(session.leverage, 0)}x</span>` : "",
+    session.positionSizeUsd != null ? `<span>${fN(session.positionSizeUsd, 0)} usdc</span>` : "",
+    session.objectiveHorizon ? `<span>${esc(session.objectiveHorizon)}m</span>` : ""
+  ].filter(Boolean).join("");
+
+  const actionLabel = session.active ? "Stop" : "Remove";
+  const actionTone = session.active ? "btn-danger" : "btn-secondary";
+  const actionKind = session.active ? "stop" : "remove";
+
+  return `
+    <article id="monitor-session-${session.id}" class="monitor-card ${session.active ? "is-live" : "is-stopped"}">
+      <div class="monitor-card-head">
+        <div>
+          <div class="monitor-card-label">trade ${String(session.id).padStart(2, "0")}</div>
+          <div class="pair-line">
+            <span class="pair-name">${esc(session.symbol)}</span>
+            <span class="pair-meta">${esc(session.side.toLowerCase())}</span>
+          </div>
+        </div>
+        <div class="monitor-card-bar">
+          ${signalBadge(session.side)}
+          ${stateBadge}
+          <button type="button" class="${actionTone}" data-monitor-id="${attr(session.id)}" data-monitor-action="${actionKind}">${actionLabel}</button>
+        </div>
       </div>
-    </div>
-  </div>`;
-
-  // Risk card
-  html += `<div class="card">
-    <div class="card-header">Risk & Market</div>
-    <div class="data-grid">
-      <div class="data-item"><span class="data-label">Mark Price</span><span class="data-value">${fmtPrice(m.markPrice)}</span></div>
-      <div class="data-item"><span class="data-label">Est Exit</span><span class="data-value">${fmtPrice(m.estimatedExitPrice)}</span></div>
-      <div class="data-item"><span class="data-label">To Stop</span><span class="data-value text-red">${fmtPrice(m.distanceToStopPrice)} (${fmtPct(m.distanceToStopPct)})</span></div>
-      <div class="data-item"><span class="data-label">To Target</span><span class="data-value text-green">${fmtPrice(m.distanceToTargetPrice)} (${fmtPct(m.distanceToTargetPct)})</span></div>
-      ${m.holdingProgressPct != null ? `<div class="data-item"><span class="data-label">Holding</span><span class="data-value">${fmtPct(m.holdingProgressPct)} of expected</span></div>` : ""}
-      <div class="data-item"><span class="data-label">Premium</span><span class="data-value">${fmtPct(m.premiumPct)}</span></div>
-      ${m.totalExecutionCostPct != null ? `<div class="data-item"><span class="data-label">Exec Cost</span><span class="data-value">${fmtPct(m.totalExecutionCostPct)}</span></div>` : ""}
-    </div>
-  </div>`;
-
-  html += `</div>`; // end monitor-grid
-
-  // Setup health
-  const analysisAge = snap.analysisUpdatedAtMs ? Math.floor((Date.now() - snap.analysisUpdatedAtMs) / 1000) : null;
-  html += `<div class="card">
-    <div class="card-header">Setup Health</div>
-    <div class="data-grid">
-      <div class="data-item"><span class="data-label">Analysis</span><span class="data-value">${signalBadge(snap.analysisSignal)} ${snap.analysisConfidence ?? "—"}%</span></div>
-      <div class="data-item"><span class="data-label">Grade</span><span class="data-value">${gradeBadge(snap.analysisSetupGrade)}</span></div>
-      <div class="data-item"><span class="data-label">Regime</span><span class="data-value">${regimeBadge(snap.marketRegime)}</span></div>
-      ${snap.marketTradeability ? `<div class="data-item"><span class="data-label">Tradeability</span><span class="data-value">${tradeabilityBadge(snap.marketTradeability)}</span></div>` : ""}
-      ${snap.setupPlaybook ? `<div class="data-item"><span class="data-label">Playbook</span><span class="data-value badge-sm badge-regime">${snap.setupPlaybook.replace(/_/g, " ")}</span></div>` : ""}
-      ${snap.sequenceStatus ? `<div class="data-item"><span class="data-label">Sequence</span><span class="data-value"><span class="badge badge-sm ${sequenceBadgeClass(snap.sequenceStatus)}">${snap.sequenceStatus}</span></span></div>` : ""}
-      ${snap.entryReadiness ? `<div class="data-item"><span class="data-label">Readiness</span><span class="data-value"><span class="badge badge-sm ${readinessBadgeClass(snap.entryReadiness)}">${snap.entryReadiness.replace(/_/g, " ")}</span></span></div>` : ""}
-      ${analysisAge != null ? `<div class="data-item"><span class="data-label">Analysis Age</span><span class="data-value">${analysisAge}s</span></div>` : ""}
-    </div>
-  </div>`;
-
-  // Reasons
-  const reasons = [...(snap.healthReasons ?? []), ...(snap.managementReasons ?? [])].filter(Boolean);
-  if (reasons.length > 0) {
-    html += `<div class="card">
-      <div class="card-header">Reasons</div>
-      <ul class="rationale-list">
-        ${reasons.slice(0, 6).map(r => `<li class="rationale-item">${escapeHtml(r)}</li>`).join("")}
-      </ul>
-    </div>`;
-  }
-
-  return html;
+      <div class="monitor-card-summary">
+        <div class="monitor-card-values">${summaryValues}</div>
+        <div class="monitor-status">${esc(session.statusText)}</div>
+      </div>
+      <div class="monitor-card-body">
+        ${session.snapshot ? renderMonitor(session.snapshot) : `<div class="monitor-placeholder">${esc(session.statusText)}</div>`}
+      </div>
+    </article>`;
 }
 
-// ================================================================
-// LEARNING VIEW
-// ================================================================
+function renderMonitor(snapshot) {
+  const metrics = snapshot.metrics ?? {};
+  const trade = snapshot.trade ?? {};
+  const grossPnl = metrics.grossUnrealizedPnlPct ?? 0;
+  const railPct = thermoPos(metrics, trade);
+  const analysisAge = snapshot.analysisUpdatedAtMs ? Math.floor((Date.now() - snapshot.analysisUpdatedAtMs) / 1000) : null;
+  const health = String(snapshot.healthStatus ?? "").toUpperCase();
+  const action = String(snapshot.managementAction ?? "").toUpperCase();
+  const reasons = [...(snapshot.healthReasons ?? []), ...(snapshot.managementReasons ?? [])].filter(Boolean);
+
+  return `
+    <div class="monitor-grid">
+      <section class="board-box monitor-strip">
+        <div class="board-box-head">
+          <span>live packet</span>
+          <span>${fDur(metrics.timeInTradeSeconds)} in trade</span>
+        </div>
+        <div class="pair-line">
+          <span class="pair-name">${esc(trade.pair ?? "—")}</span>
+          <span class="pair-meta">${metrics.grossUnrealizedPnlUsd != null ? `${fSUsd(metrics.grossUnrealizedPnlUsd)} USDC` : "—"}</span>
+        </div>
+        <div class="badge-row">
+          ${signalBadge(trade.side)}
+          ${badge(prettyToken(health), statusTone(health, ["INTACT"], ["DEGRADING", "MIXED"]))}
+          ${badge(prettyToken(action), actionTone(action))}
+        </div>
+        <div class="metric-strip">
+          ${metricCell("gross", `<span class="${pC(grossPnl)}">${fSPct(grossPnl)}</span>`)}
+          ${metricCell("net", `<span class="${pC(metrics.netUnrealizedPnlPct ?? 0)}">${fSPct(metrics.netUnrealizedPnlPct)}</span>`)}
+          ${metricCell("R", fS(metrics.currentR))}
+          ${metricCell("mark", fP(metrics.markPrice))}
+          ${metricCell("to stop", `<span class="c-red">${fPct(metrics.distanceToStopPct)}</span>`)}
+          ${metricCell("to target", `<span class="c-green">${fPct(metrics.distanceToTargetPct)}</span>`)}
+          ${metricCell("mfe", `<span class="c-green">${fSPct(metrics.maxFavorableExcursionPct)}</span>`)}
+          ${metricCell("mae", `<span class="c-red">-${fPct(metrics.maxAdverseExcursionPct)}</span>`)}
+        </div>
+        <div class="progress-shell">
+          <div class="progress-rail" style="--pct:${railPct}">
+            <span class="progress-marker"></span>
+          </div>
+          <div class="progress-labels">
+            <span>SL ${fP(trade.stopLoss)}</span>
+            <span>Entry ${fP(trade.entry)}</span>
+            <span>TP ${fP(trade.takeProfit)}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="board-box">
+        <div class="board-box-head">
+          <span>slow-lane context</span>
+          <span>${analysisAge != null ? `${analysisAge}s ago` : "waiting"}</span>
+        </div>
+        <div class="kv-grid">
+          ${snapshot.analysisSetupGrade ? kvRow("grade", badge(`Grade ${snapshot.analysisSetupGrade}`, gradeTone(snapshot.analysisSetupGrade))) : ""}
+          ${snapshot.marketRegime ? kvRow("regime", esc(prettyToken(snapshot.marketRegime))) : ""}
+          ${snapshot.marketTradeability ? kvRow("tradeability", badge(prettyToken(snapshot.marketTradeability), tradeabilityTone(snapshot.marketTradeability))) : ""}
+          ${snapshot.analysisConfidence != null ? kvRow("confidence", `<span class="${cC(snapshot.analysisConfidence)}">${snapshot.analysisConfidence}%</span>`) : ""}
+          ${snapshot.sequenceStatus ? kvRow("sequence", badge(prettyToken(snapshot.sequenceStatus), sequenceTone(snapshot.sequenceStatus))) : ""}
+          ${metrics.holdingProgressPct != null ? kvRow("hold progress", fPct(metrics.holdingProgressPct)) : ""}
+          ${metrics.premiumPct != null ? kvRow("premium", fPct(metrics.premiumPct)) : ""}
+        </div>
+      </section>
+
+      <section class="board-box">
+        <div class="board-box-head">
+          <span>reasons</span>
+          <span>${reasons.length}</span>
+        </div>
+        ${reasons.length ? listMarkup(reasons.slice(0, 8), "mon-reasons") : `<div class="dim">waiting for health and management reasons</div>`}
+      </section>
+    </div>`;
+}
+
+function thermoPos(metrics, trade) {
+  const mark = metrics.markPrice;
+  const stopLoss = trade.stopLoss;
+  const takeProfit = trade.takeProfit;
+  if (mark == null || stopLoss == null || takeProfit == null || takeProfit === stopLoss) {
+    return 50;
+  }
+  return Math.max(2, Math.min(98, ((mark - stopLoss) / (takeProfit - stopLoss)) * 100));
+}
 
 function initLearning() {
-  $("#learning-load-btn").addEventListener("click", async () => {
-    show($("#learning-loading"));
-    $("#learning-result").innerHTML = "";
-    $("#learning-load-btn").disabled = true;
-
-    try {
-      const data = await api("GET", "/learning/stats");
-      $("#learning-result").innerHTML = renderLearningStats(data);
-    } catch (err) {
-      $("#learning-result").innerHTML = `<div class="error-msg">${err.message}</div>`;
-    } finally {
-      hide($("#learning-loading"));
-      $("#learning-load-btn").disabled = false;
-    }
+  $("#learning-form").addEventListener("submit", event => {
+    event.preventDefault();
+    void loadLearning();
   });
 }
 
-function renderLearningStats(data) {
-  const ov = data.overview ?? {};
-  const winRate = (ov.winRate ?? 0) * 100;
-  const wrClass = winRate >= 55 ? "text-green" : winRate >= 45 ? "text-amber" : "text-red";
-  const avgPnl = ov.avgPnlUsd ?? 0;
+async function loadLearning() {
+  show($("#learning-loading"));
+  $("#learning-result").innerHTML = "";
+  $("#learning-load-btn").disabled = true;
 
-  let html = `<div class="stats-row">
-    <div class="stat-card"><div class="stat-value">${ov.totalSamples ?? 0}</div><div class="stat-label">Samples</div></div>
-    <div class="stat-card"><div class="stat-value text-green">${ov.wins ?? 0}</div><div class="stat-label">Wins</div></div>
-    <div class="stat-card"><div class="stat-value text-red">${ov.losses ?? 0}</div><div class="stat-label">Losses</div></div>
-    <div class="stat-card"><div class="stat-value ${wrClass}">${fmtPct(winRate)}</div><div class="stat-label">Win Rate</div></div>
-    <div class="stat-card"><div class="stat-value ${pnlClass(avgPnl)}">${fmtSignedUsd(avgPnl)}</div><div class="stat-label">Avg PnL</div></div>
-  </div>`;
-
-  // Bucket breakdown
-  const rows = data.bucketReport?.rows ?? [];
-  if (rows.length > 0) {
-    html += `<div class="card">
-      <div class="card-header">A/B Buckets (last ${data.lookbackDays ?? 14}d)</div>
-      <table class="data-table">
-        <thead><tr>
-          <th>Timeframe</th><th>Horizon</th><th class="text-right">Samples</th>
-          <th class="text-right">W</th><th class="text-right">L</th>
-          <th class="text-right">Win%</th><th class="text-right">Avg PnL</th>
-        </tr></thead>
-        <tbody>
-          ${rows.map(r => {
-            const wr = (r.winRate ?? 0) * 100;
-            const wc = wr >= 55 ? "text-green" : wr >= 45 ? "text-amber" : "text-red";
-            return `<tr>
-              <td class="text-cyan">${r.timeframe}</td>
-              <td class="text-muted">${r.horizonBucket}</td>
-              <td class="text-right">${r.samples}</td>
-              <td class="text-right text-green">${r.wins}</td>
-              <td class="text-right text-red">${r.losses}</td>
-              <td class="text-right ${wc}">${fmtPct(wr)}</td>
-              <td class="text-right ${pnlClass(r.avgPnlUsd ?? 0)}">${fmtSignedUsd(r.avgPnlUsd)}</td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>`;
+  try {
+    const lookbackDays = readOptionalPositiveNumber("#learning-lookback", "lookback days");
+    const data = await api("GET", `/learning/stats?lookbackDays=${lookbackDays ?? 14}`);
+    $("#learning-result").innerHTML = renderLearning(data);
+  } catch (error) {
+    $("#learning-result").innerHTML = errorMarkup(error.message);
+  } finally {
+    hide($("#learning-loading"));
+    $("#learning-load-btn").disabled = false;
   }
-
-  return html;
 }
 
-// ================================================================
-// SETTINGS VIEW
-// ================================================================
+function renderLearning(data) {
+  const overview = data.overview ?? {};
+  const winRate = (overview.winRate ?? 0) * 100;
+  const rows = data.bucketReport?.rows ?? [];
+
+  const tableMarkup = rows.length
+    ? `<div class="table-shell">
+        <table class="learn-table">
+          <thead>
+            <tr>
+              <th>tf</th>
+              <th>horizon</th>
+              <th class="r">n</th>
+              <th class="r">wins</th>
+              <th class="r">losses</th>
+              <th class="r">win%</th>
+              <th class="r">avg pnl</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                <td>${esc(row.timeframe)}</td>
+                <td>${esc(row.horizonBucket)}</td>
+                <td class="r">${row.samples}</td>
+                <td class="r c-green">${row.wins}</td>
+                <td class="r c-red">${row.losses}</td>
+                <td class="r ${cC((row.winRate ?? 0) * 100)}">${fPct((row.winRate ?? 0) * 100)}</td>
+                <td class="r ${pC(row.avgPnlUsd ?? 0)}">${fSUsd(row.avgPnlUsd)}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`
+    : `<div class="board-box"><div class="dim">no evaluated outcome buckets for this lookback window</div></div>`;
+
+  return `
+    <div class="learning-board">
+      <div class="summary-strip">
+        ${summaryCell("samples", overview.totalSamples ?? 0)}
+        ${summaryCell("wins", `<span class="c-green">${overview.wins ?? 0}</span>`)}
+        ${summaryCell("losses", `<span class="c-red">${overview.losses ?? 0}</span>`)}
+        ${summaryCell("win rate", `<span class="${cC(winRate)}">${fPct(winRate)}</span>`)}
+        ${summaryCell("avg pnl", `<span class="${pC(overview.avgPnlUsd ?? 0)}">${fSUsd(overview.avgPnlUsd)}</span>`)}
+        ${summaryCell("lookback", `${data.lookbackDays ?? 14}d`)}
+      </div>
+      ${tableMarkup}
+    </div>`;
+}
 
 async function loadSettings() {
   try {
-    const defaults = await ensureDefaultsLoaded();
-    applyDefaultsToSettings(defaults);
-  } catch (err) {
-    toast(err.message, "error");
+    const defaults = await ensureDefaults();
+    syncDefaultInputs(defaults);
+  } catch (error) {
+    toast(error.message, "error");
   }
 }
 
 function initSettings() {
-  $("#settings-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  $("#settings-form").addEventListener("submit", async event => {
+    event.preventDefault();
     const status = $("#settings-status");
     hide(status);
 
@@ -796,45 +1226,34 @@ function initSettings() {
         objectiveHorizon: $("#settings-horizon").value.trim(),
         aiModel: $("#settings-ai-model").value.trim()
       });
-      state.defaults = saved;
-      applyDefaultsToSettings(saved);
-      applyDefaultsToRuntimeForms(saved, true);
-      status.textContent = "Saved";
+
+      setDefaults(saved);
+      status.textContent = "saved";
       status.className = "status-msg success";
       show(status);
-      setTimeout(() => hide(status), 2000);
-    } catch (err) {
-      status.textContent = err.message;
+      toast("Defaults updated");
+    } catch (error) {
+      status.textContent = error.message;
       status.className = "status-msg error";
       show(status);
     }
   });
 }
 
-// ================================================================
-// UTILITIES
-// ================================================================
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// ================================================================
-// INIT
-// ================================================================
-
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
+  initKeyboard();
+  initActionDelegates();
   initAnalyze();
   initScan();
   initMonitor();
   initLearning();
   initSettings();
-  void ensureDefaultsLoaded().then((defaults) => {
-    applyDefaultsToRuntimeForms(defaults);
-  }).catch((err) => {
-    toast(err.message, "error");
-  });
+
+  $("#qa-symbol").focus();
+  renderMonitorBoard();
+
+  void ensureDefaults()
+    .then(() => {})
+    .catch(error => toast(error.message, "error"));
 });

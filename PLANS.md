@@ -1,5 +1,65 @@
 # Project Plan
 
+## Task: Realign the analysis comparison layout and header navigation (2026-03-16)
+- [x] Re-read the current comparison renderer and identify the content that should remain visible versus move behind disclosure
+- [x] Rework the single-pair analysis into paired comparison rows so the app and AI columns align cleanly
+- [x] Move the primary page navigation into the brand row and keep it right-aligned without breaking smaller screens
+- [x] Re-run build/tests after the layout cleanup
+
+## Task: Split single-pair analysis into app and AI columns (2026-03-16)
+- [x] Re-read the current single-pair analysis renderer and identify which sections belong in the deterministic app column versus the AI column
+- [x] Restructure the analysis result into a two-column comparison layout with a clear app analysis side and AI response side
+- [x] Show a useful empty state when AI advice is unavailable instead of collapsing the second column
+- [x] Re-run build/tests after the analysis layout update
+
+## Task: Split scanner and monitor into dedicated pages and support multiple live trades (2026-03-16)
+- [x] Re-read the current overview, scanner, and monitor UI/runtime flow and identify the single-monitor assumptions that must change
+- [x] Move scanner and open-trade monitoring out of the overview into their own pages while keeping analyze as the default page
+- [x] Tighten form field widths so compact inputs like symbol, leverage, and horizon stop consuming unnecessary horizontal space
+- [x] Replace the single monitor stream slot with a multi-trade monitor board that can run and stop multiple sessions independently
+- [x] Update current-state docs for the new page model and re-run build/tests
+
+## Task: Remove remaining boxed surfaces from the web dashboard (2026-03-16)
+- [x] Re-read the current overview shell and identify which top-level wrappers still present as separate cards
+- [x] Flatten the app bar, summary strip, overview grid, and secondary pages so they read as aligned sections with separators instead of boxed panels
+- [x] Tighten spacing and control sizing further so more information fits at a glance without hurting readability
+- [x] Re-run build/tests after the layout flattening pass
+
+## Task: Flatten the dashboard surface and reduce visual bulk (2026-03-16)
+- [x] Re-read the current frontend structure and identify which remaining containers still present as nested cards
+- [x] Collapse the overview into a more unified surface with separators instead of isolated panel blocks where possible
+- [x] Reduce spacing, control heights, and section padding so more information fits without hurting scanability
+- [x] Keep existing behavior intact while tightening the analyze, monitor, scanner, learning, and settings presentation
+- [x] Re-run build/tests after the visual flattening pass
+
+## Task: Flatten the overview dashboard into a cleaner grid layout (2026-03-16)
+- [x] Re-read `PLANS.md`, `docs/CURRENT_STATE.md`, and current frontend files to confirm the overview-first runtime still fits the product
+- [x] Rework the overview layout so Analyze, Monitor, and Scanner use a clearly aligned grid with the scanner spanning the full width below the top row
+- [x] Replace the remaining terminal/card styling with a flatter dashboard presentation that uses lighter surfaces and less decorative chrome
+- [x] Preserve existing analyze, scan, monitor, learning, and settings behavior while adapting the UI renderers to the flatter visual system
+- [x] Run build/tests after the redesign and keep docs aligned if the runtime layout changes
+
+## Task: Rebuild the web UI around a single-screen overview dashboard (2026-03-16)
+- [x] Re-read `PLANS.md`, `docs/CURRENT_STATE.md`, and current frontend files, then incorporate researched dashboard principles into the next layout pass
+- [x] Consolidate Analyze, Scanner, and Monitor into one overview screen while keeping Learning and Settings as secondary pages
+- [x] Reduce navigational chrome and decorative framing so the screen prioritizes overview metrics, tables, and direct controls
+- [x] Refine renderers and layout density so the overview can be scanned without drilling into multiple tabs
+- [x] Run build/tests and update `docs/CURRENT_STATE.md` for the new runtime layout
+
+## Task: Compress the web UI into a denser CLI-style console layout (2026-03-16)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then inspect which current UI regions are consuming space without improving scanability
+- [x] Collapse oversized header/card treatments into a compact terminal shell with inline status context
+- [x] Rewrite analyze, scanner, and monitor presentation into denser rows/columns that prioritize at-a-glance reading
+- [x] Tighten typography, spacing, and controls so the interface feels closer to a CLI console than a marketing page
+- [x] Re-run build/tests and refresh current-state docs only if the runtime description changes materially
+
+## Task: Redesign the web UI around a split-screen cyberterminal layout (2026-03-16)
+- [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then inspect the current static frontend structure and note any code/doc mismatches
+- [x] Rework the web shell into distinct Analyze / Scanner / Monitor / Learning / Settings workspaces while preserving existing API behavior
+- [x] Replace the current styling with a stronger terminal / pixel / cypherpunk visual system that still works on desktop and mobile
+- [x] Update the client-side rendering and interaction code to fit the new layout without regressing analyze, scan, monitor, learning, or settings flows
+- [x] Refresh `docs/CURRENT_STATE.md` for the actual tab layout and run build verification
+
 ## Task: Allow analyze/monitor override of saved defaults (2026-03-13)
 - [x] Re-read `PLANS.md` and `docs/CURRENT_STATE.md`, then trace how saved defaults currently flow through web analyze and monitor paths
 - [x] Expose leverage / position size / horizon overrides in the analyze and monitor web forms without exposing AI model there
