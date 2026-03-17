@@ -1,5 +1,32 @@
 # Project Plan
 
+## Task: Simplify internal analysis terminal chrome (2026-03-16)
+- [x] Re-read the current terminal-pane markup and identify which internal labels are redundant with the pane headers
+- [x] Remove the extra terminal headers while keeping the analysis rows and reason groups scannable
+- [x] Re-run syntax/build/tests after the simplification pass
+
+## Task: Restyle analysis columns as light terminal panels (2026-03-16)
+- [x] Re-read the current analysis layout and recover the old CLI presentation language from local code/history
+- [x] Apply that terminal framing to the application and AI analysis columns while keeping the current lighter palette
+- [x] Re-run syntax/build/tests after the styling pass
+
+## Task: Refactor the vanilla frontend into focused modules (2026-03-16)
+- [x] Re-read the current frontend bootstrap and identify a module split that preserves behavior without introducing a framework
+- [x] Extract shared DOM/formatting/render helpers and page-specific renderers from `app.js` into focused ES modules
+- [x] Keep the browser bootstrap thin while preserving analyze, scanner, monitor, learning, and settings behavior
+- [x] Re-run syntax/build/tests after the frontend refactor
+
+## Task: Align analysis column headers from screenshot feedback (2026-03-16)
+- [x] Inspect the clipboard screenshot and current analysis layout to identify the exact header and spacing alignment defects
+- [x] Adjust the analysis column header and spacing system so both columns align cleanly and read as one grid
+- [x] Re-run syntax/build/tests after the header alignment fix
+
+## Task: Refocus the analysis UI around decision-first hierarchy (2026-03-16)
+- [x] Re-read the current analysis surface and identify which values must stay visible at a glance versus move behind on-demand detail
+- [x] Rebuild the single-pair result into a denser summary board with aligned application vs AI columns and stronger emphasis on the trade decision payload
+- [x] Tighten the related CSS so hierarchy comes from alignment, typography, and restraint instead of oversized blocks
+- [x] Re-run syntax/build/tests after the hierarchy pass
+
 ## Task: Realign the analysis comparison layout and header navigation (2026-03-16)
 - [x] Re-read the current comparison renderer and identify the content that should remain visible versus move behind disclosure
 - [x] Rework the single-pair analysis into paired comparison rows so the app and AI columns align cleanly
