@@ -24,12 +24,15 @@ export class WebServer {
   private readonly server: http.Server;
   private readonly staticDir: string;
   private readonly liveMarketData: LiveMarketDataPort;
+  private readonly reloadClients: Set<http.ServerResponse> = new Set();
+  private fileWatcher: fs.FSWatcher | undefined;
 
   constructor(deps: WebApiDeps & { liveMarketData: LiveMarketDataPort }) {
     this.handler = new WebApiHandler(deps);
     this.liveMarketData = deps.liveMarketData;
     this.staticDir = path.join(process.cwd(), "src/adapters/web/static");
     this.server = http.createServer((req, res) => void this.handleRequest(req, res));
+    this.watchStaticDir();
   }
 
   async start(port: number): Promise<void> {
@@ -42,6 +45,11 @@ export class WebServer {
   }
 
   close(): void {
+    this.fileWatcher?.close();
+    for (const client of this.reloadClients) {
+      client.end();
+    }
+    this.reloadClients.clear();
     this.server.close();
   }
 
@@ -103,8 +111,41 @@ export class WebServer {
       return;
     }
 
+    if (method === "GET" && pathname === "/api/monitor/sessions") {
+      const result = await this.handler.handleListMonitorSessions();
+      this.sendJson(res, 200, result);
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/monitor/sessions") {
+      const body = await readJsonBody(req);
+      const result = await this.handler.handleCreateMonitorSession(body);
+      this.sendJson(res, 200, result);
+      return;
+    }
+
+    if (method === "PATCH" && pathname.startsWith("/api/monitor/sessions/")) {
+      const id = pathname.slice("/api/monitor/sessions/".length);
+      const body = await readJsonBody(req);
+      const result = await this.handler.handleUpdateMonitorSession(id, body);
+      this.sendJson(res, 200, result);
+      return;
+    }
+
+    if (method === "DELETE" && pathname.startsWith("/api/monitor/sessions/")) {
+      const id = pathname.slice("/api/monitor/sessions/".length);
+      await this.handler.handleRemoveMonitorSession(id);
+      this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
     if (method === "GET" && pathname === "/api/monitor/stream") {
       await this.handleMonitorStream(query, req, res);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/__reload") {
+      this.handleReloadStream(req, res);
       return;
     }
 
@@ -196,6 +237,35 @@ export class WebServer {
     const candleSeconds = parseIntervalToMinutes(analysisInterval) * 60;
     const derivedSeconds = clamp(candleSeconds * 0.8, 3, 30);
     return Math.round(derivedSeconds * 1000);
+  }
+
+  private watchStaticDir(): void {
+    let debounce: NodeJS.Timeout | undefined;
+    try {
+      this.fileWatcher = fs.watch(this.staticDir, { recursive: true }, () => {
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(() => {
+          for (const client of this.reloadClients) {
+            client.write("data: reload\n\n");
+          }
+        }, 150);
+      });
+    } catch {
+      // fs.watch may not support recursive on all platforms — silently skip
+    }
+  }
+
+  private handleReloadStream(req: http.IncomingMessage, res: http.ServerResponse): void {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive"
+    });
+    res.write(":\n\n");
+    this.reloadClients.add(res);
+    req.on("close", () => {
+      this.reloadClients.delete(res);
+    });
   }
 
   private serveStatic(pathname: string, res: http.ServerResponse): void {

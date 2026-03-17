@@ -1,15 +1,15 @@
-import { esc } from "./dom.js";
+import { html } from "htm/preact";
 import { cC } from "./format.js";
 
 export function badge(text, tone = "badge-neutral", title = "") {
-  return `<span class="${tone}"${title ? ` title="${esc(title)}"` : ""}>${esc(text)}</span>`;
+  return html`<span class=${tone} title=${title || null}>${text}</span>`;
 }
 
 export function signalBadge(signal) {
   const normalized = String(signal ?? "").toUpperCase();
-  if (normalized === "LONG") return `<span class="signal-badge badge-good">${esc("Long")}</span>`;
-  if (normalized === "SHORT") return `<span class="signal-badge badge-bad">${esc("Short")}</span>`;
-  return `<span class="signal-badge badge-muted">${esc("No Trade")}</span>`;
+  if (normalized === "LONG") return html`<span class="signal-badge badge-good">Long</span>`;
+  if (normalized === "SHORT") return html`<span class="signal-badge badge-bad">Short</span>`;
+  return html`<span class="signal-badge badge-muted">No Trade</span>`;
 }
 
 export function gradeTone(grade) {
@@ -74,40 +74,40 @@ export function confidenceBandTone(value) {
 
 export function meter(value) {
   const width = Math.max(0, Math.min(100, Number(value ?? 0)));
-  return `<span class="meter"><span class="meter-fill ${cC(width)}" style="width:${width}%"></span></span>`;
+  return html`<span class="meter"><span class="meter-fill ${cC(width)}" style="width:${width}%"></span></span>`;
 }
 
 export function confidenceRow(label, value) {
-  return `<div class="mix-row"><span class="mix-name">${esc(label)}</span>${meter(value)}<span class="confidence-value ${cC(value ?? 0)}">${Math.round(value ?? 0)}</span></div>`;
+  return html`<div class="mix-row"><span class="mix-name">${label}</span>${meter(value)}<span class="confidence-value ${cC(value ?? 0)}">${Math.round(value ?? 0)}</span></div>`;
 }
 
 export function detailSection(title, content) {
-  if (!content) return "";
-  return `<section class="analysis-detail-section"><div class="detail-sub-head">${esc(title)}</div>${content}</section>`;
+  if (!content) return null;
+  return html`<section class="analysis-detail-section"><div class="detail-sub-head">${title}</div>${content}</section>`;
 }
 
 export function summaryCell(label, value) {
-  return `<div class="summary-cell"><div class="summary-label">${esc(label)}</div><div class="summary-value">${value}</div></div>`;
+  return html`<div class="summary-cell"><div class="summary-label">${label}</div><div class="summary-value">${value}</div></div>`;
 }
 
 export function topStat(label, value, note = "") {
-  return `<div class="top-stat"><div class="top-stat-label">${esc(label)}</div><div class="top-stat-value">${value}</div>${note ? `<div class="top-stat-note">${esc(note)}</div>` : ""}</div>`;
+  return html`<div class="top-stat"><div class="top-stat-label">${label}</div><div class="top-stat-value">${value}</div>${note ? html`<div class="top-stat-note">${note}</div>` : null}</div>`;
 }
 
 export function kvRow(label, value) {
-  return `<div class="kv-row"><span class="kv-key">${esc(label)}</span><span class="kv-value">${value}</span></div>`;
+  return html`<div class="kv-row"><span class="kv-key">${label}</span><span class="kv-value">${value}</span></div>`;
 }
 
 export function inspectPanel(title, content) {
-  if (!content) return "";
-  return `<details class="inspect-panel"><summary>${esc(title)}</summary><div class="inspect-body">${content}</div></details>`;
+  if (!content) return null;
+  return html`<details class="inspect-panel"><summary>${title}</summary><div class="inspect-body">${content}</div></details>`;
 }
 
 export function listMarkup(items, className = "mini-list") {
-  if (!items.length) return "";
-  return `<ul class="${className}">${items.map(item => `<li>${esc(item)}</li>`).join("")}</ul>`;
+  if (!items.length) return null;
+  return html`<ul class=${className}>${items.map(item => html`<li>${item}</li>`)}</ul>`;
 }
 
-export function errorMarkup(message) {
-  return `<div class="error-msg">${esc(message)}</div>`;
+export function errorBlock(message) {
+  return html`<div class="error-msg">${message}</div>`;
 }

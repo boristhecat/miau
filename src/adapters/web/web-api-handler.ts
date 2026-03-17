@@ -12,6 +12,7 @@ import { resolveAdaptiveTimeframes } from "../../application/timeframe-policy.js
 import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../../domain/trade-monitor-types.js";
 import type { PerpMarketSnapshot, Recommendation } from "../../domain/types.js";
 import type { TradeDefaultsStorePort } from "../../ports/trade-defaults-store-port.js";
+import type { MonitorSessionStorePort } from "../../ports/monitor-session-store-port.js";
 
 export interface WebApiDeps {
   recommendationUseCase: IGenerateRecommendationUseCase;
@@ -21,6 +22,7 @@ export interface WebApiDeps {
   buildBaselineUseCase: IBuildOpenTradeBaselineUseCase;
   evaluateOpenTradeUseCase: IEvaluateOpenTradeUseCase;
   tradeDefaultsStore: TradeDefaultsStorePort;
+  monitorSessionStore: MonitorSessionStorePort;
   aiAdviceUseCase?: IGenerateAiAdviceUseCase;
   aiEnabled: boolean;
 }
@@ -157,6 +159,63 @@ export class WebApiHandler {
     livePerpSnapshot?: PerpMarketSnapshot;
   }): Promise<{ snapshot: TradeMonitorSnapshot; analysisRecommendation: Recommendation }> {
     return this.deps.evaluateOpenTradeUseCase.execute(input);
+  }
+
+  async handleListMonitorSessions(): Promise<unknown> {
+    return this.deps.monitorSessionStore.listActive();
+  }
+
+  async handleCreateMonitorSession(body: Record<string, unknown>): Promise<unknown> {
+    const symbol = String(body.symbol ?? "").trim().toUpperCase();
+    if (!symbol) throw new HttpError(400, "Symbol is required.");
+    const side = String(body.side ?? "").toUpperCase() as "LONG" | "SHORT";
+    if (side !== "LONG" && side !== "SHORT") throw new HttpError(400, "Side must be LONG or SHORT.");
+    const entry = Number(body.entry);
+    const stopLoss = Number(body.stopLoss);
+    const takeProfit = Number(body.takeProfit);
+    if (!Number.isFinite(entry) || entry <= 0) throw new HttpError(400, "Invalid entry price.");
+    if (!Number.isFinite(stopLoss) || stopLoss <= 0) throw new HttpError(400, "Invalid stop loss.");
+    if (!Number.isFinite(takeProfit) || takeProfit <= 0) throw new HttpError(400, "Invalid take profit.");
+
+    return this.deps.monitorSessionStore.create({
+      symbol,
+      side,
+      entry,
+      stopLoss,
+      takeProfit,
+      leverage: body.leverage != null ? Number(body.leverage) : null,
+      positionSizeUsd: body.positionSizeUsd != null ? Number(body.positionSizeUsd) : null,
+      objectiveHorizon: body.objectiveHorizon != null ? String(body.objectiveHorizon) : null
+    });
+  }
+
+  async handleUpdateMonitorSession(id: string, body: Record<string, unknown>): Promise<unknown> {
+    if (!id) throw new HttpError(400, "Session ID is required.");
+    const fields: Record<string, unknown> = {};
+    if (body.entry !== undefined) {
+      const v = Number(body.entry);
+      if (!Number.isFinite(v) || v <= 0) throw new HttpError(400, "Invalid entry price.");
+      fields.entry = v;
+    }
+    if (body.stopLoss !== undefined) {
+      const v = Number(body.stopLoss);
+      if (!Number.isFinite(v) || v <= 0) throw new HttpError(400, "Invalid stop loss.");
+      fields.stopLoss = v;
+    }
+    if (body.takeProfit !== undefined) {
+      const v = Number(body.takeProfit);
+      if (!Number.isFinite(v) || v <= 0) throw new HttpError(400, "Invalid take profit.");
+      fields.takeProfit = v;
+    }
+    if (body.leverage !== undefined) fields.leverage = body.leverage != null ? Number(body.leverage) : null;
+    if (body.positionSizeUsd !== undefined) fields.positionSizeUsd = body.positionSizeUsd != null ? Number(body.positionSizeUsd) : null;
+    if (body.objectiveHorizon !== undefined) fields.objectiveHorizon = body.objectiveHorizon != null ? String(body.objectiveHorizon) : null;
+    return this.deps.monitorSessionStore.update(id, fields);
+  }
+
+  async handleRemoveMonitorSession(id: string): Promise<void> {
+    if (!id) throw new HttpError(400, "Session ID is required.");
+    await this.deps.monitorSessionStore.remove(id);
   }
 }
 

@@ -1,583 +1,718 @@
-import { $, $$, hide, show } from "./lib/dom.js";
+import { render, html } from "htm/preact";
+import { useState, useEffect, useRef, useCallback } from "preact/hooks";
 import { fN, prettyToken } from "./lib/format.js";
-import { errorMarkup } from "./lib/ui.js";
-import { renderAnalyzeResult } from "./views/analyze.js";
-import { renderLearning } from "./views/learning.js";
-import { renderMonitorSessionCard } from "./views/monitor.js";
-import { renderScan } from "./views/scanner.js";
+import { errorBlock } from "./lib/ui.js";
+import { AnalyzeResult } from "./views/analyze.js";
+import { LearningResult } from "./views/learning.js";
+import { MonitorBoard } from "./views/monitor.js";
+import { ScanResult } from "./views/scanner.js";
 
-const state = {
-  defaults: null,
-  lastAnalysis: null,
-  monitorSessions: new Map(),
-  nextMonitorId: 1,
-  scanLoaded: false
-};
-
-let toastTimer = null;
-
+// ── API helper ──────────────────────────────────────────
 async function api(method, path, body) {
   const options = { method, headers: {} };
   if (body) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-
   const response = await fetch(`/api${path}`, options);
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
 }
 
-function toast(message, type = "success") {
-  const element = $("#toast");
-  element.textContent = message;
-  element.className = `toast ${type}`;
-  show(element);
-
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => hide(element), 3000);
-}
-
-function setInputValue(selector, value) {
-  const element = $(selector);
-  if (element) element.value = value ?? "";
-}
-
-function readOptionalString(selector) {
-  const value = $(selector).value.trim();
-  return value ? value : undefined;
-}
-
-function readOptionalPositiveNumber(selector, label) {
-  const raw = $(selector).value.trim();
-  if (!raw) return undefined;
-  const number = Number(raw);
-  if (!Number.isFinite(number) || number <= 0) {
-    throw new Error(`Invalid ${label}.`);
-  }
-  return number;
-}
-
-function syncDefaultInputs(defaults) {
-  setInputValue("#qa-leverage", defaults.leverage ?? "");
-  setInputValue("#qa-size", defaults.positionSizeUsd ?? "");
-  setInputValue("#qa-horizon", defaults.objectiveHorizon ?? "");
-  setInputValue("#monitor-leverage", defaults.leverage ?? "");
-  setInputValue("#monitor-size", defaults.positionSizeUsd ?? "");
-  setInputValue("#monitor-horizon", defaults.objectiveHorizon ?? "");
-  setInputValue("#settings-leverage", defaults.leverage ?? "");
-  setInputValue("#settings-size", defaults.positionSizeUsd ?? "");
-  setInputValue("#settings-horizon", defaults.objectiveHorizon ?? "");
-  setInputValue("#settings-ai-model", defaults.aiModel ?? "");
-}
-
-function renderDefaultSurfaces(defaults) {
-  $("#scan-defaults").innerHTML = [
-    `<span>${defaults.leverage}x</span>`,
-    `<span>${fN(defaults.positionSizeUsd, 0)} usdc</span>`,
-    `<span>${defaults.objectiveHorizon}m</span>`
-  ].join("");
-
-  if (!state.lastAnalysis) {
-    $("#analyze-echo").textContent = `${defaults.leverage}x / ${fN(defaults.positionSizeUsd, 0)} USDC / ${defaults.objectiveHorizon}m`;
-  }
-  renderMonitorBoard();
-}
-
-function setDefaults(defaults) {
-  state.defaults = defaults;
-  syncDefaultInputs(defaults);
-  renderDefaultSurfaces(defaults);
-}
-
-async function ensureDefaults() {
-  if (state.defaults) return state.defaults;
-  const defaults = await api("GET", "/defaults");
-  setDefaults(defaults);
-  return defaults;
-}
-
-function flashPanel(selector) {
-  const element = $(selector);
-  if (!element) return;
-  element.classList.remove("flash");
-  void element.offsetWidth;
-  element.classList.add("flash");
-}
-
-function switchTab(name) {
-  $$(".tab").forEach(button => button.classList.toggle("active", button.dataset.tab === name));
-  $$(".panel").forEach(panel => panel.classList.toggle("active", panel.id === `tab-${name}`));
-
-  if (name === "scanner") {
-    void ensureScanLoaded();
-  }
-
-  if (name === "settings") {
-    void loadSettings();
-  }
-}
-
-function initTabs() {
-  $$(".tab").forEach(button => {
-    button.addEventListener("click", () => switchTab(button.dataset.tab));
-  });
-}
-
-function initKeyboard() {
-  const tabs = ["overview", "scanner", "monitor", "learning", "settings"];
-
-  document.addEventListener("keydown", event => {
-    if (event.target.matches("input, select, textarea")) {
-      if (event.key === "Escape") event.target.blur();
-      return;
-    }
-
-    if (event.key === "/") {
-      event.preventDefault();
-      $("#qa-symbol").focus();
-      $("#qa-symbol").select();
-      return;
-    }
-
-    if (/^[1-5]$/.test(event.key)) {
-      switchTab(tabs[Number(event.key) - 1]);
-      return;
-    }
-
-    if (event.key === "Escape" && event.shiftKey) {
-      const stopped = stopAllMonitorSessions("stopped from keyboard");
-      if (stopped > 0) {
-        toast(`Stopped ${stopped} monitor stream${stopped === 1 ? "" : "s"}`);
-      }
-    }
-  });
-}
-
-function initActionDelegates() {
-  document.addEventListener("click", event => {
-    const monitorTrigger = event.target.closest("[data-monitor-id]");
-    if (monitorTrigger) {
-      const id = Number(monitorTrigger.getAttribute("data-monitor-id"));
-      if (!Number.isFinite(id)) return;
-
-      if (monitorTrigger.getAttribute("data-monitor-action") === "remove") {
-        removeMonitorSession(id);
-      } else {
-        stopMonitorSession(id, "stopped manually");
-      }
-      return;
-    }
-
-    const analyzeTrigger = event.target.closest("[data-analyze-symbol]");
-    if (analyzeTrigger) {
-      const symbol = analyzeTrigger.getAttribute("data-analyze-symbol");
-      if (symbol) {
-        $("#qa-symbol").value = symbol;
-        void runAnalysis(symbol);
-      }
-      return;
-    }
-
-    if (event.target.closest("[data-monitor-last-analysis]")) {
-      monitorFromAnalysis();
-    }
-  });
-}
-
-function initAnalyze() {
-  $("#quick-analyze").addEventListener("submit", async event => {
-    event.preventDefault();
-    const symbol = $("#qa-symbol").value.trim();
-    if (!symbol) return;
-    $("#qa-symbol").blur();
-    await runAnalysis(symbol, $("#qa-direction").value || undefined);
-  });
-}
-
-async function runAnalysis(symbol, direction) {
-  switchTab("overview");
-  flashPanel("#overview-analyze");
-  $("#analyze-result").innerHTML = "";
-  $("#qa-btn").disabled = true;
-  $("#qa-btn").textContent = "Running…";
-  $("#qa-btn").classList.add("is-running");
-
-  try {
-    await ensureDefaults();
-
-    const payload = { symbol };
-    if (direction) payload.direction = direction;
-
-    const leverage = readOptionalPositiveNumber("#qa-leverage", "leverage");
-    const positionSizeUsd = readOptionalPositiveNumber("#qa-size", "position size");
-    const horizon = readOptionalString("#qa-horizon");
-
-    if (leverage !== undefined) payload.leverage = leverage;
-    if (positionSizeUsd !== undefined) payload.positionSizeUsd = positionSizeUsd;
-    if (horizon) payload.horizon = horizon;
-
-    $("#analyze-echo").textContent = `Dispatch ${symbol.toUpperCase()} | ${direction || "AUTO"} | ${payload.leverage ?? "default"}x | ${payload.positionSizeUsd ?? "default"} USDC | ${payload.horizon ?? "default"}m`;
-
-    const data = await api("POST", "/analyze", payload);
-    state.lastAnalysis = data;
-    $("#analyze-result").innerHTML = renderAnalyzeResult(data.recommendation, data.aiAdvice);
-    $("#analyze-echo").textContent = `Loaded ${data.recommendation.pair} at ${Math.round(data.recommendation.confidence ?? 0)} confidence`;
-  } catch (error) {
-    $("#analyze-result").innerHTML = errorMarkup(error.message);
-    $("#analyze-echo").textContent = `Analysis error: ${error.message}`;
-  } finally {
-    $("#qa-btn").disabled = false;
-    $("#qa-btn").textContent = "Run";
-    $("#qa-btn").classList.remove("is-running");
-  }
-}
-
-function monitorFromAnalysis() {
-  const rec = state.lastAnalysis?.recommendation;
-  if (!rec) return;
-
-  $("#monitor-symbol").value = rec.pair.replace(/-USD$/, "");
-  $("#monitor-side").value = rec.signal === "SHORT" ? "SHORT" : "LONG";
-  $("#monitor-entry").value = rec.entry ?? "";
-  $("#monitor-sl").value = rec.stopLoss ?? "";
-  $("#monitor-tp").value = rec.takeProfit ?? "";
-  $("#monitor-leverage").value = rec.leverage ?? state.defaults?.leverage ?? "";
-  $("#monitor-size").value = rec.positionSizeUsd ?? state.defaults?.positionSizeUsd ?? "";
-  $("#monitor-horizon").value = rec.objectiveHorizon ?? state.defaults?.objectiveHorizon ?? "";
-  $("#monitor-echo").textContent = `Seeded from ${rec.pair} ${rec.signal}`;
-  switchTab("monitor");
-  flashPanel("#monitor-compose");
-}
-
-function initScan() {
-  $("#scan-btn").addEventListener("click", () => {
-    void loadScan();
-  });
-}
-
-async function ensureScanLoaded() {
-  if (state.scanLoaded) return;
-  await loadScan();
-}
-
-async function loadScan() {
-  show($("#scan-loading"));
-  $("#scan-result").innerHTML = "";
-  $("#scan-btn").disabled = true;
-
-  try {
-    const data = await api("GET", "/scan");
-    $("#scan-result").innerHTML = renderScan(data);
-    state.scanLoaded = true;
-  } catch (error) {
-    $("#scan-result").innerHTML = errorMarkup(error.message);
-    state.scanLoaded = false;
-  } finally {
-    hide($("#scan-loading"));
-    $("#scan-btn").disabled = false;
-  }
-}
-
-function initMonitor() {
-  $("#monitor-form").addEventListener("submit", event => {
-    event.preventDefault();
-    startMonitor();
-  });
-  $("#monitor-stop-all-btn").addEventListener("click", () => {
-    const stopped = stopAllMonitorSessions("stopped manually");
-    if (stopped > 0) {
-      toast(`Stopped ${stopped} monitor stream${stopped === 1 ? "" : "s"}`);
-    }
-  });
-}
-
-function startMonitor() {
-  switchTab("monitor");
-  flashPanel("#monitor-compose");
-  let session = null;
-
-  try {
-    const symbol = $("#monitor-symbol").value.trim().toUpperCase();
-    const side = $("#monitor-side").value;
-    const entry = $("#monitor-entry").value.trim();
-    const stopLoss = $("#monitor-sl").value.trim();
-    const takeProfit = $("#monitor-tp").value.trim();
-
-    if (!symbol || !entry || !stopLoss || !takeProfit) return;
-
-    const params = new URLSearchParams({ symbol, side, entry, stopLoss, takeProfit });
-    const leverage = readOptionalPositiveNumber("#monitor-leverage", "leverage");
-    const positionSizeUsd = readOptionalPositiveNumber("#monitor-size", "position size");
-    const objectiveHorizon = readOptionalString("#monitor-horizon");
-
-    if (leverage !== undefined) params.set("leverage", String(leverage));
-    if (positionSizeUsd !== undefined) params.set("positionSizeUsd", String(positionSizeUsd));
-    if (objectiveHorizon) params.set("objectiveHorizon", objectiveHorizon);
-
-    session = {
-      id: state.nextMonitorId++,
-      symbol,
-      pair: `${symbol}-USD`,
-      side,
-      entry: Number(entry),
-      stopLoss: Number(stopLoss),
-      takeProfit: Number(takeProfit),
-      leverage: leverage ?? state.defaults?.leverage ?? null,
-      positionSizeUsd: positionSizeUsd ?? state.defaults?.positionSizeUsd ?? null,
-      objectiveHorizon: objectiveHorizon ?? state.defaults?.objectiveHorizon ?? null,
-      source: null,
-      snapshot: null,
-      statusText: `connecting ${symbol} ${side.toLowerCase()} stream`,
-      active: true,
-      connected: false,
-      stopReason: "",
-      startedAt: Date.now()
-    };
-
-    state.monitorSessions.set(session.id, session);
-    renderMonitorBoard(session.id);
-
-    const source = new EventSource(`/api/monitor/stream?${params.toString()}`);
-    session.source = source;
-    $("#monitor-echo").textContent = `Opening ${symbol} ${side} | ${params.get("leverage") ?? "default"}x | ${params.get("positionSizeUsd") ?? "default"} USDC | ${params.get("objectiveHorizon") ?? "default"}m`;
-
-    source.addEventListener("baseline", event => {
-      const data = JSON.parse(event.data);
-      if (!state.monitorSessions.has(session.id)) return;
-      session.connected = true;
-      session.pair = data.trade?.pair ?? session.pair;
-      session.statusText = `baseline ready for ${session.pair}`;
-      renderMonitorBoard(session.id);
-    });
-
-    source.addEventListener("snapshot", event => {
-      const snapshot = JSON.parse(event.data);
-      if (!state.monitorSessions.has(session.id)) return;
-      session.snapshot = snapshot;
-      session.connected = true;
-      session.pair = snapshot.trade?.pair ?? session.pair;
-      session.statusText = `${prettyToken(snapshot.healthStatus ?? "live")} / ${prettyToken(snapshot.managementAction ?? "hold")}`;
-      renderMonitorBoard(session.id);
-
-      const terminalAction = String(snapshot.managementAction ?? "").toUpperCase();
-      if (terminalAction === "STOP_HIT" || terminalAction === "TARGET_HIT") {
-        stopMonitorSession(session.id, prettyToken(terminalAction));
-      }
-    });
-
-    source.onerror = () => {
-      if (!state.monitorSessions.has(session.id)) return;
-
-      if (source.readyState === EventSource.CLOSED) {
-        stopMonitorSession(session.id, "connection closed");
-        return;
-      }
-
-      session.connected = false;
-      session.statusText = "reconnecting";
-      renderMonitorBoard(session.id);
-    };
-  } catch (error) {
-    if (session && state.monitorSessions.has(session.id)) {
-      state.monitorSessions.delete(session.id);
-      renderMonitorBoard();
-    }
-    $("#monitor-echo").textContent = `Monitor error: ${error.message}`;
-  }
-}
-
-function stopMonitorSession(id, reason = "stopped") {
-  const session = state.monitorSessions.get(id);
-  if (!session) return false;
-
-  if (session.source) {
-    session.source.close();
-    session.source = null;
-  }
-
-  session.active = false;
-  session.connected = false;
-  session.stopReason = reason;
-  session.statusText = reason;
-  renderMonitorBoard(id);
-  return true;
-}
-
-function stopAllMonitorSessions(reason = "stopped") {
-  let stopped = 0;
-
-  state.monitorSessions.forEach(session => {
-    if (!session.active) return;
-
-    if (session.source) {
-      session.source.close();
-      session.source = null;
-    }
-
-    session.active = false;
-    session.connected = false;
-    session.stopReason = reason;
-    session.statusText = reason;
-    stopped += 1;
-  });
-
-  renderMonitorBoard();
-  return stopped;
-}
-
-function removeMonitorSession(id) {
-  const session = state.monitorSessions.get(id);
-  if (!session) return;
-
-  if (session.source) {
-    session.source.close();
-  }
-
-  state.monitorSessions.delete(id);
-  renderMonitorBoard();
-}
-
-function renderMonitorBoard(flashId) {
-  const sessions = Array.from(state.monitorSessions.values()).sort((left, right) => right.startedAt - left.startedAt);
-  const board = $("#monitor-board");
-
-  board.innerHTML = sessions.length
-    ? sessions.map(renderMonitorSessionCard).join("")
-    : `<div class="empty-state">no active monitor sessions</div>`;
-
-  renderMonitorStatusBar(sessions);
-
-  if (flashId && state.monitorSessions.has(flashId)) {
-    flashPanel(`#monitor-session-${flashId}`);
-  }
-}
-
-function renderMonitorStatusBar(sessions = Array.from(state.monitorSessions.values())) {
-  const active = sessions.filter(session => session.active).length;
-  const connected = sessions.filter(session => session.active && session.connected).length;
-  const stopped = sessions.filter(session => !session.active).length;
-
-  const summaryBits = [
-    `<span>${active} active trade${active === 1 ? "" : "s"}</span>`,
-    `<span>${connected} connected stream${connected === 1 ? "" : "s"}</span>`
-  ];
-
-  if (!sessions.length) {
-    summaryBits.push("<span>board empty</span>");
-  } else if (stopped > 0) {
-    summaryBits.push(`<span>${stopped} stopped</span>`);
-  } else {
-    summaryBits.push(`<span>${sessions.length} on board</span>`);
-  }
-
-  $("#monitor-summary").innerHTML = summaryBits.join("");
-  $("#monitor-stop-all-btn").disabled = active === 0;
-
-  if (!sessions.length) {
-    $("#monitor-echo").textContent = state.defaults
-      ? `Ready: ${state.defaults.leverage}x / ${fN(state.defaults.positionSizeUsd, 0)} USDC / ${state.defaults.objectiveHorizon}m`
-      : "No active monitor sessions.";
-    return;
-  }
-
-  const visiblePairs = sessions
-    .filter(session => session.active)
-    .slice(0, 3)
-    .map(session => session.symbol)
-    .join(", ");
-
-  if (active > 0) {
-    $("#monitor-echo").textContent = `${active} active trade${active === 1 ? "" : "s"}${visiblePairs ? ` | ${visiblePairs}` : ""}`;
-    return;
-  }
-
-  $("#monitor-echo").textContent = `${stopped} stopped trade${stopped === 1 ? "" : "s"} on board`;
-}
-
-function initLearning() {
-  $("#learning-form").addEventListener("submit", event => {
-    event.preventDefault();
-    void loadLearning();
-  });
-}
-
-async function loadLearning() {
-  show($("#learning-loading"));
-  $("#learning-result").innerHTML = "";
-  $("#learning-load-btn").disabled = true;
-
-  try {
-    const lookbackDays = readOptionalPositiveNumber("#learning-lookback", "lookback days");
-    const data = await api("GET", `/learning/stats?lookbackDays=${lookbackDays ?? 14}`);
-    $("#learning-result").innerHTML = renderLearning(data);
-  } catch (error) {
-    $("#learning-result").innerHTML = errorMarkup(error.message);
-  } finally {
-    hide($("#learning-loading"));
-    $("#learning-load-btn").disabled = false;
-  }
-}
-
-async function loadSettings() {
-  try {
-    const defaults = await ensureDefaults();
-    syncDefaultInputs(defaults);
-  } catch (error) {
-    toast(error.message, "error");
-  }
-}
-
-function initSettings() {
-  $("#settings-form").addEventListener("submit", async event => {
-    event.preventDefault();
-    const status = $("#settings-status");
-    hide(status);
-
-    try {
-      const saved = await api("PUT", "/defaults", {
-        leverage: Number($("#settings-leverage").value),
-        positionSizeUsd: Number($("#settings-size").value),
-        objectiveHorizon: $("#settings-horizon").value.trim(),
-        aiModel: $("#settings-ai-model").value.trim()
-      });
-
-      setDefaults(saved);
-      status.textContent = "saved";
-      status.className = "status-msg success";
-      show(status);
-      toast("Defaults updated");
-    } catch (error) {
-      status.textContent = error.message;
-      status.className = "status-msg error";
-      show(status);
-    }
-  });
-}
-
+// ── Live reload (dev) ───────────────────────────────────
 function initLiveReload() {
   const source = new EventSource("/api/__reload");
   source.onmessage = () => location.reload();
   source.onerror = () => setTimeout(() => location.reload(), 2000);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  initTabs();
-  initKeyboard();
-  initActionDelegates();
-  initAnalyze();
-  initScan();
-  initMonitor();
-  initLearning();
-  initSettings();
-  initLiveReload();
+// ── App ─────────────────────────────────────────────────
+function App() {
+  const [activeTab, setActiveTab] = useState("overview");
+  const [defaults, setDefaults] = useState(null);
+  const [lastAnalysis, setLastAnalysis] = useState(null);
+  const [analyzeError, setAnalyzeError] = useState(null);
+  const [analyzeRunning, setAnalyzeRunning] = useState(false);
+  const [scanData, setScanData] = useState(null);
+  const [scanError, setScanError] = useState(null);
+  const [scanRunning, setScanRunning] = useState(false);
+  const [scanLoaded, setScanLoaded] = useState(false);
+  const [monitorSessions, setMonitorSessions] = useState(new Map());
+  const [monitorEcho, setMonitorEcho] = useState("");
+  const [learningData, setLearningData] = useState(null);
+  const [learningError, setLearningError] = useState(null);
+  const [learningRunning, setLearningRunning] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState(null);
+  const [toast, setToast] = useState(null);
 
-  $("#qa-symbol").focus();
-  renderMonitorBoard();
+  // Refs
+  const toastTimerRef = useRef(null);
+  const sourceMapRef = useRef(new Map()); // Map<id, EventSource>
+  const symbolInputRef = useRef(null);
+  const defaultsRef = useRef(null);
+  const monitorSessionsRef = useRef(new Map());
+  const qaDirectionRef = useRef(null);
+  const qaLeverageRef = useRef(null);
+  const qaSizeRef = useRef(null);
+  const qaHorizonRef = useRef(null);
+  const monitorSymbolRef = useRef(null);
+  const monitorSideRef = useRef(null);
+  const monitorEntryRef = useRef(null);
+  const monitorSlRef = useRef(null);
+  const monitorTpRef = useRef(null);
+  const monitorLeverageRef = useRef(null);
+  const monitorSizeRef = useRef(null);
+  const monitorHorizonRef = useRef(null);
+  const learningLookbackRef = useRef(null);
+  const settingsLeverageRef = useRef(null);
+  const settingsSizeRef = useRef(null);
+  const settingsHorizonRef = useRef(null);
+  const settingsAiModelRef = useRef(null);
 
-  void ensureDefaults()
-    .catch(error => toast(error.message, "error"));
-});
+  // Keep refs in sync
+  defaultsRef.current = defaults;
+  monitorSessionsRef.current = monitorSessions;
+
+  // ── Toast ──
+  const showToast = useCallback((message, type = "success") => {
+    setToast({ message, type });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  // ── Helpers ──
+  function readOptionalPositiveNumber(ref, label) {
+    const raw = ref.current?.value?.trim();
+    if (!raw) return undefined;
+    const number = Number(raw);
+    if (!Number.isFinite(number) || number <= 0) throw new Error(`Invalid ${label}.`);
+    return number;
+  }
+
+  function readOptionalString(ref) {
+    const value = ref.current?.value?.trim();
+    return value || undefined;
+  }
+
+  // ── Defaults ──
+  const ensureDefaults = useCallback(async () => {
+    if (defaultsRef.current) return defaultsRef.current;
+    const d = await api("GET", "/defaults");
+    setDefaults(d);
+    return d;
+  }, []);
+
+  function syncDefaultInputs(d) {
+    if (qaLeverageRef.current) qaLeverageRef.current.value = d.leverage ?? "";
+    if (qaSizeRef.current) qaSizeRef.current.value = d.positionSizeUsd ?? "";
+    if (qaHorizonRef.current) qaHorizonRef.current.value = d.objectiveHorizon ?? "";
+    if (monitorLeverageRef.current) monitorLeverageRef.current.value = d.leverage ?? "";
+    if (monitorSizeRef.current) monitorSizeRef.current.value = d.positionSizeUsd ?? "";
+    if (monitorHorizonRef.current) monitorHorizonRef.current.value = d.objectiveHorizon ?? "";
+    if (settingsLeverageRef.current) settingsLeverageRef.current.value = d.leverage ?? "";
+    if (settingsSizeRef.current) settingsSizeRef.current.value = d.positionSizeUsd ?? "";
+    if (settingsHorizonRef.current) settingsHorizonRef.current.value = d.objectiveHorizon ?? "";
+    if (settingsAiModelRef.current) settingsAiModelRef.current.value = d.aiModel ?? "";
+  }
+
+  // ── SSE / Monitor connections ──
+  function connectMonitorSession(session) {
+    const params = new URLSearchParams({
+      symbol: session.symbol,
+      side: session.side,
+      entry: String(session.entry),
+      stopLoss: String(session.stopLoss),
+      takeProfit: String(session.takeProfit)
+    });
+    if (session.leverage != null) params.set("leverage", String(session.leverage));
+    if (session.positionSizeUsd != null) params.set("positionSizeUsd", String(session.positionSizeUsd));
+    if (session.objectiveHorizon != null) params.set("objectiveHorizon", session.objectiveHorizon);
+
+    const source = new EventSource(`/api/monitor/stream?${params.toString()}`);
+    sourceMapRef.current.set(session.id, source);
+
+    source.addEventListener("baseline", event => {
+      const data = JSON.parse(event.data);
+      setMonitorSessions(prev => {
+        if (!prev.has(session.id)) return prev;
+        const next = new Map(prev);
+        const s = next.get(session.id);
+        next.set(session.id, { ...s, connected: true, pair: data.trade?.pair ?? s.pair, statusText: `baseline ready for ${data.trade?.pair ?? s.pair}` });
+        return next;
+      });
+    });
+
+    source.addEventListener("snapshot", event => {
+      const snapshot = JSON.parse(event.data);
+      setMonitorSessions(prev => {
+        if (!prev.has(session.id)) return prev;
+        const next = new Map(prev);
+        const s = next.get(session.id);
+        const statusText = `${prettyToken(snapshot.healthStatus ?? "live")} / ${prettyToken(snapshot.managementAction ?? "hold")}`;
+        const terminalAction = String(snapshot.managementAction ?? "").toUpperCase();
+        const invalidReason = (terminalAction === "STOP_HIT" || terminalAction === "TARGET_HIT")
+          ? prettyToken(terminalAction)
+          : s.invalidReason;
+        next.set(session.id, { ...s, snapshot, connected: true, pair: snapshot.trade?.pair ?? s.pair, statusText, invalidReason });
+        return next;
+      });
+    });
+
+    source.onerror = () => {
+      setMonitorSessions(prev => {
+        if (!prev.has(session.id)) return prev;
+
+        if (source.readyState === EventSource.CLOSED) {
+          source.close();
+          sourceMapRef.current.delete(session.id);
+          const next = new Map(prev);
+          const s = next.get(session.id);
+          next.set(session.id, { ...s, active: false, connected: false, stopReason: "connection closed", statusText: "connection closed" });
+          return next;
+        }
+
+        const next = new Map(prev);
+        const s = next.get(session.id);
+        next.set(session.id, { ...s, connected: false, statusText: "reconnecting" });
+        return next;
+      });
+    };
+  }
+
+  function createSessionFromPersisted(persisted) {
+    const d = defaultsRef.current;
+    return {
+      id: persisted.id,
+      dbId: persisted.id,
+      symbol: persisted.symbol,
+      pair: persisted.symbol.includes("-") ? persisted.symbol : `${persisted.symbol}-USD`,
+      side: persisted.side,
+      entry: persisted.entry,
+      stopLoss: persisted.stopLoss,
+      takeProfit: persisted.takeProfit,
+      leverage: persisted.leverage ?? d?.leverage ?? null,
+      positionSizeUsd: persisted.positionSizeUsd ?? d?.positionSizeUsd ?? null,
+      objectiveHorizon: persisted.objectiveHorizon ?? d?.objectiveHorizon ?? null,
+      snapshot: null,
+      statusText: `connecting ${persisted.symbol} ${persisted.side.toLowerCase()} stream`,
+      active: true,
+      connected: false,
+      stopReason: "",
+      invalidReason: null,
+      editing: false,
+      startedAt: persisted.createdAtMs ?? Date.now()
+    };
+  }
+
+  // ── Monitor actions ──
+  const stopMonitorSession = useCallback((id, reason = "stopped", { persist = true } = {}) => {
+    const source = sourceMapRef.current.get(id);
+    if (source) {
+      source.close();
+      sourceMapRef.current.delete(id);
+    }
+
+    setMonitorSessions(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      const s = next.get(id);
+      next.set(id, { ...s, active: false, connected: false, stopReason: reason, statusText: reason });
+
+      if (persist && s.dbId) {
+        api("DELETE", `/monitor/sessions/${encodeURIComponent(s.dbId)}`).catch(() => {});
+      }
+      return next;
+    });
+  }, []);
+
+  const stopAllMonitorSessions = useCallback((reason = "stopped") => {
+    let stopped = 0;
+    setMonitorSessions(prev => {
+      const next = new Map(prev);
+      next.forEach((s, id) => {
+        if (!s.active) return;
+        const source = sourceMapRef.current.get(id);
+        if (source) {
+          source.close();
+          sourceMapRef.current.delete(id);
+        }
+        next.set(id, { ...s, active: false, connected: false, stopReason: reason, statusText: reason });
+        stopped += 1;
+        if (s.dbId) {
+          api("DELETE", `/monitor/sessions/${encodeURIComponent(s.dbId)}`).catch(() => {});
+        }
+      });
+      return next;
+    });
+    return stopped;
+  }, []);
+
+  const removeMonitorSession = useCallback((id) => {
+    const source = sourceMapRef.current.get(id);
+    if (source) {
+      source.close();
+      sourceMapRef.current.delete(id);
+    }
+
+    setMonitorSessions(prev => {
+      const s = prev.get(id);
+      const next = new Map(prev);
+      next.delete(id);
+      if (s?.dbId) {
+        api("DELETE", `/monitor/sessions/${encodeURIComponent(s.dbId)}`).catch(() => {});
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleEditMonitorSession = useCallback((id) => {
+    setMonitorSessions(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      const s = next.get(id);
+      next.set(id, { ...s, editing: !s.editing });
+      return next;
+    });
+  }, []);
+
+  const saveEditMonitorSession = useCallback(async (id, fields) => {
+    const session = monitorSessionsRef.current.get(id);
+    if (!session || !session.dbId) return;
+
+    try {
+      const updated = await api("PATCH", `/monitor/sessions/${encodeURIComponent(session.dbId)}`, fields);
+
+      // Close existing source
+      const source = sourceMapRef.current.get(id);
+      if (source) {
+        source.close();
+        sourceMapRef.current.delete(id);
+      }
+
+      setMonitorSessions(prev => {
+        const next = new Map(prev);
+        const s = next.get(id);
+        if (!s) return prev;
+        const updatedSession = {
+          ...s,
+          entry: updated.entry,
+          stopLoss: updated.stopLoss,
+          takeProfit: updated.takeProfit,
+          leverage: updated.leverage,
+          positionSizeUsd: updated.positionSizeUsd,
+          objectiveHorizon: updated.objectiveHorizon,
+          editing: false,
+          invalidReason: null,
+          connected: false,
+          statusText: "reconnecting with updated params"
+        };
+        next.set(id, updatedSession);
+        // Reconnect with updated session
+        connectMonitorSession(updatedSession);
+        return next;
+      });
+
+      showToast("Session updated");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  }, [showToast]);
+
+  // ── Analysis ──
+  const runAnalysis = useCallback(async (symbol, direction) => {
+    setActiveTab("overview");
+    setLastAnalysis(null);
+    setAnalyzeError(null);
+    setAnalyzeRunning(true);
+
+    try {
+      await ensureDefaults();
+      const payload = { symbol };
+      if (direction) payload.direction = direction;
+
+      const leverage = readOptionalPositiveNumber(qaLeverageRef, "leverage");
+      const positionSizeUsd = readOptionalPositiveNumber(qaSizeRef, "position size");
+      const horizon = readOptionalString(qaHorizonRef);
+
+      if (leverage !== undefined) payload.leverage = leverage;
+      if (positionSizeUsd !== undefined) payload.positionSizeUsd = positionSizeUsd;
+      if (horizon) payload.horizon = horizon;
+
+      const data = await api("POST", "/analyze", payload);
+      setLastAnalysis(data);
+    } catch (error) {
+      setAnalyzeError(error.message);
+    } finally {
+      setAnalyzeRunning(false);
+    }
+  }, [ensureDefaults]);
+
+  // ── Monitor from analysis ──
+  const monitorFromAnalysis = useCallback(() => {
+    const rec = lastAnalysis?.recommendation;
+    if (!rec) return;
+
+    if (monitorSymbolRef.current) monitorSymbolRef.current.value = rec.pair.replace(/-USD$/, "");
+    if (monitorSideRef.current) monitorSideRef.current.value = rec.signal === "SHORT" ? "SHORT" : "LONG";
+    if (monitorEntryRef.current) monitorEntryRef.current.value = rec.entry ?? "";
+    if (monitorSlRef.current) monitorSlRef.current.value = rec.stopLoss ?? "";
+    if (monitorTpRef.current) monitorTpRef.current.value = rec.takeProfit ?? "";
+    if (monitorLeverageRef.current) monitorLeverageRef.current.value = rec.leverage ?? defaultsRef.current?.leverage ?? "";
+    if (monitorSizeRef.current) monitorSizeRef.current.value = rec.positionSizeUsd ?? defaultsRef.current?.positionSizeUsd ?? "";
+    if (monitorHorizonRef.current) monitorHorizonRef.current.value = rec.objectiveHorizon ?? defaultsRef.current?.objectiveHorizon ?? "";
+    setMonitorEcho(`Seeded from ${rec.pair} ${rec.signal}`);
+    setActiveTab("monitor");
+  }, [lastAnalysis]);
+
+  // ── Start monitor ──
+  const startMonitor = useCallback(async () => {
+    setActiveTab("monitor");
+    let session = null;
+
+    try {
+      const symbol = monitorSymbolRef.current?.value?.trim().toUpperCase();
+      const side = monitorSideRef.current?.value;
+      const entry = monitorEntryRef.current?.value?.trim();
+      const stopLoss = monitorSlRef.current?.value?.trim();
+      const takeProfit = monitorTpRef.current?.value?.trim();
+
+      if (!symbol || !entry || !stopLoss || !takeProfit) return;
+
+      const leverage = readOptionalPositiveNumber(monitorLeverageRef, "leverage");
+      const positionSizeUsd = readOptionalPositiveNumber(monitorSizeRef, "position size");
+      const objectiveHorizon = readOptionalString(monitorHorizonRef);
+
+      const persisted = await api("POST", "/monitor/sessions", {
+        symbol,
+        side,
+        entry: Number(entry),
+        stopLoss: Number(stopLoss),
+        takeProfit: Number(takeProfit),
+        leverage: leverage ?? null,
+        positionSizeUsd: positionSizeUsd ?? null,
+        objectiveHorizon: objectiveHorizon ?? null
+      });
+
+      session = createSessionFromPersisted(persisted);
+      setMonitorSessions(prev => {
+        const next = new Map(prev);
+        next.set(session.id, session);
+        return next;
+      });
+      connectMonitorSession(session);
+    } catch (error) {
+      if (session) {
+        setMonitorSessions(prev => {
+          const next = new Map(prev);
+          next.delete(session.id);
+          return next;
+        });
+      }
+      setMonitorEcho(`Monitor error: ${error.message}`);
+    }
+  }, []);
+
+  // ── Scanner ──
+  const loadScan = useCallback(async () => {
+    setScanData(null);
+    setScanError(null);
+    setScanRunning(true);
+
+    try {
+      const data = await api("GET", "/scan");
+      setScanData(data);
+      setScanLoaded(true);
+    } catch (error) {
+      setScanError(error.message);
+      setScanLoaded(false);
+    } finally {
+      setScanRunning(false);
+    }
+  }, []);
+
+  // ── Learning ──
+  const loadLearning = useCallback(async () => {
+    setLearningData(null);
+    setLearningError(null);
+    setLearningRunning(true);
+
+    try {
+      const lookbackDays = readOptionalPositiveNumber(learningLookbackRef, "lookback days");
+      const data = await api("GET", `/learning/stats?lookbackDays=${lookbackDays ?? 14}`);
+      setLearningData(data);
+    } catch (error) {
+      setLearningError(error.message);
+    } finally {
+      setLearningRunning(false);
+    }
+  }, []);
+
+  // ── Settings ──
+  const saveSettings = useCallback(async () => {
+    setSettingsStatus(null);
+    try {
+      const saved = await api("PUT", "/defaults", {
+        leverage: Number(settingsLeverageRef.current?.value),
+        positionSizeUsd: Number(settingsSizeRef.current?.value),
+        objectiveHorizon: settingsHorizonRef.current?.value?.trim(),
+        aiModel: settingsAiModelRef.current?.value?.trim()
+      });
+      setDefaults(saved);
+      syncDefaultInputs(saved);
+      setSettingsStatus({ text: "saved", type: "success" });
+      showToast("Defaults updated");
+    } catch (error) {
+      setSettingsStatus({ text: error.message, type: "error" });
+    }
+  }, [showToast]);
+
+  // ── Tab switching with side effects ──
+  const switchTab = useCallback((name) => {
+    setActiveTab(name);
+    if (name === "scanner" && !scanLoaded) {
+      loadScan();
+    }
+    if (name === "settings") {
+      ensureDefaults().then(d => syncDefaultInputs(d)).catch(e => showToast(e.message, "error"));
+    }
+  }, [scanLoaded, loadScan, ensureDefaults, showToast]);
+
+  // ── Scanner analyze click ──
+  const handleScanAnalyze = useCallback((symbol) => {
+    if (symbolInputRef.current) symbolInputRef.current.value = symbol;
+    runAnalysis(symbol);
+  }, [runAnalysis]);
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const tabs = ["overview", "scanner", "monitor", "learning", "settings"];
+
+    const handler = (event) => {
+      if (event.target.matches("input, select, textarea")) {
+        if (event.key === "Escape") event.target.blur();
+        return;
+      }
+
+      if (event.key === "/") {
+        event.preventDefault();
+        symbolInputRef.current?.focus();
+        symbolInputRef.current?.select();
+        return;
+      }
+
+      if (/^[1-5]$/.test(event.key)) {
+        switchTab(tabs[Number(event.key) - 1]);
+        return;
+      }
+
+      if (event.key === "Escape" && event.shiftKey) {
+        const stopped = stopAllMonitorSessions("stopped from keyboard");
+        if (stopped > 0) {
+          showToast(`Stopped ${stopped} monitor stream${stopped === 1 ? "" : "s"}`);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [switchTab, stopAllMonitorSessions, showToast]);
+
+  // ── Init: load defaults, restore sessions, live reload ──
+  useEffect(() => {
+    initLiveReload();
+    symbolInputRef.current?.focus();
+
+    ensureDefaults()
+      .then(d => {
+        syncDefaultInputs(d);
+        return api("GET", "/monitor/sessions");
+      })
+      .then(sessions => {
+        if (!Array.isArray(sessions) || sessions.length === 0) return;
+        setMonitorSessions(prev => {
+          const next = new Map(prev);
+          for (const persisted of sessions) {
+            const session = createSessionFromPersisted(persisted);
+            next.set(session.id, session);
+            connectMonitorSession(session);
+          }
+          return next;
+        });
+      })
+      .catch(e => showToast(e.message, "error"));
+  }, []);
+
+  // ── Compute monitor status bar ──
+  const sessionsList = Array.from(monitorSessions.values());
+  const activeCount = sessionsList.filter(s => s.active).length;
+  const connectedCount = sessionsList.filter(s => s.active && s.connected).length;
+  const stoppedCount = sessionsList.filter(s => !s.active).length;
+
+  const summaryBits = html`
+    <span>${activeCount} active trade${activeCount === 1 ? "" : "s"}</span>
+    <span>${connectedCount} connected stream${connectedCount === 1 ? "" : "s"}</span>
+    ${!sessionsList.length
+      ? html`<span>board empty</span>`
+      : stoppedCount > 0
+        ? html`<span>${stoppedCount} stopped</span>`
+        : html`<span>${sessionsList.length} on board</span>`}
+  `;
+
+  // Monitor echo text
+  let monitorEchoText = monitorEcho;
+  if (sessionsList.length) {
+    if (activeCount > 0) {
+      const visiblePairs = sessionsList.filter(s => s.active).slice(0, 3).map(s => s.symbol).join(", ");
+      monitorEchoText = `${activeCount} active trade${activeCount === 1 ? "" : "s"}${visiblePairs ? ` | ${visiblePairs}` : ""}`;
+    } else {
+      monitorEchoText = `${stoppedCount} stopped trade${stoppedCount === 1 ? "" : "s"} on board`;
+    }
+  } else if (!monitorEcho && defaults) {
+    monitorEchoText = `Ready: ${defaults.leverage}x / ${fN(defaults.positionSizeUsd, 0)} USDC / ${defaults.objectiveHorizon}m`;
+  }
+
+  // ── Scan defaults display ──
+  const scanDefaultsContent = defaults
+    ? html`<span>${defaults.leverage}x</span><span>${fN(defaults.positionSizeUsd, 0)} usdc</span><span>${defaults.objectiveHorizon}m</span>`
+    : html`<span>loading defaults...</span>`;
+
+  return html`
+    <div class="app-shell">
+      <header class="appbar">
+        <div class="app-brand">miau</div>
+        <nav class="topnav" aria-label="Pages">
+          ${["overview", "scanner", "monitor", "learning", "settings"].map((tab, i) => html`
+            <button class="tab ${activeTab === tab ? "active" : ""}" onClick=${() => switchTab(tab)}>
+              <span class="tab-num">0${i + 1}</span> ${tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          `)}
+        </nav>
+        <div class="appbar-right">/ focus symbol | shift+esc stop all</div>
+      </header>
+
+      <main class="page-stack">
+        ${"\n"}
+        <section class="panel ${activeTab === "overview" ? "active" : ""}">
+          <div class="analyze-bar">
+            <form class="compact-form analyze-form" onSubmit=${(e) => {
+              e.preventDefault();
+              const symbol = symbolInputRef.current?.value?.trim();
+              if (!symbol) return;
+              symbolInputRef.current?.blur();
+              runAnalysis(symbol, qaDirectionRef.current?.value || undefined);
+            }}>
+              <label class="field-symbol"><input ref=${symbolInputRef} type="text" placeholder="BTC" spellcheck="false" autocomplete="off" /></label>
+              <label class="field-side"><select ref=${qaDirectionRef}><option value="">auto</option><option value="LONG">long</option><option value="SHORT">short</option></select></label>
+              <label class="field-lev"><input ref=${qaLeverageRef} type="number" step="1" min="1" placeholder="20" /></label>
+              <label class="field-size"><input ref=${qaSizeRef} type="number" step="1" min="1" placeholder="250" /></label>
+              <label class="field-hzn"><input ref=${qaHorizonRef} type="text" placeholder="15" /></label>
+              <button type="submit" class="btn-primary field-action ${analyzeRunning ? "is-running" : ""}" disabled=${analyzeRunning}>${analyzeRunning ? "Running\u2026" : "Run"}</button>
+            </form>
+          </div>
+          <div class="overview-main">
+            <div class="output-area">
+              ${lastAnalysis
+                ? html`<${AnalyzeResult} rec=${lastAnalysis.recommendation} aiAdvice=${lastAnalysis.aiAdvice} onMonitor=${monitorFromAnalysis} />`
+                : analyzeError
+                  ? errorBlock(analyzeError)
+                  : html`<div class="empty-state">type a symbol and press Run</div>`}
+            </div>
+          </div>
+        </section>
+
+        ${"\n"}
+        <section class="panel ${activeTab === "scanner" ? "active" : ""}">
+          <div class="scanner-bar">
+            <div class="inline-context">${scanDefaultsContent}</div>
+            <button class="btn-primary ${scanRunning ? "is-running" : ""}" disabled=${scanRunning} onClick=${loadScan}>${scanRunning ? "Scanning\u2026" : "Refresh"}</button>
+          </div>
+          <div class="output-area">
+            ${scanData
+              ? html`<${ScanResult} data=${scanData} onAnalyze=${handleScanAnalyze} />`
+              : scanError
+                ? errorBlock(scanError)
+                : html`<div class="empty-state">board not loaded</div>`}
+          </div>
+        </section>
+
+        ${"\n"}
+        <section class="panel ${activeTab === "monitor" ? "active" : ""}">
+          <div class="monitor-compose">
+            <form class="compact-form monitor-form" onSubmit=${(e) => { e.preventDefault(); startMonitor(); }}>
+              <label class="field-symbol"><input ref=${monitorSymbolRef} type="text" placeholder="BTC" spellcheck="false" required /></label>
+              <label class="field-side"><select ref=${monitorSideRef} required><option value="LONG">long</option><option value="SHORT">short</option></select></label>
+              <label class="field-price"><input ref=${monitorEntryRef} type="number" step="any" placeholder="entry" required /></label>
+              <label class="field-price"><input ref=${monitorSlRef} type="number" step="any" placeholder="sl" required /></label>
+              <label class="field-price"><input ref=${monitorTpRef} type="number" step="any" placeholder="tp" required /></label>
+              <label class="field-lev"><input ref=${monitorLeverageRef} type="number" step="1" min="1" placeholder="20" /></label>
+              <label class="field-size"><input ref=${monitorSizeRef} type="number" step="1" min="1" placeholder="250" /></label>
+              <label class="field-hzn"><input ref=${monitorHorizonRef} type="text" placeholder="15" /></label>
+              <button type="submit" class="btn-primary field-action">Add</button>
+              <button type="button" class="btn-secondary field-action" disabled=${activeCount === 0} onClick=${() => {
+                const stopped = stopAllMonitorSessions("stopped manually");
+                if (stopped > 0) showToast(`Stopped ${stopped} monitor stream${stopped === 1 ? "" : "s"}`);
+              }}>Stop All</button>
+            </form>
+          </div>
+          <div class="monitor-board">
+            <${MonitorBoard}
+              sessions=${monitorSessions}
+              onStop=${(id) => stopMonitorSession(id, "stopped manually")}
+              onRemove=${removeMonitorSession}
+              onEdit=${toggleEditMonitorSession}
+              onSaveEdit=${saveEditMonitorSession}
+              onCancelEdit=${toggleEditMonitorSession}
+            />
+          </div>
+        </section>
+
+        ${"\n"}
+        <section class="panel ${activeTab === "learning" ? "active" : ""}">
+          <div class="learning-bar">
+            <form class="compact-form" onSubmit=${(e) => { e.preventDefault(); loadLearning(); }}>
+              <label class="field-lev"><input ref=${learningLookbackRef} type="number" min="1" step="1" placeholder="14" value="14" /></label>
+              <button type="submit" class="btn-primary field-action ${learningRunning ? "is-running" : ""}" disabled=${learningRunning}>${learningRunning ? "Loading\u2026" : "Load"}</button>
+            </form>
+          </div>
+          <div class="output-area">
+            ${learningData
+              ? html`<${LearningResult} data=${learningData} />`
+              : learningError
+                ? errorBlock(learningError)
+                : html`<div class="empty-state">stats not loaded</div>`}
+          </div>
+        </section>
+
+        ${"\n"}
+        <section class="panel ${activeTab === "settings" ? "active" : ""}">
+          <div class="settings-grid">
+            <form class="settings-form" onSubmit=${(e) => { e.preventDefault(); saveSettings(); }}>
+              <div class="settings-row">
+                <label><span>leverage</span><input ref=${settingsLeverageRef} type="number" step="1" min="1" /></label>
+                <label><span>size usdc</span><input ref=${settingsSizeRef} type="number" step="1" min="1" /></label>
+                <label><span>horizon min</span><input ref=${settingsHorizonRef} type="text" /></label>
+              </div>
+              <label><span>ai model</span><input ref=${settingsAiModelRef} type="text" /></label>
+              <div class="settings-actions">
+                <button type="submit" class="btn-primary">Save</button>
+                ${settingsStatus ? html`<span class="status-msg ${settingsStatus.type}">${settingsStatus.text}</span>` : null}
+              </div>
+            </form>
+            <div class="meta-list">
+              <div class="meta-row"><span>storage</span><span>data/learning.sqlite</span></div>
+              <div class="meta-row"><span>exchange</span><span>Backpack public API + WebSocket</span></div>
+              <div class="meta-row"><span>execution</span><span>disabled by design</span></div>
+              <div class="meta-row"><span>ai</span><span>single-symbol advice only</span></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    ${"\n"}
+    ${toast ? html`<div class="toast ${toast.type}">${toast.message}</div>` : null}
+  `;
+}
+
+render(html`<${App} />`, document.getElementById("app"));

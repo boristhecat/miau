@@ -15,6 +15,7 @@ import { createIndicatorService } from "./adapters/indicators/indicator-service-
 import { StdoutLogger } from "./adapters/logging/stdout-logger.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
 import { SqliteTradeDefaultsStore } from "./adapters/persistence/trade-defaults-store.js";
+import { SqliteMonitorSessionStore } from "./adapters/persistence/sqlite-monitor-session-store.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
 import { WebServer } from "./adapters/web/web-server.js";
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
     const learningStore = await createLearningStore(path.join(process.cwd(), "data", "learning.sqlite"));
     const learning = new AdaptiveLearningService(learningStore);
     const tradeDefaultsStore = new SqliteTradeDefaultsStore();
+    const monitorSessionStore = new SqliteMonitorSessionStore();
     const tradeDefaults = await tradeDefaultsStore.load();
     const aiAdviceService = new ReconfigurableAiAdviceService("https://api.openai.com", tradeDefaults.aiModel);
     const aiEnabled = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
@@ -63,6 +65,7 @@ async function main(): Promise<void> {
       evaluateOpenTradeUseCase,
       liveMarketData,
       tradeDefaultsStore,
+      monitorSessionStore,
       aiAdviceUseCase: aiEnabled ? aiAdviceService : undefined,
       aiEnabled
     });
