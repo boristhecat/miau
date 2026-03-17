@@ -314,7 +314,7 @@ export class OpenAiAiAdvisor implements AiAdvisorPort {
       "Rules:",
       "- Keep reasons simple for average crypto traders.",
       "- Be conservative when setup quality is weak.",
-      "- Compare your view with the model signal and state agreement clearly.",
+      "- Compare your view with the final signal (not modelSignal) and state agreement clearly.",
       "- Do not echo snapshot fields verbatim (like modelSignal, pair, or unchanged levels) into reasons/overruledSignals unless essential.",
       "- Only include suggestedEntry/suggestedStopLoss/suggestedTakeProfit when you actually propose a changed value.",
       "- Output only valid JSON.",
