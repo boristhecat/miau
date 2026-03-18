@@ -1,51 +1,32 @@
-# AGENTS.md — miau-trader (agentic build)
+# AGENTS.md — miau-trader
 
-## Project goal
-Build a TypeScript **web application** that suggests **Entry / Stop Loss / Take Profit** for a crypto trading pair using **public market data** (no auth, no account access).
-- First exchange: **Backpack** public API.
-- **No trade execution**, no order placement, no account endpoints.
+## What this is
+A TypeScript web app for crypto perpetual futures decision-support on Backpack exchange. Read-only public market data — no trade execution, no account endpoints.
 
-## Non-goals (important)
-- No trade execution (order placement) and no private/account endpoints.
-- No Docker, no CI (for now).
-- No “tests” that only re-test external libraries’ correctness.
+## Hard rules
+- **No trade execution** — no order placement, no private/account API calls
+- **No Docker, no CI** (for now)
+- **Clean Architecture layering** — domain imports nothing from adapters; application depends only on ports + domain; adapters implement ports
+- **All domain types are `readonly`** — no mutation, use spreads
+- **Tests cover our logic** — not third-party library correctness
 
-## Architecture & boundaries (Clean Architecture style)
-Keep strict separation:
-- `src/domain/` — pure business logic (indicators, scoring, recommendation, monitoring)
-- `src/application/` — use-cases (orchestration)
-- `src/ports/` — interfaces (market data, logging, persistence, live streams)
-- `src/adapters/` — implementations (Backpack REST/WS, web UI, persistence)
-- `src/web.ts` — entry point / composition root
+## Commands
+```
+npm i              # install
+npm run dev        # dev server (port 3000)
+npm run build      # compile
+npm run start      # run built app
+npm test           # vitest
+```
 
-Rules:
-- Domain must not import adapters.
-- Application depends only on ports + domain.
-- Adapters implement ports.
+## Personas
+Use these when the user asks you to switch persona or references one by name. Always start your response by acknowledging which persona file you are using.
+- `persona/market-structure-trader.md` — crypto domain expert, thinks in liquidity and structure
+- `persona/senior-fullstack-engineer.md` — TypeScript implementer, clean architecture
+- `persona/signal-designer.md` — information design, progressive disclosure, terminal aesthetic
 
-## Requirements
-### Confidence score
-Produce a deterministic percentage 0..100 based on indicator confluence.
-Also output short rationale bullets explaining the score.
-
-## Testing policy
-- Tests for request parsing/validation at the web/API boundary.
-- Tests for API retrieval using HTTP mocking (e.g. `nock`) — do not hit live endpoints in unit tests.
-- Focus on our integration points and logic, not on verifying indicator libraries.
-
-## Commands (keep up to date)
-- Install: `npm i`
-- Run dev server: `npm run dev`
-- Build: `npm run build`
-- Run built app: `npm run start`
-- Test: `npm test`
-
-## Persistence (current)
-- Learning outcomes are persisted locally in SQLite: `data/learning.sqlite`.
-- User defaults are persisted locally in SQLite: `data/learning.sqlite`.
-
-## Working style for Codex
-- Always start by creating/updating `PLANS.md` for tasks that touch multiple files.
-- Before making changes, read `PLANS.md` and `docs/CURRENT_STATE.md`. If either conflicts with the current code, report the conflict and propose an update.
-- Make small, reviewable commits/patches.
-- If anything is ambiguous, ask a question before implementing.
+## Orientation
+- Entry point: `src/web.ts` (composition root, DI wiring)
+- Domain plans: `plans/*.md`
+- SQLite data: `data/` (gitignored)
+- Frontend: `src/adapters/web/static/` (Preact + htm, no build step)
