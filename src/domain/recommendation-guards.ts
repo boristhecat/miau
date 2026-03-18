@@ -83,7 +83,7 @@ export function applyTradeGuards(input: {
     if (input.entryReadinessStatus === "TOO_LATE") {
       return block(`${readinessMessage}${preferredEntry}`);
     }
-    return block(`wait for a cleaner trigger: ${readinessMessage}${preferredEntry}`);
+    accumulated.push(`Entry timing: ${readinessMessage}${preferredEntry}`);
   }
   if (input.setupPlaybook && input.playbookRegimeAligned === false) {
     return block(`${input.setupPlaybook} is not aligned with the current ${input.marketRegime} regime.`);

@@ -87,6 +87,16 @@ export function detectStructuralSetup(input: {
     };
   }
 
+  if (hasLevel.present && hasInvalidation.present) {
+    rationale.push("Setup: level test with structural invalidation (catalyst implicit via price action).");
+    return {
+      hasSetup: true,
+      setupType: "LEVEL_TEST",
+      playbook: resolvePlaybook("LEVEL_TEST", marketRegime),
+      rationale
+    };
+  }
+
   // Improvement #10: Liquidation cascade detection
   // Large OI drop + price acceleration = liquidation event → predictable bounce/continuation
   const liquidationCascade = checkLiquidationCascade(signal, indicators, input.perp);
@@ -169,7 +179,7 @@ function checkLevelTest(
         lastPrice >= indicators.nearestSupportLevel) {
       return { present: true, reason: "Level: price is testing structural support." };
     }
-    if (Math.abs(lastPrice - indicators.ema20) < proximityThreshold && indicators.ema20 < indicators.ema50 === false) {
+    if (Math.abs(lastPrice - indicators.ema20) < proximityThreshold && !(indicators.ema20 < indicators.ema50)) {
       return { present: true, reason: "Level: price is testing EMA20 support in uptrend." };
     }
     if (marketRegime === "RANGE" && indicators.volumeProfile &&
@@ -185,7 +195,7 @@ function checkLevelTest(
         lastPrice <= indicators.nearestResistanceLevel) {
       return { present: true, reason: "Level: price is testing structural resistance." };
     }
-    if (Math.abs(lastPrice - indicators.ema20) < proximityThreshold && indicators.ema20 > indicators.ema50 === false) {
+    if (Math.abs(lastPrice - indicators.ema20) < proximityThreshold && !(indicators.ema20 > indicators.ema50)) {
       return { present: true, reason: "Level: price is testing EMA20 resistance in downtrend." };
     }
     if (marketRegime === "RANGE" && indicators.volumeProfile &&
