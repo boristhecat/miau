@@ -121,10 +121,10 @@ function App() {
     const params = new URLSearchParams({
       symbol: session.symbol,
       side: session.side,
-      entry: String(session.entry),
-      stopLoss: String(session.stopLoss),
-      takeProfit: String(session.takeProfit)
+      entry: String(session.entry)
     });
+    if (session.stopLoss != null) params.set("stopLoss", String(session.stopLoss));
+    if (session.takeProfit != null) params.set("takeProfit", String(session.takeProfit));
     if (session.leverage != null) params.set("leverage", String(session.leverage));
     if (session.positionSizeUsd != null) params.set("positionSizeUsd", String(session.positionSizeUsd));
     if (session.objectiveHorizon != null) params.set("objectiveHorizon", session.objectiveHorizon);
@@ -402,7 +402,7 @@ function App() {
       const stopLoss = monitorSlRef.current?.value?.trim();
       const takeProfit = monitorTpRef.current?.value?.trim();
 
-      if (!symbol || !entry || !stopLoss || !takeProfit) return;
+      if (!symbol || !entry) return;
 
       const leverage = readOptionalPositiveNumber(monitorLeverageRef, "leverage");
       const positionSizeUsd = readOptionalPositiveNumber(monitorSizeRef, "position size");
@@ -412,8 +412,8 @@ function App() {
         symbol,
         side,
         entry: Number(entry),
-        stopLoss: Number(stopLoss),
-        takeProfit: Number(takeProfit),
+        stopLoss: stopLoss ? Number(stopLoss) : null,
+        takeProfit: takeProfit ? Number(takeProfit) : null,
         leverage: leverage ?? null,
         positionSizeUsd: positionSizeUsd ?? null,
         objectiveHorizon: objectiveHorizon ?? null
@@ -680,8 +680,8 @@ function App() {
               <label class="field-symbol"><input ref=${monitorSymbolRef} type="text" placeholder="BTC" spellcheck="false" required /></label>
               <label class="field-side"><select ref=${monitorSideRef} required><option value="LONG">long</option><option value="SHORT">short</option></select></label>
               <label class="field-price"><input ref=${monitorEntryRef} type="number" step="any" placeholder="entry" required /></label>
-              <label class="field-price"><input ref=${monitorSlRef} type="number" step="any" placeholder="sl" required /></label>
-              <label class="field-price"><input ref=${monitorTpRef} type="number" step="any" placeholder="tp" required /></label>
+              <label class="field-price"><input ref=${monitorSlRef} type="number" step="any" placeholder="sl" /></label>
+              <label class="field-price"><input ref=${monitorTpRef} type="number" step="any" placeholder="tp" /></label>
               <label class="field-lev"><input ref=${monitorLeverageRef} type="number" step="1" min="1" placeholder="20" /></label>
               <label class="field-size"><input ref=${monitorSizeRef} type="number" step="1" min="1" placeholder="250" /></label>
               <label class="field-hzn"><input ref=${monitorHorizonRef} type="text" placeholder="15" /></label>

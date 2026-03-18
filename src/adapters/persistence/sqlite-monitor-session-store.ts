@@ -113,14 +113,41 @@ export class SqliteMonitorSessionStore implements MonitorSessionStorePort {
         symbol TEXT NOT NULL,
         side TEXT NOT NULL CHECK (side IN ('LONG', 'SHORT')),
         entry REAL NOT NULL,
-        stop_loss REAL NOT NULL,
-        take_profit REAL NOT NULL,
+        stop_loss REAL,
+        take_profit REAL,
         leverage REAL,
         position_size_usd REAL,
         objective_horizon TEXT,
         created_at_ms INTEGER NOT NULL
       )`
     ).run();
+    this.migrateNullableSlTp(db);
+  }
+
+  private migrateNullableSlTp(db: SqliteDatabase): void {
+    // If the table was created with NOT NULL on stop_loss/take_profit, recreate it without the constraint.
+    const info = db.prepare(`PRAGMA table_info(monitor_sessions)`).all() as Array<Record<string, unknown>>;
+    const slCol = info.find(c => c["name"] === "stop_loss");
+    if (!slCol || slCol["notnull"] !== 1) return; // already nullable, nothing to do
+    db.prepare(`ALTER TABLE monitor_sessions RENAME TO monitor_sessions_old`).run();
+    db.prepare(
+      `CREATE TABLE monitor_sessions (
+        id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        side TEXT NOT NULL CHECK (side IN ('LONG', 'SHORT')),
+        entry REAL NOT NULL,
+        stop_loss REAL,
+        take_profit REAL,
+        leverage REAL,
+        position_size_usd REAL,
+        objective_horizon TEXT,
+        created_at_ms INTEGER NOT NULL
+      )`
+    ).run();
+    db.prepare(
+      `INSERT INTO monitor_sessions SELECT id, symbol, side, entry, stop_loss, take_profit, leverage, position_size_usd, objective_horizon, created_at_ms FROM monitor_sessions_old`
+    ).run();
+    db.prepare(`DROP TABLE monitor_sessions_old`).run();
   }
 }
 
@@ -130,8 +157,8 @@ function toMonitorSession(row: Record<string, unknown>): MonitorSession {
     symbol: String(row.symbol),
     side: row.side === "SHORT" ? "SHORT" : "LONG",
     entry: Number(row.entry),
-    stopLoss: Number(row.stop_loss),
-    takeProfit: Number(row.take_profit),
+    stopLoss: row.stop_loss != null ? Number(row.stop_loss) : null,
+    takeProfit: row.take_profit != null ? Number(row.take_profit) : null,
     leverage: row.leverage != null ? Number(row.leverage) : null,
     positionSizeUsd: row.position_size_usd != null ? Number(row.position_size_usd) : null,
     objectiveHorizon: row.objective_horizon != null ? String(row.objective_horizon) : null,

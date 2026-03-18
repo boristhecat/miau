@@ -12,15 +12,17 @@ export class BuildOpenTradeBaselineUseCase implements IBuildOpenTradeBaselineUse
     pair: string;
     side: "LONG" | "SHORT";
     entry: number;
-    stopLoss: number;
-    takeProfit: number;
+    stopLoss?: number;
+    takeProfit?: number;
     leverage?: number;
     positionSizeUsd?: number;
     objectiveHorizon?: string;
     intervalOverride?: string;
     openedAtMs?: number;
   }): Promise<TradeMonitorBaseline> {
-    this.tradeCalculator.validateLevels(input.side, input.entry, input.stopLoss, input.takeProfit);
+    if (input.stopLoss != null && input.takeProfit != null) {
+      this.tradeCalculator.validateLevels(input.side, input.entry, input.stopLoss, input.takeProfit);
+    }
     const timeframes = resolveMonitorTimeframes(input.objectiveHorizon, input.intervalOverride);
     const baselineRecommendation = await this.recommendationUseCase.execute({
       pair: input.pair,

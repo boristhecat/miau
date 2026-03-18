@@ -126,16 +126,14 @@ export class WebApiHandler {
     const side = String(params.side ?? "").toUpperCase() as "LONG" | "SHORT";
     if (side !== "LONG" && side !== "SHORT") throw new HttpError(400, "Side must be LONG or SHORT.");
     const entry = Number(params.entry);
-    const stopLoss = Number(params.stopLoss);
-    const takeProfit = Number(params.takeProfit);
+    const stopLoss = params.stopLoss != null && params.stopLoss !== "" ? Number(params.stopLoss) : undefined;
+    const takeProfit = params.takeProfit != null && params.takeProfit !== "" ? Number(params.takeProfit) : undefined;
     if (!Number.isFinite(entry) || entry <= 0) throw new HttpError(400, "Invalid entry price.");
-    if (!Number.isFinite(stopLoss) || stopLoss <= 0) throw new HttpError(400, "Invalid stop loss.");
-    if (!Number.isFinite(takeProfit) || takeProfit <= 0) throw new HttpError(400, "Invalid take profit.");
-    if (side === "LONG" && (stopLoss >= entry || takeProfit <= entry)) {
-      throw new HttpError(400, "LONG requires SL < entry < TP.");
-    }
-    if (side === "SHORT" && (stopLoss <= entry || takeProfit >= entry)) {
-      throw new HttpError(400, "SHORT requires TP < entry < SL.");
+    if (stopLoss !== undefined && (!Number.isFinite(stopLoss) || stopLoss <= 0)) throw new HttpError(400, "Invalid stop loss.");
+    if (takeProfit !== undefined && (!Number.isFinite(takeProfit) || takeProfit <= 0)) throw new HttpError(400, "Invalid take profit.");
+    if (stopLoss != null && takeProfit != null) {
+      if (side === "LONG" && (stopLoss >= entry || takeProfit <= entry)) throw new HttpError(400, "LONG requires SL < entry < TP.");
+      if (side === "SHORT" && (stopLoss <= entry || takeProfit >= entry)) throw new HttpError(400, "SHORT requires TP < entry < SL.");
     }
 
     const defaults = await this.deps.tradeDefaultsStore.load();
@@ -173,18 +171,18 @@ export class WebApiHandler {
     const side = String(body.side ?? "").toUpperCase() as "LONG" | "SHORT";
     if (side !== "LONG" && side !== "SHORT") throw new HttpError(400, "Side must be LONG or SHORT.");
     const entry = Number(body.entry);
-    const stopLoss = Number(body.stopLoss);
-    const takeProfit = Number(body.takeProfit);
+    const stopLoss = body.stopLoss != null && body.stopLoss !== "" ? Number(body.stopLoss) : undefined;
+    const takeProfit = body.takeProfit != null && body.takeProfit !== "" ? Number(body.takeProfit) : undefined;
     if (!Number.isFinite(entry) || entry <= 0) throw new HttpError(400, "Invalid entry price.");
-    if (!Number.isFinite(stopLoss) || stopLoss <= 0) throw new HttpError(400, "Invalid stop loss.");
-    if (!Number.isFinite(takeProfit) || takeProfit <= 0) throw new HttpError(400, "Invalid take profit.");
+    if (stopLoss !== undefined && (!Number.isFinite(stopLoss) || stopLoss <= 0)) throw new HttpError(400, "Invalid stop loss.");
+    if (takeProfit !== undefined && (!Number.isFinite(takeProfit) || takeProfit <= 0)) throw new HttpError(400, "Invalid take profit.");
 
     return this.deps.monitorSessionStore.create({
       symbol,
       side,
       entry,
-      stopLoss,
-      takeProfit,
+      stopLoss: stopLoss ?? null,
+      takeProfit: takeProfit ?? null,
       leverage: body.leverage != null ? Number(body.leverage) : null,
       positionSizeUsd: body.positionSizeUsd != null ? Number(body.positionSizeUsd) : null,
       objectiveHorizon: body.objectiveHorizon != null ? String(body.objectiveHorizon) : null
@@ -200,14 +198,22 @@ export class WebApiHandler {
       fields.entry = v;
     }
     if (body.stopLoss !== undefined) {
-      const v = Number(body.stopLoss);
-      if (!Number.isFinite(v) || v <= 0) throw new HttpError(400, "Invalid stop loss.");
-      fields.stopLoss = v;
+      if (body.stopLoss === null || body.stopLoss === "") {
+        fields.stopLoss = null;
+      } else {
+        const v = Number(body.stopLoss);
+        if (!Number.isFinite(v) || v <= 0) throw new HttpError(400, "Invalid stop loss.");
+        fields.stopLoss = v;
+      }
     }
     if (body.takeProfit !== undefined) {
-      const v = Number(body.takeProfit);
-      if (!Number.isFinite(v) || v <= 0) throw new HttpError(400, "Invalid take profit.");
-      fields.takeProfit = v;
+      if (body.takeProfit === null || body.takeProfit === "") {
+        fields.takeProfit = null;
+      } else {
+        const v = Number(body.takeProfit);
+        if (!Number.isFinite(v) || v <= 0) throw new HttpError(400, "Invalid take profit.");
+        fields.takeProfit = v;
+      }
     }
     if (body.leverage !== undefined) fields.leverage = body.leverage != null ? Number(body.leverage) : null;
     if (body.positionSizeUsd !== undefined) fields.positionSizeUsd = body.positionSizeUsd != null ? Number(body.positionSizeUsd) : null;

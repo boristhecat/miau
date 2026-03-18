@@ -33,8 +33,8 @@ export interface OpenTrade {
   readonly pair: string;
   readonly side: "LONG" | "SHORT";
   readonly entry: number;
-  readonly stopLoss: number;
-  readonly takeProfit: number;
+  readonly stopLoss?: number;
+  readonly takeProfit?: number;
   readonly leverage?: number;
   readonly positionSizeUsd?: number;
   readonly openedAtMs: number;
@@ -110,6 +110,7 @@ export interface TradeMonitorSnapshot {
   readonly sequencePattern?: SequencePattern;
   readonly levelInteractionStatus?: LevelInteractionStatus;
   readonly levelInteractionReference?: LevelInteractionReference;
+  readonly analysisAtr?: number;
   readonly structureState?: StructureState;
   readonly structureBreak?: StructureBreakType;
   readonly structureBreakDirection?: "BULLISH" | "BEARISH";

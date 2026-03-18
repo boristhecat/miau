@@ -104,6 +104,7 @@ export class TradeManagementEvaluator {
   /** Convert MFE percentage into R units using the trade's risk distance. */
   private computeMfeR(metrics: TradeMonitorMetrics, baseline: TradeMonitorBaseline): number {
     const trade = baseline.trade;
+    if (trade.stopLoss == null) return 0;
     const riskDistance =
       trade.side === "LONG"
         ? Math.max(trade.entry - trade.stopLoss, 1e-8)

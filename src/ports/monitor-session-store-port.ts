@@ -3,8 +3,8 @@ export interface MonitorSession {
   readonly symbol: string;
   readonly side: "LONG" | "SHORT";
   readonly entry: number;
-  readonly stopLoss: number;
-  readonly takeProfit: number;
+  readonly stopLoss: number | null;
+  readonly takeProfit: number | null;
   readonly leverage: number | null;
   readonly positionSizeUsd: number | null;
   readonly objectiveHorizon: string | null;

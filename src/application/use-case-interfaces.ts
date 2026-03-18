@@ -79,8 +79,8 @@ export interface IBuildOpenTradeBaselineUseCase {
     pair: string;
     side: "LONG" | "SHORT";
     entry: number;
-    stopLoss: number;
-    takeProfit: number;
+    stopLoss?: number;
+    takeProfit?: number;
     leverage?: number;
     positionSizeUsd?: number;
     objectiveHorizon?: string;

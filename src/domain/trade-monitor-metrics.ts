@@ -27,21 +27,25 @@ export class TradeMonitorMetricsEvaluator {
         : (trade.entry - estimatedExitPrice) / trade.entry;
     const totalExecutionCostRate = this.tradeCalculator.computeTotalExecutionCostRate(input.perp.bidAskSpreadPct);
     const netReturn = executableReturn - totalExecutionCostRate;
-    const riskDistance =
-      trade.side === "LONG" ? Math.max(trade.entry - trade.stopLoss, 1e-8) : Math.max(trade.stopLoss - trade.entry, 1e-8);
-    const currentR =
-      trade.side === "LONG"
-        ? (estimatedExitPrice - trade.entry) / riskDistance
-        : (trade.entry - estimatedExitPrice) / riskDistance;
+    const riskDistance = trade.stopLoss != null
+      ? (trade.side === "LONG" ? Math.max(trade.entry - trade.stopLoss, 1e-8) : Math.max(trade.stopLoss - trade.entry, 1e-8))
+      : undefined;
+    const currentR = riskDistance !== undefined
+      ? (trade.side === "LONG"
+          ? (estimatedExitPrice - trade.entry) / riskDistance
+          : (trade.entry - estimatedExitPrice) / riskDistance)
+      : 0;
 
-    const distanceToStopPrice =
-      trade.side === "LONG"
-        ? Math.max(0, input.perp.markPrice - trade.stopLoss)
-        : Math.max(0, trade.stopLoss - input.perp.markPrice);
-    const distanceToTargetPrice =
-      trade.side === "LONG"
-        ? Math.max(0, trade.takeProfit - input.perp.markPrice)
-        : Math.max(0, input.perp.markPrice - trade.takeProfit);
+    const distanceToStopPrice = trade.stopLoss != null
+      ? (trade.side === "LONG"
+          ? Math.max(0, input.perp.markPrice - trade.stopLoss)
+          : Math.max(0, trade.stopLoss - input.perp.markPrice))
+      : 0;
+    const distanceToTargetPrice = trade.takeProfit != null
+      ? (trade.side === "LONG"
+          ? Math.max(0, trade.takeProfit - input.perp.markPrice)
+          : Math.max(0, input.perp.markPrice - trade.takeProfit))
+      : 0;
     const atr = input.baseline.baselineAtr > 0 ? input.baseline.baselineAtr : undefined;
     const currentPnlPct = grossReturn * 100;
     const previousFavorable = input.previousSnapshot?.metrics.maxFavorableExcursionPct ?? 0;
@@ -63,9 +67,12 @@ export class TradeMonitorMetricsEvaluator {
       input.baseline.baselineHoldingPeriodMinutes && input.baseline.baselineHoldingPeriodMinutes > 0
         ? round((timeInTradeSeconds / 60 / input.baseline.baselineHoldingPeriodMinutes) * 100)
         : undefined;
-    const stopHit = trade.side === "LONG" ? input.perp.markPrice <= trade.stopLoss : input.perp.markPrice >= trade.stopLoss;
-    const targetHit =
-      trade.side === "LONG" ? input.perp.markPrice >= trade.takeProfit : input.perp.markPrice <= trade.takeProfit;
+    const stopHit = trade.stopLoss != null
+      ? (trade.side === "LONG" ? input.perp.markPrice <= trade.stopLoss : input.perp.markPrice >= trade.stopLoss)
+      : false;
+    const targetHit = trade.takeProfit != null
+      ? (trade.side === "LONG" ? input.perp.markPrice >= trade.takeProfit : input.perp.markPrice <= trade.takeProfit)
+      : false;
 
     return {
       markPrice: round(input.perp.markPrice),

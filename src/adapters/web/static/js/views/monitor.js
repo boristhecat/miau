@@ -77,27 +77,29 @@ function MonitorSnapshot({ snapshot, editing }) {
   const metrics = snapshot.metrics ?? {};
   const trade = snapshot.trade ?? {};
   const grossPnl = metrics.grossUnrealizedPnlPct ?? 0;
-  const railPct = thermoPos(metrics, trade);
   const health = String(snapshot.healthStatus ?? "").toUpperCase();
   const action = String(snapshot.managementAction ?? "").toUpperCase();
   const reasons = [...new Set([...(snapshot.healthReasons ?? []), ...(snapshot.managementReasons ?? [])].filter(Boolean))];
+  const hasSL = (snapshot.trade ?? {}).stopLoss != null;
+  const hasTP = (snapshot.trade ?? {}).takeProfit != null;
+
+  // SL/TP-dependent action values that become meaningless without levels
+  const slTpActions = ["MOVE_TO_BREAKEVEN", "TAKE_PARTIAL", "TARGET_HIT"];
+  const actionMeaningful = hasSL && hasTP || !slTpActions.includes(action);
 
   const pnlLine = html`
     <span class="mon-pnl ${pC(grossPnl)}">${fSPct(grossPnl)}</span>
     ${metrics.grossUnrealizedPnlUsd != null ? html`<span class="dim">${fSUsd(metrics.grossUnrealizedPnlUsd)}</span>` : null}
-    <span class="dim">${fS(metrics.currentR)}R</span>
+    ${hasSL ? html`<span class="dim">${fS(metrics.currentR)}R</span>` : null}
     <span class="dim">${fDur(metrics.timeInTradeSeconds)}</span>
     ${badge(prettyToken(health), statusTone(health, ["INTACT"], ["DEGRADING", "MIXED"]), "Trade health based on price action vs levels")}
-    ${badge(prettyToken(action), actionTone(action), "Recommended management action")}
+    ${actionMeaningful ? badge(prettyToken(action), actionTone(action), "Recommended management action") : null}
   `;
 
   const distances = html`
-    <span class="c-red" title="Distance to stop loss">${fPct(metrics.distanceToStopPct)}</span> <span class="dim">sl</span>
-    ${" \u00b7 "}
-    <span class="c-green" title="Distance to target">${fPct(metrics.distanceToTargetPct)}</span> <span class="dim">tp</span>
-    ${" \u00b7 "}
-    <span class="c-green" title="Max favorable excursion">${fSPct(metrics.maxFavorableExcursionPct)}</span> <span class="dim">mfe</span>
-    ${" \u00b7 "}
+    ${hasSL ? html`<span class="c-red" title="Distance to stop loss">${fPct(metrics.distanceToStopPct)}</span> <span class="dim">sl</span>${" \u00b7 "}` : null}
+    ${hasTP ? html`<span class="c-green" title="Distance to target">${fPct(metrics.distanceToTargetPct)}</span> <span class="dim">tp</span>${" \u00b7 "}` : null}
+    ${hasSL ? html`<span class="c-green" title="Max favorable excursion">${fSPct(metrics.maxFavorableExcursionPct)}</span> <span class="dim">mfe</span>${" \u00b7 "}` : null}
     <span class="c-red" title="Max adverse excursion">-${fPct(metrics.maxAdverseExcursionPct)}</span> <span class="dim">mae</span>
   `;
 
@@ -113,12 +115,12 @@ function MonitorSnapshot({ snapshot, editing }) {
     ${snapshot.marketRegime ? html`<span class="dim" title="Market regime">${prettyToken(snapshot.marketRegime)}</span>` : null}
     ${snapshot.marketTradeability ? badge(prettyToken(snapshot.marketTradeability), tradeabilityTone(snapshot.marketTradeability), "Whether conditions are safe to trade") : null}
     ${sc ? badge(sc.currentSession, sessionTone(sc.currentSession), `${sc.minutesIntoSession}m into session`) : null}
-    ${liq ? badge(liq.risk, liquidationRiskTone(liq.risk), `Liq ${fP(liq.liquidationPrice)} (${fN(liq.liquidationToStopRatio)}x SL)`) : null}
+    ${liq ? badge(liq.risk, liquidationRiskTone(liq.risk), hasSL ? `Liq ${fP(liq.liquidationPrice)} (${fN(liq.liquidationToStopRatio)}x SL)` : `Liq ${fP(liq.liquidationPrice)}`) : null}
     ${fa && fa.signal !== "NEUTRAL" ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), `Funding ${fPct(fa.currentRate)}`) : null}
-    ${clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports direction") : null}
-    ${clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop") : null}
+    ${hasTP && clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports direction") : null}
+    ${hasSL && clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop") : null}
     ${snapshot.analysisConfidence != null ? html`<span class="${cC(snapshot.analysisConfidence)}" title="Analysis confidence">${snapshot.analysisConfidence}%</span>` : null}
-    ${metrics.holdingProgressPct != null ? html`<span class="dim" title="Hold time progress">${fPct(metrics.holdingProgressPct)} held</span>` : null}
+    ${hasTP && metrics.holdingProgressPct != null ? html`<span class="dim" title="Hold time progress">${fPct(metrics.holdingProgressPct)} held</span>` : null}
   `;
 
   const reasonsMarkup = reasons.length
@@ -131,17 +133,26 @@ function MonitorSnapshot({ snapshot, editing }) {
     ${reasonsMarkup}
   `;
 
-  const barRange = trade.takeProfit - trade.stopLoss;
-  const entryPct = barRange !== 0 && trade.entry != null
-    ? ((trade.entry - trade.stopLoss) / barRange) * 100
-    : null;
+  // Bar anchoring: use SL/TP when both defined, otherwise fall back to ±2 ATR around current price
+  const atr = snapshot.analysisAtr ?? metrics.markPrice * 0.01;
+  const markPrice = metrics.markPrice;
+  const useAtrWindow = !hasSL || !hasTP;
+  const barLow = hasSL ? trade.stopLoss : markPrice - 2 * atr;
+  const barHigh = hasTP ? trade.takeProfit : markPrice + 2 * atr;
+  const barRange = barHigh - barLow;
+
+  const toBarPct = price => barRange !== 0 ? ((price - barLow) / barRange) * 100 : 50;
+
+  const dynamicRailPct = Math.max(2, Math.min(98, barRange !== 0 ? toBarPct(markPrice) : 50));
+
+  const entryPct = trade.entry != null ? toBarPct(trade.entry) : null;
 
   const clusterTicks = (() => {
     const clusters = clusterCtx?.clusters;
     if (!clusters?.length || barRange === 0) return null;
     return clusters
       .map(c => {
-        const pct = ((c.price - trade.stopLoss) / barRange) * 100;
+        const pct = toBarPct(c.price);
         if (pct < 1 || pct > 99) return null;
         const adverse = trade.entry != null
           ? (trade.side === "LONG" ? c.price < trade.entry : c.price > trade.entry)
@@ -158,21 +169,25 @@ function MonitorSnapshot({ snapshot, editing }) {
       .filter(Boolean);
   })();
 
+  const barLeftLabel = hasSL ? `SL ${fP(trade.stopLoss)}` : fP(barLow);
+  const barRightLabel = hasTP ? `TP ${fP(trade.takeProfit)}` : fP(barHigh);
+  const barCenterLabel = `E ${fP(trade.entry)}`;
+
   return html`
     <div class="mon-top">${pnlLine}</div>
     <div class="progress-shell">
       <div class="progress-top">
-        <span class="progress-mark-label" style=${"left:" + railPct + "%"}>${fP(metrics.markPrice)}</span>
+        <span class="progress-mark-label" style=${"left:" + dynamicRailPct + "%"}>${fP(markPrice)}</span>
       </div>
-      <div class="progress-rail" style="--pct:${railPct}">
+      <div class="progress-rail" style=${"--pct:" + dynamicRailPct}>
         ${clusterTicks}
         ${entryPct != null ? html`<span class="entry-line" style=${"left:" + entryPct + "%"}></span>` : null}
         <span class="progress-marker"></span>
       </div>
       <div class="progress-labels">
-        <span>SL ${fP(trade.stopLoss)}</span>
-        <span>E ${fP(trade.entry)}</span>
-        <span>TP ${fP(trade.takeProfit)}</span>
+        <span class=${useAtrWindow ? "dim" : ""}>${barLeftLabel}</span>
+        <span>${barCenterLabel}</span>
+        <span class=${useAtrWindow ? "dim" : ""}>${barRightLabel}</span>
       </div>
     </div>
     ${belowBar}
@@ -221,12 +236,3 @@ function MonitorEditForm({ session, onSave, onCancel }) {
   `;
 }
 
-function thermoPos(metrics, trade) {
-  const mark = metrics.markPrice;
-  const stopLoss = trade.stopLoss;
-  const takeProfit = trade.takeProfit;
-  if (mark == null || stopLoss == null || takeProfit == null || takeProfit === stopLoss) {
-    return 50;
-  }
-  return Math.max(2, Math.min(98, ((mark - stopLoss) / (takeProfit - stopLoss)) * 100));
-}

@@ -83,6 +83,7 @@ export class EvaluateOpenTradeUseCase implements IEvaluateOpenTradeUseCase {
         sequencePattern: analysisRecommendation.sequencePattern,
         levelInteractionStatus: analysisRecommendation.levelInteractionStatus,
         levelInteractionReference: analysisRecommendation.levelInteractionReference,
+        analysisAtr: analysisRecommendation.indicators?.atr14,
         structureState: analysisRecommendation.structureState,
         structureBreak: analysisRecommendation.structureBreak,
         structureBreakDirection: analysisRecommendation.structureBreakDirection,
