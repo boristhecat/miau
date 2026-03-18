@@ -1,4 +1,4 @@
-import type { Recommendation } from "../domain/types.js";
+import type { Recommendation, TradeJournalEntry } from "../domain/types.js";
 import type {
   LearningBucketRow,
   LearningOutcomeRecord,
@@ -180,6 +180,64 @@ export class AdaptiveLearningService {
       recommendationSnapshot
     };
     await this.store.recordOutcome(record);
+  }
+
+  /**
+   * Bridge: map a completed TradeJournalEntry into the learning system so
+   * monitored trades actually improve adaptive policy (win-rate, stop widening, etc.).
+   */
+  async recordJournalOutcome(entry: TradeJournalEntry): Promise<void> {
+    const symbol = entry.symbol.split("-")[0] ?? entry.symbol;
+    const pair = entry.symbol.includes("-") ? entry.symbol : `${entry.symbol}-USD`;
+
+    const status: OutcomeStatus =
+      entry.outcomeClassification === "AS_PLANNED" ||
+      entry.outcomeClassification === "EARLY_EXIT_PROFIT"
+        ? "SUCCESS"
+        : "FAILURE";
+
+    const failureType: OutcomeFailureType = mapJournalFailureToLearning(entry.failureReason);
+
+    const directionalCorrect =
+      entry.pnlPct > 0 ||
+      entry.outcomeClassification === "AS_PLANNED" ||
+      entry.outcomeClassification === "BREAKEVEN";
+
+    const record: LearningOutcomeRecord = {
+      pair,
+      symbol,
+      timeframe: entry.analysisInterval,
+      horizonMinutes: entry.durationMinutes,
+      marketRegime: entry.marketRegime,
+      signal: entry.side,
+      confidence: entry.confidence,
+      setupQuality: entry.confidence, // best proxy available from journal data
+      status,
+      failureType,
+      directionalCorrect,
+      maxFavorableExcursionPct: entry.maxFavorableExcursionPct,
+      maxAdverseExcursionPct: entry.maxAdverseExcursionPct,
+      pnlUsd: entry.pnlUsd
+    };
+    await this.store.recordOutcome(record);
+  }
+}
+
+function mapJournalFailureToLearning(reason: TradeJournalEntry["failureReason"]): OutcomeFailureType {
+  switch (reason) {
+    case "WRONG_DIRECTION":
+      return "WRONG_DIRECTION";
+    case "STOP_TOO_TIGHT":
+      return "STOP_TOO_TIGHT_REBOUND";
+    case "BAD_TIMING":
+    case "SESSION_FAKEOUT":
+      return "WHIPSAW_SL_TP";
+    case "FUNDING_DRAIN":
+    case "EXTERNAL_EVENT":
+      return "TIMEOUT_LOSS";
+    case "NONE":
+    default:
+      return "NONE";
   }
 }
 

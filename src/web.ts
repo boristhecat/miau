@@ -16,6 +16,7 @@ import { StdoutLogger } from "./adapters/logging/stdout-logger.js";
 import { createLearningStore } from "./adapters/persistence/sqlite-learning-store.js";
 import { SqliteTradeDefaultsStore } from "./adapters/persistence/trade-defaults-store.js";
 import { SqliteMonitorSessionStore } from "./adapters/persistence/sqlite-monitor-session-store.js";
+import { createTradeJournalStore } from "./adapters/persistence/sqlite-trade-journal-store.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
 import { WebServer } from "./adapters/web/web-server.js";
@@ -41,6 +42,21 @@ async function main(): Promise<void> {
     const learning = new AdaptiveLearningService(learningStore);
     const tradeDefaultsStore = new SqliteTradeDefaultsStore();
     const monitorSessionStore = new SqliteMonitorSessionStore();
+
+    // Plan 9: Trade journal store — uses same data directory
+    const journalStore = await (async () => {
+      try {
+        const dataDir = path.join(process.cwd(), "data");
+        const moduleName = "better-sqlite3";
+        const mod = (await import(moduleName)) as { default: new (file: string) => Parameters<typeof createTradeJournalStore>[0] };
+        const db = new mod.default(path.join(dataDir, "journal.sqlite"));
+        db.pragma("journal_mode = WAL");
+        return createTradeJournalStore(db);
+      } catch {
+        console.warn("Trade journal store could not be initialized — journal features disabled.");
+        return undefined;
+      }
+    })();
     const tradeDefaults = await tradeDefaultsStore.load();
     const aiAdviceService = new ReconfigurableAiAdviceService("https://api.openai.com", tradeDefaults.aiModel);
     const aiEnabled = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
@@ -66,6 +82,7 @@ async function main(): Promise<void> {
       liveMarketData,
       tradeDefaultsStore,
       monitorSessionStore,
+      tradeJournalStore: journalStore,
       aiAdviceUseCase: aiEnabled ? aiAdviceService : undefined,
       aiEnabled
     });

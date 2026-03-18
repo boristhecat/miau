@@ -348,22 +348,47 @@ function App() {
     }
   }, [ensureDefaults]);
 
-  // ── Monitor from analysis ──
-  const monitorFromAnalysis = useCallback(() => {
-    const rec = lastAnalysis?.recommendation;
-    if (!rec) return;
+  // ── Start monitor directly from a recommendation ──
+  const startMonitorFromRecommendation = useCallback(async (rec) => {
+    if (!rec || rec.signal === "NO_TRADE") return;
 
-    if (monitorSymbolRef.current) monitorSymbolRef.current.value = rec.pair.replace(/-USD$/, "");
-    if (monitorSideRef.current) monitorSideRef.current.value = rec.signal === "SHORT" ? "SHORT" : "LONG";
-    if (monitorEntryRef.current) monitorEntryRef.current.value = rec.entry ?? "";
-    if (monitorSlRef.current) monitorSlRef.current.value = rec.stopLoss ?? "";
-    if (monitorTpRef.current) monitorTpRef.current.value = rec.takeProfit ?? "";
-    if (monitorLeverageRef.current) monitorLeverageRef.current.value = rec.leverage ?? defaultsRef.current?.leverage ?? "";
-    if (monitorSizeRef.current) monitorSizeRef.current.value = rec.positionSizeUsd ?? defaultsRef.current?.positionSizeUsd ?? "";
-    if (monitorHorizonRef.current) monitorHorizonRef.current.value = rec.objectiveHorizon ?? defaultsRef.current?.objectiveHorizon ?? "";
-    setMonitorEcho(`Seeded from ${rec.pair} ${rec.signal}`);
-    setActiveTab("monitor");
-  }, [lastAnalysis]);
+    const d = defaultsRef.current ?? await ensureDefaults();
+    const symbol = rec.pair.replace(/-USD$/, "");
+    const side = rec.signal === "SHORT" ? "SHORT" : "LONG";
+
+    let session = null;
+    try {
+      const persisted = await api("POST", "/monitor/sessions", {
+        symbol,
+        side,
+        entry: rec.entry,
+        stopLoss: rec.stopLoss,
+        takeProfit: rec.takeProfit,
+        leverage: rec.leverage ?? d?.leverage ?? null,
+        positionSizeUsd: rec.positionSizeUsd ?? d?.positionSizeUsd ?? null,
+        objectiveHorizon: rec.objectiveHorizon ?? d?.objectiveHorizon ?? null
+      });
+
+      session = createSessionFromPersisted(persisted);
+      setMonitorSessions(prev => {
+        const next = new Map(prev);
+        next.set(session.id, session);
+        return next;
+      });
+      connectMonitorSession(session);
+      showToast(`Monitoring ${symbol} ${side.toLowerCase()}`);
+      setActiveTab("monitor");
+    } catch (error) {
+      if (session) {
+        setMonitorSessions(prev => {
+          const next = new Map(prev);
+          next.delete(session.id);
+          return next;
+        });
+      }
+      showToast(`Monitor error: ${error.message}`, "error");
+    }
+  }, [ensureDefaults, showToast]);
 
   // ── Start monitor ──
   const startMonitor = useCallback(async () => {
@@ -543,6 +568,12 @@ function App() {
       .catch(e => showToast(e.message, "error"));
   }, []);
 
+  // ── Compute analysis-is-monitored ──
+  const analysisIsMonitored = lastAnalysis?.recommendation?.pair
+    && Array.from(monitorSessions.values()).some(s =>
+      s.active && (s.pair === lastAnalysis.recommendation.pair || `${s.symbol}-USD` === lastAnalysis.recommendation.pair)
+    );
+
   // ── Compute monitor status bar ──
   const sessionsList = Array.from(monitorSessions.values());
   const activeCount = sessionsList.filter(s => s.active).length;
@@ -613,7 +644,13 @@ function App() {
           <div class="overview-main">
             <div class="output-area">
               ${lastAnalysis
-                ? html`<${AnalyzeResult} rec=${lastAnalysis.recommendation} aiAdvice=${lastAnalysis.aiAdvice} onMonitor=${monitorFromAnalysis} />`
+                ? html`<${AnalyzeResult}
+                    rec=${lastAnalysis.recommendation}
+                    aiAdvice=${lastAnalysis.aiAdvice}
+                    onMonitor=${() => startMonitorFromRecommendation(lastAnalysis.recommendation)}
+                    isMonitored=${analysisIsMonitored}
+                    onGoToMonitor=${() => setActiveTab("monitor")}
+                  />`
                 : analyzeError
                   ? errorBlock(analyzeError)
                   : html`<div class="empty-state">type a symbol and press Run</div>`}
@@ -629,7 +666,7 @@ function App() {
           </div>
           <div class="output-area">
             ${scanData
-              ? html`<${ScanResult} data=${scanData} onAnalyze=${handleScanAnalyze} />`
+              ? html`<${ScanResult} data=${scanData} onAnalyze=${handleScanAnalyze} onMonitor=${startMonitorFromRecommendation} />`
               : scanError
                 ? errorBlock(scanError)
                 : html`<div class="empty-state">board not loaded</div>`}
@@ -663,6 +700,7 @@ function App() {
               onEdit=${toggleEditMonitorSession}
               onSaveEdit=${saveEditMonitorSession}
               onCancelEdit=${toggleEditMonitorSession}
+              onAnalyze=${handleScanAnalyze}
             />
           </div>
         </section>

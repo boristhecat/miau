@@ -51,6 +51,22 @@ export class TradeHealthEvaluator {
     ) {
       brokenReasons.push("Trade has exceeded the expected holding window without positive progress.");
     }
+    // Plan 1: ChoCH against the trade direction = thesis broken
+    if (
+      input.analysisRecommendation.structureBreak === "CHOCH" &&
+      input.analysisRecommendation.structureBreakDirection !== undefined
+    ) {
+      const chochAgainstTrade =
+        (input.baseline.trade.side === "LONG" && input.analysisRecommendation.structureBreakDirection === "BEARISH") ||
+        (input.baseline.trade.side === "SHORT" && input.analysisRecommendation.structureBreakDirection === "BULLISH");
+      if (chochAgainstTrade) {
+        brokenReasons.push(`Market structure ChoCH ${input.analysisRecommendation.structureBreakDirection} — thesis broken.`);
+      }
+    }
+    // Plan 4: Liquidation risk escalation
+    if (input.analysisRecommendation.liquidation?.risk === "CRITICAL") {
+      brokenReasons.push("Liquidation price is critically close to current price — immediate exit required.");
+    }
     if (brokenReasons.length > 0) {
       return {
         status: "BROKEN",
@@ -78,6 +94,14 @@ export class TradeHealthEvaluator {
     ) {
       degradingReasons.push({
         message: `Setup classification has shifted from ${input.baseline.baselinePlaybook} to ${input.analysisRecommendation.setupPlaybook}.`,
+        severity: 3
+      });
+    }
+
+    // Plan 4: Liquidation risk DANGEROUS = severe degradation
+    if (input.analysisRecommendation.liquidation?.risk === "DANGEROUS") {
+      degradingReasons.push({
+        message: "Liquidation price is uncomfortably close to stop-loss — consider reducing leverage.",
         severity: 3
       });
     }

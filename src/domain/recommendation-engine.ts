@@ -1,10 +1,15 @@
 import type {
   BiasContext,
   EntryReadinessAssessment,
+  FundingAnalysis,
+  IndicatorSnapshot,
   LevelInteractionAssessment,
+  LiquidationMetrics,
   MarketRegime,
+  MtfContext,
   Recommendation,
   SequenceAssessment,
+  SessionContext,
   Signal,
   TradeabilityAssessment
 } from "./types.js";
@@ -21,6 +26,11 @@ import { RecommendationEntryReadinessEvaluator } from "./recommendation-entry-re
 import { isPlaybookRegimeAligned, resolvePlaybookPolicy } from "./recommendation-playbook-policy.js";
 import { RecommendationSequenceEvaluator } from "./recommendation-sequence-evaluator.js";
 import { RecommendationLevelInteractionEvaluator } from "./recommendation-level-interaction-evaluator.js";
+import { analyzeSessionContext } from "./session-context-analyzer.js";
+import { analyzeFunding } from "./funding-analyzer.js";
+import { computeLiquidationMetrics } from "./liquidation-calculator.js";
+import { analyzeMtfContext } from "./mtf-context-analyzer.js";
+import { enrichClusterDirectionalContext } from "./liquidation-cluster-estimator.js";
 
 interface BuildRecommendationInput {
   pair: string;
@@ -43,6 +53,11 @@ interface BuildRecommendationInput {
   baseInterval?: string;
   riskBudgetUsd?: number;
   calibratedWinRate?: number;
+  /** Plan 8: Structure timeframe indicators for MTF cascade */
+  structureIndicators?: IndicatorSnapshot;
+  structureInterval?: string;
+  /** Plan 9: Journal insight for similar trades */
+  journalInsight?: Recommendation["journalInsight"];
 }
 
 export class RecommendationEngine {
@@ -354,6 +369,30 @@ export class RecommendationEngine {
       ? appendTradeabilityRationale(rationale, tradeabilityAssessment.rationale, forcedDirection !== undefined)
       : rationale;
 
+    // Pre-compute guard inputs from new features
+    const preGuardSessionContext = this.safeCompute(() => analyzeSessionContext(
+      new Date(), indicators.sessionLevels, indicators.dailyLevels, lastPrice
+    ), rationale, "Session context");
+    const preGuardLiqRisk = (leverage !== undefined && leverage > 1)
+      ? this.safeCompute(() => computeLiquidationMetrics({
+          side: tradeSignal, entry: lastPrice, currentPrice: lastPrice, stopLoss,
+          leverage: leverage!, atr
+        }), rationale, "Liquidation")?.risk
+      : undefined;
+    const preGuardStructure = indicators.marketStructure;
+
+    // Plan 6: Pre-guard cluster enrichment — needs tradeSignal, entry, SL, TP
+    const preGuardClusters = indicators.liquidationClusters
+      ? this.safeCompute(() => enrichClusterDirectionalContext({
+          clusters: indicators.liquidationClusters!,
+          signal: tradeSignal,
+          entry: lastPrice,
+          takeProfit,
+          stopLoss,
+          atr
+        }), rationale, "Liquidation cluster pre-guard") ?? indicators.liquidationClusters
+      : undefined;
+
     let finalSignal: Signal;
     let finalRationale: readonly string[];
     let blocked = tradeabilityHardBlock && forcedDirection !== undefined;
@@ -396,6 +435,12 @@ export class RecommendationEngine {
         skipLegacyTradeabilityChecks: tradeabilityHardBlock,
         pair,
         btcContext,
+        sessionContext: preGuardSessionContext,
+        liquidationRisk: preGuardLiqRisk,
+        structureBreak: preGuardStructure?.lastBreak,
+        structureBreakDirection: preGuardStructure?.lastBreakDirection,
+        structureState: preGuardStructure?.state,
+        clusterBlocksTarget: preGuardClusters?.clusterBlocksTarget,
         rationale: tradeabilityRationale
       });
       finalSignal = guardResult.signal;
@@ -452,6 +497,136 @@ export class RecommendationEngine {
       if (tradeSignal === "SHORT" && btcBullish) return true;
       return undefined;
     })();
+
+    // --- Plan 1: Market Structure ---
+    const ms = indicators.marketStructure;
+    const structureState = ms?.state;
+    const structureBreak = ms?.lastBreak;
+    const structureBreakDirection = ms?.lastBreakDirection;
+    if (ms) {
+      if (ms.lastBreak !== "NONE") {
+        rationale.push(`Market structure ${ms.state}: ${ms.lastBreak} ${ms.lastBreakDirection ?? ""} at ${ms.lastBreakLevel?.toFixed(4) ?? "?"}.`);
+      } else {
+        rationale.push(`Market structure: ${ms.state} (no recent break).`);
+      }
+    }
+
+    // --- Plan 2: Liquidity Mapping ---
+    const liq = indicators.liquidityMap;
+    const nearestFvgAbove = liq?.nearestBearishFvg ? { top: liq.nearestBearishFvg.top, bottom: liq.nearestBearishFvg.bottom } : undefined;
+    const nearestFvgBelow = liq?.nearestBullishFvg ? { top: liq.nearestBullishFvg.top, bottom: liq.nearestBullishFvg.bottom } : undefined;
+    const nearestOrderBlock = liq?.nearestBullishOb
+      ? { type: "BULLISH" as const, top: liq.nearestBullishOb.top, bottom: liq.nearestBullishOb.bottom }
+      : liq?.nearestBearishOb
+        ? { type: "BEARISH" as const, top: liq.nearestBearishOb.top, bottom: liq.nearestBearishOb.bottom }
+        : undefined;
+    const nearestEqualLevel = liq?.nearestEqh
+      ? { type: "EQH" as const, price: liq.nearestEqh.price, count: liq.nearestEqh.count }
+      : liq?.nearestEql
+        ? { type: "EQL" as const, price: liq.nearestEql.price, count: liq.nearestEql.count }
+        : undefined;
+    if (liq) {
+      if (liq.nearestBullishFvg) rationale.push(`Bullish FVG at ${liq.nearestBullishFvg.bottom.toFixed(4)}-${liq.nearestBullishFvg.top.toFixed(4)} (support zone).`);
+      if (liq.nearestBearishFvg) rationale.push(`Bearish FVG at ${liq.nearestBearishFvg.bottom.toFixed(4)}-${liq.nearestBearishFvg.top.toFixed(4)} (resistance zone).`);
+      if (liq.nearestBullishOb) rationale.push(`Bullish OB at ${liq.nearestBullishOb.bottom.toFixed(4)}-${liq.nearestBullishOb.top.toFixed(4)} (demand zone).`);
+      if (liq.nearestBearishOb) rationale.push(`Bearish OB at ${liq.nearestBearishOb.bottom.toFixed(4)}-${liq.nearestBearishOb.top.toFixed(4)} (supply zone).`);
+      if (liq.nearestEqh) rationale.push(`Equal highs at ${liq.nearestEqh.price.toFixed(4)} (${liq.nearestEqh.count}x) — liquidity above.`);
+      if (liq.nearestEql) rationale.push(`Equal lows at ${liq.nearestEql.price.toFixed(4)} (${liq.nearestEql.count}x) — liquidity below.`);
+    }
+
+    // --- Plan 3: Session Context ---
+    const sessionContext = this.safeCompute(() => analyzeSessionContext(
+      new Date(), indicators.sessionLevels, indicators.dailyLevels, lastPrice
+    ), rationale, "Session context");
+    if (sessionContext) {
+      const sessionLabel = `${sessionContext.currentSession} (${sessionContext.minutesIntoSession}min)`;
+      if (sessionContext.isSessionOpenWindow) {
+        rationale.push(`Session: ${sessionLabel} — fakeout window active.`);
+      }
+      if (sessionContext.asiaRangeBreak !== "NONE" && sessionContext.asiaRangeBreak !== undefined) {
+        rationale.push(`Asia range break: ${sessionContext.asiaRangeBreak}.`);
+      }
+      if (sessionContext.londonExpansionDirection !== "NONE" && sessionContext.londonExpansionDirection !== undefined) {
+        rationale.push(`London expansion: ${sessionContext.londonExpansionDirection}.`);
+      }
+    }
+
+    // --- Plan 5: Funding Analysis ---
+    const fundingAnalysis = this.safeCompute(() => analyzeFunding({
+      fundingRate: perp.fundingRate,
+      fundingRateAvg: perp.fundingRateAvg,
+      side: tradeSignal,
+      leverage,
+      positionSizeUsd,
+      holdingPeriodMinutes: holdingPeriod.minutes
+    }), rationale, "Funding analysis");
+    if (fundingAnalysis) {
+      rationale.push(...fundingAnalysis.rationale);
+    }
+
+    // --- Plan 4: Liquidation Distance ---
+    let liquidation: LiquidationMetrics | undefined;
+    if (leverage !== undefined && leverage > 1) {
+      liquidation = this.safeCompute(() => computeLiquidationMetrics({
+        side: tradeSignal,
+        entry: lastPrice,
+        currentPrice: lastPrice,
+        stopLoss,
+        leverage: leverage!,
+        atr,
+        fundingRate: perp.fundingRate,
+        holdingPeriodMinutes: holdingPeriod.minutes
+      }), rationale, "Liquidation metrics");
+      if (liquidation) {
+        rationale.push(
+          `Liquidation: ${liquidation.liquidationPrice.toFixed(4)} (${liquidation.distanceToLiquidationPct.toFixed(1)}% away, ${liquidation.liquidationToStopRatio.toFixed(1)}x SL distance) — ${liquidation.risk}.`
+        );
+      }
+    }
+
+    // --- Plan 6: Liquidation Clusters ---
+    // Use pre-guard enriched version (already has correct directional context)
+    const liquidationClusters = preGuardClusters ?? indicators.liquidationClusters;
+    if (liquidationClusters) {
+      const below = liquidationClusters.nearestClusterBelow;
+      const above = liquidationClusters.nearestClusterAbove;
+      const belowCount = liquidationClusters.clusters.filter((c) => c.price < lastPrice).length;
+      const aboveCount = liquidationClusters.clusters.filter((c) => c.price > lastPrice).length;
+      if (belowCount > 0 || aboveCount > 0) {
+        const belowDesc = below ? ` strongest at ${below.price.toFixed(4)}, str ${below.strength}` : "";
+        const aboveDesc = above ? ` strongest at ${above.price.toFixed(4)}, str ${above.strength}` : "";
+        rationale.push(
+          `Est. liq clusters: ${belowCount} below${belowDesc} | ${aboveCount} above${aboveDesc}.`
+        );
+      }
+      if (liquidationClusters.clusterSupportsDirection) {
+        rationale.push(
+          `Liq cluster supports ${tradeSignal}: cascade toward TP expected.`
+        );
+      }
+      if (liquidationClusters.clusterBlocksTarget) {
+        rationale.push(
+          `Liq cluster between entry and stop — cascade risk before TP.`
+        );
+      }
+    }
+
+    // --- Plan 8: MTF Context ---
+    let mtfContext: MtfContext | undefined;
+    if (input.structureIndicators && input.structureInterval) {
+      mtfContext = this.safeCompute(() => analyzeMtfContext({
+        structureIndicators: input.structureIndicators!,
+        structureInterval: input.structureInterval!,
+        directionalIndicators: biasContext ? indicators : indicators, // use bias indicators if available
+        directionalInterval: biasInterval ?? resolvedBaseInterval,
+        executionSignal: tradeSignal,
+        executionAtr: atr,
+        currentPrice: lastPrice
+      }), rationale, "MTF context");
+      if (mtfContext) {
+        rationale.push(...mtfContext.rationale);
+      }
+    }
 
     return {
       pair,
@@ -529,8 +704,30 @@ export class RecommendationEngine {
       timeBasedExitMinutes,
       independentChannelAgreement,
       btcCorrelationBlocked,
-      paperTradingConfidence
+      paperTradingConfidence,
+      structureState,
+      structureBreak,
+      structureBreakDirection,
+      nearestFvgAbove,
+      nearestFvgBelow,
+      nearestOrderBlock,
+      nearestEqualLevel,
+      sessionContext,
+      liquidation,
+      fundingAnalysis,
+      mtfContext,
+      liquidationClusters,
+      journalInsight: input.journalInsight
     };
+  }
+
+  private safeCompute<T>(fn: () => T, rationale: string[], label: string): T | undefined {
+    try {
+      return fn();
+    } catch (err) {
+      rationale.push(`${label} failed (${errorMessage(err)}); skipping.`);
+      return undefined;
+    }
   }
 
   private safeEvaluateTradeability(

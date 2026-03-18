@@ -4,6 +4,7 @@ import type { IndicatorCalculatorPort } from "../ports/indicator-calculator-port
 import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { RecommendationPolicyPort } from "../ports/recommendation-policy-port.js";
 import { inferBiasContext } from "../domain/recommendation-signal-evaluator.js";
+import { selectMtfTimeframes } from "../domain/mtf-context-analyzer.js";
 
 interface UseCaseDeps {
   marketData: MarketDataPort;
@@ -36,7 +37,16 @@ export class GenerateRecommendationUseCase {
     const intervalMins = parseIntervalToMinutes(interval);
     const biasIntervalMins = parseIntervalToMinutes(biasInterval);
 
-    const [candles, biasCandles, btcCandles] = await Promise.all([
+    // Plan 8: Select MTF structure timeframe for cascade analysis
+    const objectiveHorizonMinutes = input.objectiveHorizon ? Number(input.objectiveHorizon) : undefined;
+    const mtfTimeframes = selectMtfTimeframes({
+      executionInterval: interval,
+      objectiveHorizonMinutes: Number.isFinite(objectiveHorizonMinutes) ? objectiveHorizonMinutes : undefined
+    });
+    const structureInterval = mtfTimeframes.structureInterval;
+    const needsStructureCandles = structureInterval !== interval && structureInterval !== biasInterval;
+
+    const [candles, biasCandles, btcCandles, structureCandles] = await Promise.all([
       this.deps.marketData.getCandles({
         pair: input.pair,
         interval,
@@ -51,6 +61,9 @@ export class GenerateRecommendationUseCase {
           }),
       input.pair !== "BTC-USD"
         ? this.deps.marketData.getCandles({ pair: "BTC-USD", interval, limit }).catch(() => null)
+        : Promise.resolve(null),
+      needsStructureCandles
+        ? this.deps.marketData.getCandles({ pair: input.pair, interval: structureInterval, limit }).catch(() => null)
         : Promise.resolve(null)
     ]);
 
@@ -70,6 +83,19 @@ export class GenerateRecommendationUseCase {
         momentumPositive: btcIndicators.macdHistogram > 0
       };
     }
+    // Plan 8: Compute structure timeframe indicators for MTF cascade
+    let structureIndicators: import("../domain/types.js").IndicatorSnapshot | undefined;
+    let resolvedStructureInterval: string | undefined;
+    if (structureCandles && structureCandles.length >= 60) {
+      const structureIntervalMins = parseIntervalToMinutes(structureInterval);
+      structureIndicators = this.deps.indicatorService.calculate(structureCandles, structureIntervalMins);
+      resolvedStructureInterval = structureInterval;
+    } else if (biasCandles && biasInterval !== interval) {
+      // Fall back to bias candles as the structure TF if dedicated fetch failed
+      structureIndicators = biasIndicators;
+      resolvedStructureInterval = biasInterval;
+    }
+
     const lastPrice = candles[candles.length - 1]!.close;
     const perp = await this.deps.marketData.getPerpSnapshot({ pair: input.pair });
 
@@ -90,7 +116,9 @@ export class GenerateRecommendationUseCase {
       baseInterval: interval,
       biasContext,
       biasInterval,
-      btcContext
+      btcContext,
+      structureIndicators: resolvedStructureInterval ? structureIndicators : undefined,
+      structureInterval: resolvedStructureInterval
     });
   }
 }

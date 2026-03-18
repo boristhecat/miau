@@ -13,6 +13,7 @@ import type { TradeMonitorBaseline, TradeMonitorSnapshot } from "../../domain/tr
 import type { PerpMarketSnapshot, Recommendation } from "../../domain/types.js";
 import type { TradeDefaultsStorePort } from "../../ports/trade-defaults-store-port.js";
 import type { MonitorSessionStorePort } from "../../ports/monitor-session-store-port.js";
+import type { TradeJournalStorePort } from "../../ports/trade-journal-store-port.js";
 
 export interface WebApiDeps {
   recommendationUseCase: IGenerateRecommendationUseCase;
@@ -23,6 +24,7 @@ export interface WebApiDeps {
   evaluateOpenTradeUseCase: IEvaluateOpenTradeUseCase;
   tradeDefaultsStore: TradeDefaultsStorePort;
   monitorSessionStore: MonitorSessionStorePort;
+  tradeJournalStore?: TradeJournalStorePort;
   aiAdviceUseCase?: IGenerateAiAdviceUseCase;
   aiEnabled: boolean;
 }
@@ -216,6 +218,51 @@ export class WebApiHandler {
   async handleRemoveMonitorSession(id: string): Promise<void> {
     if (!id) throw new HttpError(400, "Session ID is required.");
     await this.deps.monitorSessionStore.remove(id);
+  }
+
+  // --- Plan 9: Trade Journal endpoints ---
+
+  async handleSaveJournalEntry(body: Record<string, unknown>): Promise<unknown> {
+    if (!this.deps.tradeJournalStore) throw new HttpError(501, "Trade journal not available.");
+    const entry = body as unknown as import("../../domain/types.js").TradeJournalEntry;
+    if (!entry.id || !entry.sessionId || !entry.symbol) {
+      throw new HttpError(400, "Journal entry requires id, sessionId, and symbol.");
+    }
+    this.deps.tradeJournalStore.save(entry);
+    // Bridge: feed journal outcome into learning system for adaptive policy
+    try {
+      await this.deps.learning.recordJournalOutcome(entry);
+    } catch {
+      // Learning recording is best-effort — don't fail the journal save
+    }
+    return { ok: true };
+  }
+
+  async handleGetJournalEntries(query: Record<string, string>): Promise<unknown> {
+    if (!this.deps.tradeJournalStore) throw new HttpError(501, "Trade journal not available.");
+    const limit = query.limit ? Number(query.limit) : 20;
+    const symbol = query.symbol;
+    if (symbol) {
+      return this.deps.tradeJournalStore.getBySymbol(symbol.toUpperCase(), limit);
+    }
+    return this.deps.tradeJournalStore.getRecent(limit);
+  }
+
+  async handleGetJournalStats(query: Record<string, string>): Promise<unknown> {
+    if (!this.deps.tradeJournalStore) throw new HttpError(501, "Trade journal not available.");
+    const lookbackDays = query.lookbackDays ? Number(query.lookbackDays) : 90;
+    return this.deps.tradeJournalStore.getStats(lookbackDays);
+  }
+
+  async handleGetSimilarTrades(query: Record<string, string>): Promise<unknown> {
+    if (!this.deps.tradeJournalStore) throw new HttpError(501, "Trade journal not available.");
+    return this.deps.tradeJournalStore.getSimilarTrades({
+      setupPlaybook: query.setupPlaybook as import("../../domain/types.js").SetupPlaybook | undefined,
+      marketRegime: query.marketRegime as import("../../domain/types.js").MarketRegime | undefined,
+      setupGrade: query.setupGrade as import("../../domain/types.js").SetupGrade | undefined,
+      symbol: query.symbol?.toUpperCase(),
+      limit: query.limit ? Number(query.limit) : 20
+    });
   }
 }
 

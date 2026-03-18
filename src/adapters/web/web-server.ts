@@ -144,6 +144,32 @@ export class WebServer {
       return;
     }
 
+    // Plan 9: Trade Journal endpoints
+    if (method === "POST" && pathname === "/api/journal") {
+      const body = await readJsonBody(req);
+      const result = await this.handler.handleSaveJournalEntry(body);
+      this.sendJson(res, 200, result);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/journal") {
+      const result = await this.handler.handleGetJournalEntries(query);
+      this.sendJson(res, 200, result);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/journal/stats") {
+      const result = await this.handler.handleGetJournalStats(query);
+      this.sendJson(res, 200, result);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/journal/similar") {
+      const result = await this.handler.handleGetSimilarTrades(query);
+      this.sendJson(res, 200, result);
+      return;
+    }
+
     if (method === "GET" && pathname === "/api/__reload") {
       this.handleReloadStream(req, res);
       return;

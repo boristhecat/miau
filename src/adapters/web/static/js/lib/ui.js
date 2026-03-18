@@ -64,6 +64,43 @@ export function agreementTone(value) {
   return "badge-muted";
 }
 
+export function structureTone(state) {
+  const s = String(state ?? "").toUpperCase();
+  if (s === "BULLISH") return "badge-good";
+  if (s === "BEARISH") return "badge-bad";
+  return "badge-neutral";
+}
+
+export function mtfAlignmentTone(alignment) {
+  const a = String(alignment ?? "").toUpperCase();
+  if (a === "FULL") return "badge-good";
+  if (a === "PARTIAL") return "badge-warn";
+  return "badge-bad";
+}
+
+export function sessionTone(session) {
+  const s = String(session ?? "").toUpperCase();
+  if (s === "LONDON" || s === "US") return "badge-accent";
+  if (s === "ASIA") return "badge-warn";
+  return "badge-bad";
+}
+
+export function fundingSignalTone(signal) {
+  const s = String(signal ?? "").toUpperCase();
+  if (s.startsWith("STRONG")) return "badge-bad";
+  if (s.startsWith("WEAK")) return "badge-warn";
+  return "badge-neutral";
+}
+
+export function liquidationRiskTone(risk) {
+  const r = String(risk ?? "").toUpperCase();
+  if (r === "SAFE") return "badge-good";
+  if (r === "MODERATE") return "badge-warn";
+  if (r === "DANGEROUS") return "badge-bad";
+  if (r === "CRITICAL") return "badge-bad";
+  return "badge-neutral";
+}
+
 export function confidenceBandTone(value) {
   const normalized = String(value ?? "").toUpperCase();
   if (normalized === "HIGH") return "badge-good";

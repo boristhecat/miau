@@ -21,6 +21,11 @@ export interface RecommendationBuildInput {
   baseInterval?: string;
   riskBudgetUsd?: number;
   calibratedWinRate?: number;
+  /** Plan 8: Structure timeframe indicators for MTF cascade */
+  structureIndicators?: import("../domain/types.js").IndicatorSnapshot;
+  structureInterval?: string;
+  /** Plan 9: Journal insight for similar trades */
+  journalInsight?: import("../domain/types.js").Recommendation["journalInsight"];
 }
 
 export interface RecommendationPolicyPort {

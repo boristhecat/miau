@@ -4,9 +4,14 @@ import {
   agreementTone,
   badge,
   confidenceBandTone,
+  fundingSignalTone,
   gradeTone,
+  liquidationRiskTone,
+  mtfAlignmentTone,
   readinessTone,
+  sessionTone,
   signalBadge,
+  structureTone,
   tradeabilityTone
 } from "../lib/ui.js";
 
@@ -24,7 +29,7 @@ function aiRow(label, value) {
   return html`<div class="rec-row"><span class="rec-rk">${label}</span><span class="rec-rv">${value}</span></div>`;
 }
 
-export function AnalyzeResult({ rec, aiAdvice, onMonitor }) {
+export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMonitor }) {
   if (!rec) return null;
 
   const confidence = Math.round(rec.confidence ?? 0);
@@ -38,6 +43,10 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor }) {
     ? html`<span class="dim">forced ${prettyToken(rec.requestedDirection)}</span>`
     : null;
 
+  const monitoringBadge = isMonitored
+    ? html`<span class="badge-accent" style="cursor:pointer" title="Click to go to Monitor tab" onClick=${onGoToMonitor}>monitoring</span>`
+    : null;
+
   const head = html`
     ${signalBadge(rec.signal)}
     <span class="rec-signal">${label}</span>
@@ -46,13 +55,19 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor }) {
     <span class="rec-conf ${cC(confidence)}" title="Overall trade confidence score">${confidence}%</span>
     ${rec.setupGrade ? badge(`${rec.setupGrade}`, gradeTone(rec.setupGrade), "Setup quality grade (A best, D worst)") : null}
     ${rec.riskRewardRatio != null ? html`<span class="dim" title="Risk-to-reward ratio">r:r ${fN(rec.riskRewardRatio)}</span>` : null}
+    ${rec.structureState ? badge(prettyToken(rec.structureState), structureTone(rec.structureState), "Market structure state (swing point labeling)") : null}
+    ${rec.mtfContext?.alignment ? badge(`MTF ${prettyToken(rec.mtfContext.alignment)}`, mtfAlignmentTone(rec.mtfContext.alignment), `Multi-timeframe cascade: ${rec.mtfContext.structureInterval} / ${rec.mtfContext.directionalInterval} / exec`) : null}
+    ${monitoringBadge}
   `;
 
   // col 1: levels
+  const liq = rec.liquidation;
+  const liqDist = liq ? ((liq.liquidationPrice - rec.entry) / rec.entry * 100) : null;
   const levels = html`
     <div class="rec-lv"><span class="rec-lk">entry</span><span class="rec-lp">${fP(rec.entry)}</span><span></span></div>
     <div class="rec-lv rec-level-stop"><span class="rec-lk">stop</span><span class="rec-lp">${fP(rec.stopLoss)}</span>${stopDist != null ? html`<span class="rec-ld c-red">${fSPct(stopDist)}</span>` : html`<span></span>`}</div>
     <div class="rec-lv rec-level-target"><span class="rec-lk">target</span><span class="rec-lp">${fP(rec.takeProfit)}</span>${targetDist != null ? html`<span class="rec-ld c-green">${fSPct(targetDist)}</span>` : html`<span></span>`}</div>
+    ${liq ? html`<div class="rec-lv"><span class="rec-lk">liq</span><span class="rec-lp dim">${fP(liq.liquidationPrice)}</span>${liqDist != null ? html`<span class="rec-ld ${liq.risk === "SAFE" || liq.risk === "MODERATE" ? "dim" : "c-red"}">${fSPct(liqDist)} ${badge(liq.risk, liquidationRiskTone(liq.risk), `${fN(liq.liquidationToStopRatio)}x SL distance`)}</span>` : html`<span></span>`}</div>` : null}
   `;
 
   // AI suggested levels
@@ -118,11 +133,24 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor }) {
   const playbookTip = rec.playbookRegimeAligned === false
     ? "Setup pattern \u2014 misaligned with current regime"
     : "Detected setup pattern for this trade";
+  const sc = rec.sessionContext;
+  const fa = rec.fundingAnalysis;
+  const breakLabel = rec.structureBreak && rec.structureBreak !== "NONE"
+    ? `${rec.structureBreak} ${(rec.structureBreakDirection ?? "").slice(0, 4).toLowerCase()}`
+    : null;
+  const fundingBadgeVisible = fa && fa.signal !== "NEUTRAL";
+  const clusterCtx = rec.liquidationClusters;
+
   const appBadges = html`
     ${rec.setupPlaybook ? badge(prettyToken(rec.setupPlaybook), rec.playbookRegimeAligned === false ? "badge-bad" : "badge-accent", playbookTip) : null}
     ${rec.marketRegime ? badge(prettyToken(rec.marketRegime), "badge-neutral", "Current market regime classification") : null}
     ${rec.marketTradeability ? badge(prettyToken(rec.marketTradeability), tradeabilityTone(rec.marketTradeability), "Whether conditions are safe to trade") : null}
     ${rec.entryReadiness ? badge(prettyToken(rec.entryReadiness), readinessTone(rec.entryReadiness), "Whether price is at a good entry point now") : null}
+    ${sc ? badge(sc.currentSession, sessionTone(sc.currentSession), `${sc.minutesIntoSession}m into session${sc.isSessionOpenWindow ? " \u2014 fakeout window" : ""}`) : null}
+    ${breakLabel ? badge(breakLabel, rec.structureBreak === "CHOCH" ? "badge-warn" : "badge-accent", `Structure ${rec.structureBreak} ${rec.structureBreakDirection ?? ""}`) : null}
+    ${fundingBadgeVisible ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), `Funding ${fPct(fa.currentRate)} (avg ${fPct(fa.averageRate)})`) : null}
+    ${clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports trade direction") : null}
+    ${clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop \u2014 cascade risk") : null}
   `;
 
   const appSection = html`
@@ -209,11 +237,72 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor }) {
     </details>
   ` : null;
 
-  const hasDetails = metricDetail || indPerpDetail || confDetail;
+  // Structure & levels detail
+  const structureLevelParts = [];
+  if (rec.nearestFvgBelow) structureLevelParts.push(`Bullish FVG ${fP(rec.nearestFvgBelow.bottom)}\u2013${fP(rec.nearestFvgBelow.top)}`);
+  if (rec.nearestFvgAbove) structureLevelParts.push(`Bearish FVG ${fP(rec.nearestFvgAbove.bottom)}\u2013${fP(rec.nearestFvgAbove.top)}`);
+  if (rec.nearestOrderBlock) structureLevelParts.push(`${prettyToken(rec.nearestOrderBlock.type)} OB ${fP(rec.nearestOrderBlock.bottom)}\u2013${fP(rec.nearestOrderBlock.top)}`);
+  if (rec.nearestEqualLevel) structureLevelParts.push(`${rec.nearestEqualLevel.type} ${fP(rec.nearestEqualLevel.price)} (${rec.nearestEqualLevel.count}x)`);
+  if (clusterCtx?.nearestClusterBelow) {
+    const cb = clusterCtx.nearestClusterBelow;
+    structureLevelParts.push(`Liq cluster \u2193 ${fP(cb.price)} str ${cb.strength} (${fN(cb.distanceAtr, 1)} ATR)`);
+  }
+  if (clusterCtx?.nearestClusterAbove) {
+    const ca = clusterCtx.nearestClusterAbove;
+    structureLevelParts.push(`Liq cluster \u2191 ${fP(ca.price)} str ${ca.strength} (${fN(ca.distanceAtr, 1)} ATR)`);
+  }
+
+  const structureDetail = structureLevelParts.length ? html`
+    <details class="rec-detail">
+      <summary>Structure & levels</summary>
+      <div class="rec-detail-body">
+        ${structureLevelParts.map(l => html`<div class="rec-line">${l}</div>`)}
+      </div>
+    </details>
+  ` : null;
+
+  // Context detail (session, funding, MTF, journal)
+  const contextParts = [];
+  if (sc) {
+    let sessionLine = `${sc.currentSession} session \u2014 ${sc.minutesIntoSession}m in`;
+    if (sc.isSessionOpenWindow) sessionLine += " (fakeout window)";
+    if (sc.asiaRangeBreak && sc.asiaRangeBreak !== "NONE") sessionLine += ` \u00b7 Asia break ${sc.asiaRangeBreak.toLowerCase()}`;
+    if (sc.londonExpansionDirection && sc.londonExpansionDirection !== "NONE") sessionLine += ` \u00b7 London exp ${sc.londonExpansionDirection.toLowerCase()}`;
+    contextParts.push(sessionLine);
+  }
+  if (fa) {
+    let fundLine = `Funding ${fPct(fa.currentRate)} (avg ${fPct(fa.averageRate)}) \u2014 ${prettyToken(fa.trend).toLowerCase()}`;
+    if (fa.projectedFundingCostPct != null) fundLine += ` \u00b7 cost ${fPct(fa.projectedFundingCostPct)}`;
+    if (fa.minutesToNextSettlement != null) fundLine += ` \u00b7 settle ${fa.minutesToNextSettlement}m`;
+    contextParts.push(fundLine);
+  }
+  if (rec.mtfContext) {
+    const mtf = rec.mtfContext;
+    contextParts.push(`MTF: ${mtf.structureInterval} ${prettyToken(mtf.structure.trend).toLowerCase()} | ${mtf.directionalInterval} ${prettyToken(mtf.directional.trend).toLowerCase()} \u2192 ${mtf.alignment} (bias ${prettyToken(mtf.cascadeBias).toLowerCase()})`);
+    if (mtf.nearHtfResistance) contextParts.push("Near HTF resistance \u2014 upside may be capped");
+    if (mtf.nearHtfSupport) contextParts.push("Near HTF support \u2014 downside may be limited");
+  }
+  if (rec.journalInsight && rec.journalInsight.similarTradeCount > 0) {
+    const ji = rec.journalInsight;
+    let journalLine = `Journal: ${ji.similarTradeCount} similar trades \u2014 ${fPct(ji.winRate * 100)} win, avg ${fSPct(ji.avgPnlPct)}`;
+    if (ji.mostCommonFailure && ji.mostCommonFailure !== "NONE") journalLine += ` \u00b7 common fail: ${prettyToken(ji.mostCommonFailure).toLowerCase()}`;
+    contextParts.push(journalLine);
+  }
+
+  const contextDetail = contextParts.length ? html`
+    <details class="rec-detail">
+      <summary>Context</summary>
+      <div class="rec-detail-body">
+        ${contextParts.map(l => html`<div class="rec-line">${l}</div>`)}
+      </div>
+    </details>
+  ` : null;
+
+  const hasDetails = metricDetail || indPerpDetail || confDetail || structureDetail || contextDetail;
 
   const col3 = html`
     ${appSection}
-    ${hasDetails ? html`<div class="rec-sep"></div>${metricDetail}${indPerpDetail}${confDetail}` : null}
+    ${hasDetails ? html`<div class="rec-sep"></div>${metricDetail}${indPerpDetail}${confDetail}${structureDetail}${contextDetail}` : null}
   `;
 
   return html`

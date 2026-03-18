@@ -622,7 +622,7 @@ export class RecommendationSignalEvaluator {
   }
 
   private scoreMicrostructure(ctx: ScoringContext): void {
-    const { perp, addL, addS, rationale } = ctx;
+    const { indicators, lastPrice, perp, addL, addS, rationale } = ctx;
 
     if (perp.orderBookImbalance !== undefined) {
       if (perp.orderBookImbalance >= 0.20) {
@@ -643,6 +643,96 @@ export class RecommendationSignalEvaluator {
       } else if (perp.microPricePremiumPct < -0.01) {
         addS("microstructure", 8);
         rationale.push("Microprice sits below mid; near-term pressure is ask-led.");
+      }
+    }
+
+    // Plan 1: Market structure scoring
+    const ms = indicators.marketStructure;
+    if (ms) {
+      if (ms.state === "BULLISH") {
+        addL("trend", 5);
+        addS("trend", -3);
+      } else if (ms.state === "BEARISH") {
+        addS("trend", 5);
+        addL("trend", -3);
+      }
+
+      if (ms.lastBreak === "BOS") {
+        if (ms.lastBreakDirection === "BULLISH") {
+          addL("trend", 4);
+          rationale.push("BOS bullish — structural trend continuation confirmed.");
+        } else if (ms.lastBreakDirection === "BEARISH") {
+          addS("trend", 4);
+          rationale.push("BOS bearish — structural trend continuation confirmed.");
+        }
+      } else if (ms.lastBreak === "CHOCH") {
+        if (ms.lastBreakDirection === "BULLISH") {
+          addL("meanReversion", 4);
+          addS("meanReversion", -3);
+          rationale.push("ChoCH bullish — character change, potential reversal to bullish.");
+        } else if (ms.lastBreakDirection === "BEARISH") {
+          addS("meanReversion", 4);
+          addL("meanReversion", -3);
+          rationale.push("ChoCH bearish — character change, potential reversal to bearish.");
+        }
+      }
+    }
+
+    // Plan 2: Liquidity map scoring
+    const liq = indicators.liquidityMap;
+    if (liq) {
+      const atr = indicators.atr14;
+      if (liq.nearestBullishFvg && (lastPrice - liq.nearestBullishFvg.midpoint) < atr * 0.5 && lastPrice > liq.nearestBullishFvg.midpoint) {
+        addL("microstructure", 3);
+        rationale.push("Near unmitigated bullish FVG — support zone below.");
+      }
+      if (liq.nearestBearishFvg && (liq.nearestBearishFvg.midpoint - lastPrice) < atr * 0.5 && lastPrice < liq.nearestBearishFvg.midpoint) {
+        addS("microstructure", 3);
+        rationale.push("Near unmitigated bearish FVG — resistance zone above.");
+      }
+      if (liq.nearestBullishOb && (lastPrice - liq.nearestBullishOb.midpoint) < atr * 0.5 && lastPrice > liq.nearestBullishOb.bottom) {
+        addL("microstructure", 4);
+        rationale.push("Price at bullish order block — demand zone.");
+      }
+      if (liq.nearestBearishOb && (liq.nearestBearishOb.midpoint - lastPrice) < atr * 0.5 && lastPrice < liq.nearestBearishOb.top) {
+        addS("microstructure", 4);
+        rationale.push("Price at bearish order block — supply zone.");
+      }
+      // Equal levels: caution signals (liquidity magnets)
+      if (liq.nearestEqh && (liq.nearestEqh.price - lastPrice) < atr * 1.5 && !liq.nearestEqh.swept) {
+        addS("microstructure", -2); // reduce short conviction near EQH (sweep likely before reversal)
+        rationale.push(`Equal highs at ${liq.nearestEqh.price.toFixed(4)} (${liq.nearestEqh.count}x) — stop-loss pool above, sweep expected.`);
+      }
+      if (liq.nearestEql && (lastPrice - liq.nearestEql.price) < atr * 1.5 && !liq.nearestEql.swept) {
+        addL("microstructure", -2);
+        rationale.push(`Equal lows at ${liq.nearestEql.price.toFixed(4)} (${liq.nearestEql.count}x) — stop-loss pool below, sweep expected.`);
+      }
+    }
+
+    // Plan 6: Liquidation cluster scoring
+    const clusters = indicators.liquidationClusters;
+    if (clusters) {
+      // Strong long-liq cluster close below = bearish magnet (forced sells)
+      if (
+        clusters.nearestClusterBelow &&
+        clusters.nearestClusterBelow.strength >= 50 &&
+        clusters.nearestClusterBelow.distanceAtr < 3
+      ) {
+        addS("microstructure", 3);
+        rationale.push(
+          `Est. long-liq cluster ${clusters.nearestClusterBelow.distanceAtr.toFixed(1)} ATR below (str ${clusters.nearestClusterBelow.strength}) — bearish cascade magnet.`
+        );
+      }
+      // Strong short-liq cluster close above = bullish magnet (forced buys)
+      if (
+        clusters.nearestClusterAbove &&
+        clusters.nearestClusterAbove.strength >= 50 &&
+        clusters.nearestClusterAbove.distanceAtr < 3
+      ) {
+        addL("microstructure", 3);
+        rationale.push(
+          `Est. short-liq cluster ${clusters.nearestClusterAbove.distanceAtr.toFixed(1)} ATR above (str ${clusters.nearestClusterAbove.strength}) — bullish cascade magnet.`
+        );
       }
     }
   }

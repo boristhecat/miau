@@ -1,5 +1,8 @@
 import type { Candle, IndicatorSnapshot } from "../../domain/types.js";
 import type { IndicatorCalculatorPort } from "../../ports/indicator-calculator-port.js";
+import { analyzeMarketStructure } from "../../domain/market-structure-analyzer.js";
+import { analyzeLiquidityMap } from "../../domain/liquidity-map-analyzer.js";
+import { estimateLiquidationClusters } from "../../domain/liquidation-cluster-estimator.js";
 import {
   ensureTalibHealthyOnError,
   getTalibWasm,
@@ -98,6 +101,18 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       const sessionLevels = this.computeSessionLevels(candles);
       const dailyLevels = this.computeDailyLevels(candles);
 
+      const roundedAtr = this.round(atr);
+      const lastPrice = closes[closes.length - 1] ?? 0;
+      const marketStructure = analyzeMarketStructure(candles);
+      const liquidityMap = analyzeLiquidityMap(candles, lastPrice, roundedAtr);
+      const liquidationClusters = estimateLiquidationClusters({
+        swings: marketStructure.swings,
+        equalLevels: liquidityMap.equalLevels,
+        currentPrice: lastPrice,
+        atr: roundedAtr,
+        totalCandles: candles.length
+      });
+
       return {
         rsi14: this.round(rsi),
         ema20: this.round(ema20),
@@ -105,7 +120,7 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
         macd: this.round(latestMacd),
         macdSignal: this.round(latestMacdSignal),
         macdHistogram: this.round(latestMacdHist),
-        atr14: this.round(atr),
+        atr14: roundedAtr,
         adx14: this.round(adx),
         bbUpper: this.round(latestBbUpper),
         bbMiddle: this.round(latestBbMiddle),
@@ -126,7 +141,10 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
         dailyLevels,
         medianAtrPct: this.computeMedianAtrPct(candles),
         ...swings,
-        ...this.computeNearestStructuralLevels(candles, volumeProfile, swings, sessionLevels, dailyLevels)
+        ...this.computeNearestStructuralLevels(candles, volumeProfile, swings, sessionLevels, dailyLevels),
+        marketStructure,
+        liquidityMap,
+        liquidationClusters
       };
     } catch (error) {
       ensureTalibHealthyOnError(error);

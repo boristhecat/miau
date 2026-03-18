@@ -1,8 +1,8 @@
 import { html } from "htm/preact";
 import { cC, fN, prettyToken } from "../lib/format.js";
-import { badge, gradeTone, meter, signalBadge } from "../lib/ui.js";
+import { badge, gradeTone, meter, signalBadge, structureTone } from "../lib/ui.js";
 
-export function ScanResult({ data, onAnalyze }) {
+export function ScanResult({ data, onAnalyze, onMonitor }) {
   if (!data) return null;
 
   const ranked = data.opportunities?.ranked ?? [];
@@ -16,6 +16,10 @@ export function ScanResult({ data, onAnalyze }) {
     const rec = opportunity.recommendation ?? opportunity;
     const symbol = rec.pair.replace(/-USD$/, "");
     const confidence = Math.round(rec.confidence ?? 0);
+    const monitorBtn = rec.signal !== "NO_TRADE" && onMonitor
+      ? html`<button type="button" class="btn-monitor-inline" title="Monitor this trade" onClick=${(e) => { e.stopPropagation(); onMonitor(rec); }}>M</button>`
+      : html`<span></span>`;
+
     return html`
       <button type="button" class="scan-row body" onClick=${() => onAnalyze(symbol)}>
         <span class="dim">${String(index + 1).padStart(2, "0")}</span>
@@ -26,6 +30,8 @@ export function ScanResult({ data, onAnalyze }) {
         <span title="Risk-to-reward ratio">${fN(rec.riskRewardRatio)}</span>
         <span>${rec.setupGrade ? badge(`${rec.setupGrade}`, gradeTone(rec.setupGrade), "Setup quality grade (A best, D worst)") : "\u2014"}</span>
         <span class="dim" title="Detected setup pattern">${rec.setupPlaybook ? prettyToken(rec.setupPlaybook) : "\u2014"}</span>
+        <span>${rec.structureState ? badge(prettyToken(rec.structureState).slice(0, 4), structureTone(rec.structureState), `Market structure: ${prettyToken(rec.structureState)}`) : "\u2014"}</span>
+        ${monitorBtn}
       </button>
     `;
   });
@@ -52,6 +58,8 @@ export function ScanResult({ data, onAnalyze }) {
         <span>r:r</span>
         <span>grade</span>
         <span>playbook</span>
+        <span>struct</span>
+        <span></span>
       </div>
       ${rows}
     </div>

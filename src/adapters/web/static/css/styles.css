@@ -700,7 +700,7 @@ button, input, select { font: inherit; }
 
 .scan-row {
   display: grid;
-  grid-template-columns: 36px 80px 88px minmax(64px, 1fr) 44px 48px 48px minmax(100px, 1fr);
+  grid-template-columns: 36px 80px 88px minmax(64px, 1fr) 44px 48px 48px minmax(100px, 1fr) 32px;
   gap: 12px;
   align-items: center;
   min-width: 640px;
@@ -738,6 +738,30 @@ button, input, select { font: inherit; }
   color: var(--text-strong);
   font-weight: 500;
   font-size: 13px;
+}
+
+.btn-monitor-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-soft);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.scan-row.body:hover .btn-monitor-inline { opacity: 1; }
+.btn-monitor-inline:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 
@@ -804,6 +828,16 @@ button, input, select { font: inherit; }
   font-size: 15px;
   font-weight: 600;
   color: var(--text-strong);
+}
+
+.pair-link {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.pair-link:hover {
+  text-decoration: underline;
+  color: var(--accent);
 }
 
 .monitor-card-head button:first-of-type {
@@ -883,7 +917,7 @@ button, input, select { font: inherit; }
 
 .progress-rail {
   position: relative;
-  height: 17px;
+  height: 22px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface-soft);
@@ -895,30 +929,44 @@ button, input, select { font: inherit; }
   top: -1px;
   left: calc(var(--pct, 50) * 1%);
   width: 8px;
-  height: 18px;
+  height: 23px;
   transform: translateX(-50%);
   border-radius: 2px;
   background: var(--accent);
 }
 
-.progress-marker-label {
+.cluster-tick {
   position: absolute;
   top: 0;
   height: 100%;
-  display: flex;
-  align-items: center;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  border-radius: 2px;
+}
+
+.entry-line {
+  position: absolute;
+  top: 2px;
+  height: calc(100% - 4px);
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--text-dim);
+  opacity: 0.5;
+}
+
+.progress-top {
+  position: relative;
+  height: 14px;
+  margin-bottom: 2px;
+}
+
+.progress-mark-label {
+  position: absolute;
+  transform: translateX(-50%);
   font-size: 10px;
-  color: var(--text-strong);
+  color: var(--text-dim);
   white-space: nowrap;
-  line-height: 1;
-}
-
-.progress-marker-label.label-right {
-  left: calc(var(--pct, 50) * 1% + 8px);
-}
-
-.progress-marker-label.label-left {
-  right: calc((100% - var(--pct, 50) * 1%) + 8px);
+  letter-spacing: 0.03em;
 }
 
 .progress-labels {

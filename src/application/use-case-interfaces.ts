@@ -9,6 +9,7 @@ import type { LearningBucketReport } from "./run-learning-bucket-report-use-case
 import type { LearningSimulationCandidate } from "./run-learning-cycle-use-case.js";
 import type { SimulationEvaluationResult } from "./evaluate-simulation-use-case.js";
 import type { OutcomeFailureType, OutcomeStatus } from "../ports/learning-store-port.js";
+import type { TradeJournalEntry } from "../domain/types.js";
 
 export interface IGenerateRecommendationUseCase {
   execute(input: {
@@ -49,6 +50,7 @@ export interface IAdaptiveLearningService {
   getOverview(lookbackDays?: number): Promise<LearningOverview>;
   getBucketOverview(lookbackDays?: number): Promise<LearningBucketRow[]>;
   getPolicy(input: { pair: string; timeframe: string; marketRegime: string }): Promise<LearningPolicy>;
+  recordJournalOutcome(entry: TradeJournalEntry): Promise<void>;
 }
 
 export interface IRankingUseCase {

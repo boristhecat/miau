@@ -4,13 +4,18 @@ import { cC, fDur, fN, fP, fPct, fS, fSPct, fSUsd, pC, prettyToken } from "../li
 import {
   actionTone,
   badge,
+  fundingSignalTone,
   gradeTone,
+  liquidationRiskTone,
+  mtfAlignmentTone,
+  sessionTone,
   signalBadge,
   statusTone,
+  structureTone,
   tradeabilityTone
 } from "../lib/ui.js";
 
-export function MonitorBoard({ sessions, onStop, onRemove, onEdit, onSaveEdit, onCancelEdit }) {
+export function MonitorBoard({ sessions, onStop, onRemove, onEdit, onSaveEdit, onCancelEdit, onAnalyze }) {
   const sorted = Array.from(sessions.values()).sort((a, b) => b.startedAt - a.startedAt);
 
   if (!sorted.length) {
@@ -26,11 +31,12 @@ export function MonitorBoard({ sessions, onStop, onRemove, onEdit, onSaveEdit, o
       onEdit=${onEdit}
       onSaveEdit=${onSaveEdit}
       onCancelEdit=${onCancelEdit}
+      onAnalyze=${onAnalyze}
     />
   `);
 }
 
-function MonitorCard({ session, onStop, onRemove, onEdit, onSaveEdit, onCancelEdit }) {
+function MonitorCard({ session, onStop, onRemove, onEdit, onSaveEdit, onCancelEdit, onAnalyze }) {
   const invalid = session.invalidReason;
   const stateBadge = session.active
     ? invalid
@@ -50,7 +56,7 @@ function MonitorCard({ session, onStop, onRemove, onEdit, onSaveEdit, onCancelEd
   return html`
     <article id="monitor-session-${session.id}" class=${classes}>
       <div class="monitor-card-head">
-        <span class="pair-name">${session.symbol}</span>
+        <span class="pair-name pair-link" title="Re-analyze ${session.symbol}" onClick=${() => onAnalyze(session.symbol)}>${session.symbol}</span>
         ${signalBadge(session.side)}
         ${stateBadge}
         <span class="dim">${fP(session.entry)} | ${session.leverage ? `${fN(session.leverage, 0)}x` : ""}</span>
@@ -95,10 +101,22 @@ function MonitorSnapshot({ snapshot, editing }) {
     <span class="c-red" title="Max adverse excursion">-${fPct(metrics.maxAdverseExcursionPct)}</span> <span class="dim">mae</span>
   `;
 
+  const sc = snapshot.sessionContext;
+  const fa = snapshot.fundingAnalysis;
+  const liq = snapshot.liquidation;
+  const clusterCtx = snapshot.liquidationClusters;
+
   const contextParts = html`
     ${snapshot.analysisSetupGrade ? badge(`${snapshot.analysisSetupGrade}`, gradeTone(snapshot.analysisSetupGrade), "Setup quality grade") : null}
+    ${snapshot.structureState ? badge(prettyToken(snapshot.structureState), structureTone(snapshot.structureState), "Market structure state") : null}
+    ${snapshot.mtfContext?.alignment ? badge(`MTF ${prettyToken(snapshot.mtfContext.alignment)}`, mtfAlignmentTone(snapshot.mtfContext.alignment), "Multi-timeframe alignment") : null}
     ${snapshot.marketRegime ? html`<span class="dim" title="Market regime">${prettyToken(snapshot.marketRegime)}</span>` : null}
     ${snapshot.marketTradeability ? badge(prettyToken(snapshot.marketTradeability), tradeabilityTone(snapshot.marketTradeability), "Whether conditions are safe to trade") : null}
+    ${sc ? badge(sc.currentSession, sessionTone(sc.currentSession), `${sc.minutesIntoSession}m into session`) : null}
+    ${liq ? badge(liq.risk, liquidationRiskTone(liq.risk), `Liq ${fP(liq.liquidationPrice)} (${fN(liq.liquidationToStopRatio)}x SL)`) : null}
+    ${fa && fa.signal !== "NEUTRAL" ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), `Funding ${fPct(fa.currentRate)}`) : null}
+    ${clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports direction") : null}
+    ${clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop") : null}
     ${snapshot.analysisConfidence != null ? html`<span class="${cC(snapshot.analysisConfidence)}" title="Analysis confidence">${snapshot.analysisConfidence}%</span>` : null}
     ${metrics.holdingProgressPct != null ? html`<span class="dim" title="Hold time progress">${fPct(metrics.holdingProgressPct)} held</span>` : null}
   `;
@@ -113,12 +131,43 @@ function MonitorSnapshot({ snapshot, editing }) {
     ${reasonsMarkup}
   `;
 
+  const barRange = trade.takeProfit - trade.stopLoss;
+  const entryPct = barRange !== 0 && trade.entry != null
+    ? ((trade.entry - trade.stopLoss) / barRange) * 100
+    : null;
+
+  const clusterTicks = (() => {
+    const clusters = clusterCtx?.clusters;
+    if (!clusters?.length || barRange === 0) return null;
+    return clusters
+      .map(c => {
+        const pct = ((c.price - trade.stopLoss) / barRange) * 100;
+        if (pct < 1 || pct > 99) return null;
+        const adverse = trade.entry != null
+          ? (trade.side === "LONG" ? c.price < trade.entry : c.price > trade.entry)
+          : false;
+        const color = adverse ? "var(--red)" : "var(--green)";
+        const width = Math.round(8 + (c.strength / 100) * 20);
+        const title = `Liq cluster ${fP(c.price)} · strength ${c.strength} · ${adverse ? "adverse" : "favorable"}`;
+        return html`<span
+          class="cluster-tick"
+          style=${"left:" + pct + "%;width:" + width + "px;background:linear-gradient(to right,transparent," + color + " 50%,transparent)"}
+          title=${title}
+        ></span>`;
+      })
+      .filter(Boolean);
+  })();
+
   return html`
     <div class="mon-top">${pnlLine}</div>
     <div class="progress-shell">
+      <div class="progress-top">
+        <span class="progress-mark-label" style=${"left:" + railPct + "%"}>${fP(metrics.markPrice)}</span>
+      </div>
       <div class="progress-rail" style="--pct:${railPct}">
+        ${clusterTicks}
+        ${entryPct != null ? html`<span class="entry-line" style=${"left:" + entryPct + "%"}></span>` : null}
         <span class="progress-marker"></span>
-        <span class="progress-marker-label ${railPct > 65 ? "label-left" : "label-right"}">${fP(metrics.markPrice)}</span>
       </div>
       <div class="progress-labels">
         <span>SL ${fP(trade.stopLoss)}</span>

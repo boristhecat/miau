@@ -1,13 +1,20 @@
 import type {
   EntryReadinessStatus,
+  FundingAnalysis,
   LevelInteractionReference,
   LevelInteractionStatus,
+  LiquidationClusterMap,
+  LiquidationMetrics,
   MarketRegime,
+  MtfContext,
   Recommendation,
   SequencePattern,
   SequenceStatus,
+  SessionContext,
   SetupGrade,
   SetupPlaybook,
+  StructureBreakType,
+  StructureState,
   TradeabilityStatus
 } from "./types.js";
 
@@ -103,6 +110,14 @@ export interface TradeMonitorSnapshot {
   readonly sequencePattern?: SequencePattern;
   readonly levelInteractionStatus?: LevelInteractionStatus;
   readonly levelInteractionReference?: LevelInteractionReference;
+  readonly structureState?: StructureState;
+  readonly structureBreak?: StructureBreakType;
+  readonly structureBreakDirection?: "BULLISH" | "BEARISH";
+  readonly sessionContext?: SessionContext;
+  readonly liquidation?: LiquidationMetrics;
+  readonly fundingAnalysis?: FundingAnalysis;
+  readonly liquidationClusters?: LiquidationClusterMap;
+  readonly mtfContext?: MtfContext;
   readonly healthStatus: TradeHealthStatus;
   readonly managementAction: TradeManagementAction;
   readonly healthReasons: readonly string[];

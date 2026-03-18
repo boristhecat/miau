@@ -1,4 +1,4 @@
-import type { EntryReadinessStatus, MarketRegime, SetupGrade, Signal, TradingSession } from "./types.js";
+import type { EntryReadinessStatus, LiquidationRisk, MarketRegime, SessionContext, SetupGrade, Signal, TradingSession } from "./types.js";
 import { parseIntervalToMinutes } from "./interval-utils.js";
 import { detectTradingSession } from "./recommendation-market-context.js";
 
@@ -37,6 +37,16 @@ export function applyTradeGuards(input: {
   /** BTC context for alt correlation hard filter */
   pair?: string;
   btcContext?: { emaAbove: boolean; momentumPositive: boolean };
+  /** Plan 3: Session context for setup filtering */
+  sessionContext?: SessionContext;
+  /** Plan 4: Liquidation risk level */
+  liquidationRisk?: LiquidationRisk;
+  /** Plan 1: Structure break info */
+  structureBreak?: "BOS" | "CHOCH" | "NONE";
+  structureBreakDirection?: "BULLISH" | "BEARISH";
+  structureState?: "BULLISH" | "BEARISH" | "CONSOLIDATION";
+  /** Plan 6: Liquidation cluster context */
+  clusterBlocksTarget?: boolean;
   rationale: readonly string[];
 }): { signal: Signal; blocked: boolean; rationale: readonly string[] } {
   const intervalMinutes = parseIntervalToMinutes(input.interval);
@@ -112,6 +122,51 @@ export function applyTradeGuards(input: {
       }
     }
   }
+  // Plan 1: Structure break guard — ChoCH against signal direction
+  if (input.structureBreak === "CHOCH" && input.structureBreakDirection !== undefined) {
+    const chochAgainstSignal =
+      (input.signal === "LONG" && input.structureBreakDirection === "BEARISH") ||
+      (input.signal === "SHORT" && input.structureBreakDirection === "BULLISH");
+    if (chochAgainstSignal) {
+      accumulated.push(`Guard advisory: ChoCH ${input.structureBreakDirection} detected — structure just broke against ${input.signal} signal.`);
+    }
+  }
+
+  // Plan 3: Session context guards
+  if (input.sessionContext) {
+    const sc = input.sessionContext;
+    if (input.setupPlaybook && sc.riskySetups.includes(input.setupPlaybook)) {
+      accumulated.push(
+        `Guard advisory: ${input.setupPlaybook} is risky during ${sc.currentSession} session.`
+      );
+    }
+    if (
+      sc.londonExpansionDirection !== "NONE" &&
+      sc.londonExpansionDirection !== undefined &&
+      sc.currentSession === "US"
+    ) {
+      const tradingAgainstExpansion =
+        (input.signal === "LONG" && sc.londonExpansionDirection === "BEARISH") ||
+        (input.signal === "SHORT" && sc.londonExpansionDirection === "BULLISH");
+      if (tradingAgainstExpansion) {
+        accumulated.push(
+          `Guard advisory: trading against London ${sc.londonExpansionDirection} expansion — requires stronger confirmation.`
+        );
+      }
+    }
+    if (sc.currentSession === "DEAD" && input.setupGrade !== "A" && input.setupGrade !== "B") {
+      return block("DEAD session with sub-B setup; market is too thin.");
+    }
+  }
+
+  // Plan 4: Liquidation risk guard
+  if (input.liquidationRisk === "CRITICAL") {
+    return block("Liquidation price is dangerously close to stop-loss. Reduce leverage or widen stop.");
+  }
+  if (input.liquidationRisk === "DANGEROUS") {
+    accumulated.push("Guard advisory: liquidation price is uncomfortably close to stop-loss.");
+  }
+
   if (input.htfContradictionCount >= 3) {
     return block(`HTF context (${input.htfContradictionCount}/4 dimensions) strongly contradicts signal direction.`);
   }
@@ -192,6 +247,10 @@ export function applyTradeGuards(input: {
   }
   if (intervalMinutes <= 10 && input.setupQuality < 60) {
     return block("setup quality below short-timeframe threshold (60).");
+  }
+  // Plan 6: Liquidation cluster advisory
+  if (input.clusterBlocksTarget) {
+    accumulated.push("Guard advisory: estimated liquidation cluster between entry and stop — cascade risk before TP.");
   }
   return { signal: input.signal, blocked: false, rationale: accumulated };
 }
