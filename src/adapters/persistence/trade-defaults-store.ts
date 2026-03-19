@@ -73,13 +73,21 @@ export class SqliteTradeDefaultsStore implements TradeDefaultsStorePort {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`
     ).run();
+    // Migrations: add columns if they don't exist yet
+    for (const col of ["api_key_env_var TEXT", "ai_provider TEXT"]) {
+      try {
+        db.prepare(`ALTER TABLE trade_defaults ADD COLUMN ${col}`).run();
+      } catch {
+        // Column already exists — safe to ignore
+      }
+    }
   }
 
   private selectDefaults(db: SqliteDatabase): TradeDefaults | null {
     const row =
       db
         .prepare(
-          `SELECT leverage, position_size_usd, objective_horizon, ai_model
+          `SELECT leverage, position_size_usd, objective_horizon, ai_provider, ai_model, api_key_env_var
            FROM trade_defaults
            WHERE id = 1`
         )
@@ -88,7 +96,9 @@ export class SqliteTradeDefaultsStore implements TradeDefaultsStorePort {
             leverage?: unknown;
             position_size_usd?: unknown;
             objective_horizon?: unknown;
+            ai_provider?: unknown;
             ai_model?: unknown;
+            api_key_env_var?: unknown;
           }
         | undefined;
     if (!row) {
@@ -99,19 +109,23 @@ export class SqliteTradeDefaultsStore implements TradeDefaultsStorePort {
       leverage: row.leverage,
       positionSizeUsd: row.position_size_usd,
       objectiveHorizon: row.objective_horizon,
-      aiModel: row.ai_model
+      aiProvider: row.ai_provider,
+      aiModel: row.ai_model,
+      apiKeyEnvVar: row.api_key_env_var
     });
   }
 
   private persist(db: SqliteDatabase, defaults: TradeDefaults): void {
     db.prepare(
-      `INSERT INTO trade_defaults (id, leverage, position_size_usd, objective_horizon, ai_model, updated_at)
-       VALUES (1, @leverage, @positionSizeUsd, @objectiveHorizon, @aiModel, datetime('now'))
+      `INSERT INTO trade_defaults (id, leverage, position_size_usd, objective_horizon, ai_provider, ai_model, api_key_env_var, updated_at)
+       VALUES (1, @leverage, @positionSizeUsd, @objectiveHorizon, @aiProvider, @aiModel, @apiKeyEnvVar, datetime('now'))
        ON CONFLICT(id) DO UPDATE SET
          leverage = excluded.leverage,
          position_size_usd = excluded.position_size_usd,
          objective_horizon = excluded.objective_horizon,
+         ai_provider = excluded.ai_provider,
          ai_model = excluded.ai_model,
+         api_key_env_var = excluded.api_key_env_var,
          updated_at = datetime('now')`
     ).run(defaults);
   }
@@ -133,11 +147,15 @@ export class SqliteTradeDefaultsStore implements TradeDefaultsStorePort {
   }
 }
 
+const VALID_AI_PROVIDERS = new Set(["openai", "anthropic"]);
+
 function sanitizeTradeDefaults(input: {
   leverage?: unknown;
   positionSizeUsd?: unknown;
   objectiveHorizon?: unknown;
+  aiProvider?: unknown;
   aiModel?: unknown;
+  apiKeyEnvVar?: unknown;
 }): TradeDefaults {
   return {
     leverage: Number.isFinite(input.leverage) ? Number(input.leverage) : FALLBACK_TRADE_DEFAULTS.leverage,
@@ -150,9 +168,17 @@ function sanitizeTradeDefaults(input: {
       Number(input.objectiveHorizon) > 0
         ? input.objectiveHorizon
         : FALLBACK_TRADE_DEFAULTS.objectiveHorizon,
+    aiProvider:
+      typeof input.aiProvider === "string" && VALID_AI_PROVIDERS.has(input.aiProvider.trim().toLowerCase())
+        ? input.aiProvider.trim().toLowerCase()
+        : FALLBACK_TRADE_DEFAULTS.aiProvider,
     aiModel:
       typeof input.aiModel === "string" && input.aiModel.trim().length > 0
         ? input.aiModel.trim()
-        : FALLBACK_TRADE_DEFAULTS.aiModel
+        : FALLBACK_TRADE_DEFAULTS.aiModel,
+    apiKeyEnvVar:
+      typeof input.apiKeyEnvVar === "string" && /^[A-Z_][A-Z0-9_]*$/i.test(input.apiKeyEnvVar.trim())
+        ? input.apiKeyEnvVar.trim()
+        : FALLBACK_TRADE_DEFAULTS.apiKeyEnvVar
   };
 }

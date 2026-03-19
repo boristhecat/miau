@@ -65,10 +65,10 @@ async function main(): Promise<void> {
     })();
     const tradeDefaults = await tradeDefaultsStore.load();
     const aiAdviceService = new ReconfigurableAiAdviceService({
-      baseUrl: "https://api.openai.com/v1",
-      model: tradeDefaults.aiModel
+      provider: tradeDefaults.aiProvider as "openai" | "anthropic",
+      model: tradeDefaults.aiModel,
+      apiKey: process.env[tradeDefaults.apiKeyEnvVar]
     });
-    const aiEnabled = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
 
     const rankingUseCase = new RunRecommendationRankingUseCase(
       recommendationUseCase,
@@ -92,8 +92,14 @@ async function main(): Promise<void> {
       tradeDefaultsStore,
       monitorSessionStore,
       tradeJournalStore: journalStore,
-      aiAdviceUseCase: aiEnabled ? aiAdviceService : undefined,
-      aiEnabled
+      aiAdviceUseCase: aiAdviceService,
+      onDefaultsSaved: (defaults) => {
+        aiAdviceService.setProvider({
+          provider: defaults.aiProvider as "openai" | "anthropic",
+          model: defaults.aiModel,
+          apiKey: process.env[defaults.apiKeyEnvVar]
+        });
+      }
     });
 
     await server.start(port);

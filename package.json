@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@anaslaham/talib-wasm": "^4.0.0",
+    "@anthropic-ai/sdk": "^0.80.0",
     "axios": "^1.8.4",
     "better-sqlite3": "^11.8.1",
     "openai": "^6.32.0"

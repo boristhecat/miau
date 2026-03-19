@@ -69,6 +69,8 @@ function App() {
   const settingsSizeRef = useRef(null);
   const settingsHorizonRef = useRef(null);
   const settingsAiModelRef = useRef(null);
+  const settingsAiProviderRef = useRef(null);
+  const settingsApiKeyEnvVarRef = useRef(null);
 
   // Keep refs in sync
   defaultsRef.current = defaults;
@@ -113,7 +115,9 @@ function App() {
     if (settingsLeverageRef.current) settingsLeverageRef.current.value = d.leverage ?? "";
     if (settingsSizeRef.current) settingsSizeRef.current.value = d.positionSizeUsd ?? "";
     if (settingsHorizonRef.current) settingsHorizonRef.current.value = d.objectiveHorizon ?? "";
+    if (settingsAiProviderRef.current) settingsAiProviderRef.current.value = d.aiProvider ?? "openai";
     if (settingsAiModelRef.current) settingsAiModelRef.current.value = d.aiModel ?? "";
+    if (settingsApiKeyEnvVarRef.current) settingsApiKeyEnvVarRef.current.value = d.apiKeyEnvVar ?? "";
   }
 
   // ── SSE / Monitor connections ──
@@ -481,7 +485,9 @@ function App() {
         leverage: Number(settingsLeverageRef.current?.value),
         positionSizeUsd: Number(settingsSizeRef.current?.value),
         objectiveHorizon: settingsHorizonRef.current?.value?.trim(),
-        aiModel: settingsAiModelRef.current?.value?.trim()
+        aiProvider: settingsAiProviderRef.current?.value,
+        aiModel: settingsAiModelRef.current?.value?.trim(),
+        apiKeyEnvVar: settingsApiKeyEnvVarRef.current?.value?.trim()
       });
       setDefaults(saved);
       syncDefaultInputs(saved);
@@ -731,7 +737,9 @@ function App() {
                 <label><span>size usdc</span><input ref=${settingsSizeRef} type="number" step="1" min="1" /></label>
                 <label><span>horizon min</span><input ref=${settingsHorizonRef} type="text" /></label>
               </div>
+              <label><span>ai provider</span><select ref=${settingsAiProviderRef}><option value="openai">openai</option><option value="anthropic">anthropic</option></select></label>
               <label><span>ai model</span><input ref=${settingsAiModelRef} type="text" /></label>
+              <label><span>api key env var</span><input ref=${settingsApiKeyEnvVarRef} type="text" spellcheck="false" autocomplete="off" /></label>
               <div class="settings-actions">
                 <button type="submit" class="btn-primary">Save</button>
                 ${settingsStatus ? html`<span class="status-msg ${settingsStatus.type}">${settingsStatus.text}</span>` : null}

@@ -26,7 +26,7 @@ export interface WebApiDeps {
   monitorSessionStore: MonitorSessionStorePort;
   tradeJournalStore?: TradeJournalStorePort;
   aiAdviceUseCase?: IGenerateAiAdviceUseCase;
-  aiEnabled: boolean;
+  onDefaultsSaved?: (defaults: import("../../ports/trade-defaults-store-port.js").TradeDefaults) => void;
 }
 
 export class WebApiHandler {
@@ -66,7 +66,8 @@ export class WebApiHandler {
     });
 
     let aiAdvice: unknown = undefined;
-    if (this.deps.aiEnabled && this.deps.aiAdviceUseCase) {
+    const apiKey = process.env[defaults.apiKeyEnvVar];
+    if (this.deps.aiAdviceUseCase && Boolean((apiKey ?? "").trim())) {
       try {
         aiAdvice = await this.deps.aiAdviceUseCase.execute({ recommendation });
       } catch {
@@ -102,7 +103,15 @@ export class WebApiHandler {
   }
 
   async handleGetDefaults(): Promise<unknown> {
-    return this.deps.tradeDefaultsStore.load();
+    const defaults = await this.deps.tradeDefaultsStore.load();
+    return {
+      leverage: defaults.leverage,
+      positionSizeUsd: defaults.positionSizeUsd,
+      objectiveHorizon: defaults.objectiveHorizon,
+      aiProvider: defaults.aiProvider,
+      aiModel: defaults.aiModel,
+      apiKeyEnvVar: defaults.apiKeyEnvVar
+    };
   }
 
   async handleSaveDefaults(body: Record<string, unknown>): Promise<unknown> {
@@ -114,9 +123,26 @@ export class WebApiHandler {
     if (!Number.isFinite(positionSizeUsd) || positionSizeUsd <= 0) throw new HttpError(400, "Invalid position size.");
     if (!objectiveHorizon) throw new HttpError(400, "Objective horizon is required.");
     if (!aiModel) throw new HttpError(400, "AI model is required.");
-    const defaults = { leverage, positionSizeUsd, objectiveHorizon, aiModel };
+    const apiKeyEnvVar =
+      typeof body.apiKeyEnvVar === "string" && body.apiKeyEnvVar.trim().length > 0
+        ? body.apiKeyEnvVar.trim()
+        : undefined;
+    const aiProvider =
+      typeof body.aiProvider === "string" && body.aiProvider.trim().length > 0
+        ? body.aiProvider.trim()
+        : undefined;
+    const existing = await this.deps.tradeDefaultsStore.load();
+    const defaults = {
+      leverage,
+      positionSizeUsd,
+      objectiveHorizon,
+      aiProvider: aiProvider ?? existing.aiProvider,
+      aiModel,
+      apiKeyEnvVar: apiKeyEnvVar ?? existing.apiKeyEnvVar
+    };
     await this.deps.tradeDefaultsStore.save(defaults);
-    return defaults;
+    this.deps.onDefaultsSaved?.(defaults);
+    return { leverage, positionSizeUsd, objectiveHorizon, aiProvider: defaults.aiProvider, aiModel, apiKeyEnvVar: defaults.apiKeyEnvVar };
   }
 
   async buildMonitorBaseline(params: Record<string, string>): Promise<TradeMonitorBaseline> {
