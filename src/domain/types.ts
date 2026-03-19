@@ -510,4 +510,10 @@ export interface Recommendation {
     readonly avgPnlPct: number;
     readonly mostCommonFailure?: TradeFailureReason;
   };
+  /** Volume profile anchor that constrained the take profit level */
+  readonly tpAnchor?: "VPOC" | "VAH" | "VAL";
+  /** OI-price quadrant classification for the current candle */
+  readonly oiContext?: "NEW_LONGS" | "NEW_SHORTS" | "SHORT_COVERING" | "LONG_LIQUIDATION";
+  /** CVD divergence direction when price/flow mismatch is detected */
+  readonly cvdDivergence?: "BULLISH" | "BEARISH";
 }

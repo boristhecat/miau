@@ -12,9 +12,7 @@ const baseInput = {
   breakoutValidationFailed: false,
   breakoutFailureDirection: "NONE" as const,
   lowAbsoluteConviction: false,
-  winnerRatioInsufficient: false,
   htfContradictionCount: 0,
-  regimeSignalMismatch: false,
   setupQuality: 75,
   confidence: 70,
   riskRewardRatio: 2,
@@ -24,15 +22,6 @@ const baseInput = {
 describe("applyTradeGuards", () => {
   afterEach(() => {
     vi.useRealTimers();
-  });
-
-  it("blocks when winner ratio is insufficient", () => {
-    const result = applyTradeGuards({
-      ...baseInput,
-      winnerRatioInsufficient: true
-    });
-    expect(result.signal).toBe("NO_TRADE");
-    expect(result.rationale.some((line) => line.includes("winner ratio is below 0.60"))).toBe(true);
   });
 
   it("uses DEAD-zone confidence floor", () => {
@@ -66,26 +55,15 @@ describe("applyTradeGuards", () => {
     expect(result.rationale.some((line) => line.includes("low-conviction threshold (55)"))).toBe(true);
   });
 
-  it("applies stricter mismatch risk/reward threshold", () => {
-    const result = applyTradeGuards({
-      ...baseInput,
-      regimeSignalMismatch: true,
-      marketRegime: "RANGE",
-      riskRewardRatio: 1.45
-    });
-    expect(result.signal).toBe("NO_TRADE");
-    expect(result.rationale.some((line) => line.includes("requires risk/reward >= 1.6"))).toBe(true);
-  });
-
-  it("blocks when entry readiness says to wait for pullback", () => {
+  it("makes WAIT_PULLBACK advisory instead of blocking", () => {
     const result = applyTradeGuards({
       ...baseInput,
       entryReadinessStatus: "WAIT_PULLBACK",
       preferredEntryPrice: 99.25,
       entryReadinessRationale: ["Trend setup is valid, but market entry is extended; wait for pullback toward the preferred entry."]
     });
-    expect(result.signal).toBe("NO_TRADE");
-    expect(result.rationale.some((line) => line.includes("wait for a cleaner trigger"))).toBe(true);
+    expect(result.signal).toBe("LONG");
+    expect(result.rationale.some((line) => line.includes("Entry timing:"))).toBe(true);
     expect(result.rationale.some((line) => line.includes("99.2500"))).toBe(true);
   });
 

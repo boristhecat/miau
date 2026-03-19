@@ -1,4 +1,4 @@
-import type { IndicatorSnapshot, MarketRegime, Signal, TradeAction } from "./types.js";
+import type { IndicatorSnapshot, MarketRegime, SetupPlaybook, Signal, TradeAction } from "./types.js";
 import { parseIntervalToMinutes } from "./interval-utils.js";
 
 export class RecommendationTradeCalculator {
@@ -304,7 +304,9 @@ export class RecommendationTradeCalculator {
     atr: number;
     indicators: IndicatorSnapshot;
     atrProfile: { slAtrMultiplier: number; tpAtrMultiplier: number; tpFallbackAtrMultiplier: number };
-  }): { stopLoss: number; takeProfit: number; structureCapped: boolean } {
+    setupPlaybook?: SetupPlaybook;
+    rationale?: string[];
+  }): { stopLoss: number; takeProfit: number; structureCapped: boolean; tpAnchor?: "VPOC" | "VAH" | "VAL" } {
     const { signal, entry, atr, indicators, atrProfile } = input;
     const atrFloorSl = atr * atrProfile.slAtrMultiplier * 0.5;
     const atrCeilingSl = atr * atrProfile.slAtrMultiplier * 2.0;
@@ -343,7 +345,24 @@ export class RecommendationTradeCalculator {
         tp = entry + atrProfile.tpFallbackAtrMultiplier * atr;
         structureCapped = false;
       }
-      return { stopLoss: sl, takeProfit: tp, structureCapped };
+      // Volume profile TP realism — cap at VPOC/VAH magnet for non-breakout playbooks.
+      // Applied regardless of structureCapped — VPOC only ever pulls TP closer, never out.
+      let tpAnchor: "VPOC" | "VAH" | "VAL" | undefined;
+      if (indicators.volumeProfile && this.isNonBreakoutPlaybook(input.setupPlaybook)) {
+        const { vpoc, vah } = indicators.volumeProfile;
+        if (vpoc > entry && vpoc < tp && (vpoc - entry) < 0.6 * (tp - entry)) {
+          tp = vpoc + atr * 0.15;
+          structureCapped = true;
+          tpAnchor = "VPOC";
+          input.rationale?.push("TP capped at VPOC — high-volume node between entry and target.");
+        } else if (vah > entry && vah < tp && (vah - entry) < 0.6 * (tp - entry)) {
+          tp = vah + atr * 0.15;
+          structureCapped = true;
+          tpAnchor = "VAH";
+          input.rationale?.push("TP capped at VAH — value area high between entry and target.");
+        }
+      }
+      return { stopLoss: sl, takeProfit: tp, structureCapped, tpAnchor };
     }
 
     let sl = entry + atrProfile.slAtrMultiplier * atr;
@@ -379,7 +398,24 @@ export class RecommendationTradeCalculator {
       tp = entry - atrProfile.tpFallbackAtrMultiplier * atr;
       structureCapped = false;
     }
-    return { stopLoss: sl, takeProfit: tp, structureCapped };
+    // Volume profile TP realism — cap at VPOC/VAL magnet for non-breakout playbooks.
+    // Applied regardless of structureCapped — VPOC only ever pulls TP closer, never out.
+    let tpAnchor: "VPOC" | "VAH" | "VAL" | undefined;
+    if (indicators.volumeProfile && this.isNonBreakoutPlaybook(input.setupPlaybook)) {
+      const { vpoc, val } = indicators.volumeProfile;
+      if (vpoc < entry && vpoc > tp && (entry - vpoc) < 0.6 * (entry - tp)) {
+        tp = vpoc - atr * 0.15;
+        structureCapped = true;
+        tpAnchor = "VPOC";
+        input.rationale?.push("TP capped at VPOC — high-volume node between entry and target.");
+      } else if (val < entry && val > tp && (entry - val) < 0.6 * (entry - tp)) {
+        tp = val - atr * 0.15;
+        structureCapped = true;
+        tpAnchor = "VAL";
+        input.rationale?.push("TP capped at VAL — value area low between entry and target.");
+      }
+    }
+    return { stopLoss: sl, takeProfit: tp, structureCapped, tpAnchor };
   }
 
   computePullbackEntry(input: {
@@ -549,6 +585,10 @@ export class RecommendationTradeCalculator {
 
   private parseIntervalToMinutes(interval: string): number {
     return parseIntervalToMinutes(interval);
+  }
+
+  private isNonBreakoutPlaybook(playbook?: SetupPlaybook): boolean {
+    return playbook !== undefined && playbook !== "BREAKOUT_CONTINUATION";
   }
 
   private round(value: number): number {

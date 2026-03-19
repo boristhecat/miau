@@ -108,9 +108,7 @@ export class RecommendationEngine {
       breakoutFailureDirection,
       confidenceBreakdown,
       lowAbsoluteConviction,
-      winnerRatioInsufficient,
       htfContradictionCount,
-      regimeSignalMismatch,
       independentChannelAgreement,
       regimeMaturity
     } = this.signalEvaluator.evaluate(
@@ -177,12 +175,14 @@ export class RecommendationEngine {
     }
 
     // Improvement #3: Structure-anchored SL/TP
-    let { stopLoss, takeProfit, structureCapped } = this.tradeCalculator.computeStructureAnchoredLevels({
+    let { stopLoss, takeProfit, structureCapped, tpAnchor } = this.tradeCalculator.computeStructureAnchoredLevels({
       signal: tradeSignal,
       entry,
       atr,
       indicators,
-      atrProfile
+      atrProfile,
+      setupPlaybook: setupResult.playbook,
+      rationale
     });
 
     let objectiveContext:
@@ -412,9 +412,7 @@ export class RecommendationEngine {
         breakoutValidationFailed,
         breakoutFailureDirection,
         lowAbsoluteConviction,
-        winnerRatioInsufficient,
         htfContradictionCount,
-        regimeSignalMismatch,
         independentChannelAgreement,
         interval: resolvedBaseInterval,
         setupGrade: setupAssessment.setupGrade,
@@ -611,6 +609,31 @@ export class RecommendationEngine {
       }
     }
 
+    // --- Display context: OI quadrant + CVD divergence ---
+    const oiContext = (() => {
+      if (perp.openInterestDeltaPct === undefined) return undefined;
+      const oiThreshold = assetProfile.oiDeltaSignificanceThreshold;
+      const oiRising = perp.openInterestDeltaPct > oiThreshold;
+      const oiFalling = perp.openInterestDeltaPct < -oiThreshold;
+      const priceMomentum = indicators.recentCandleContext?.momentumPct3 ?? 0;
+      const priceRising = priceMomentum > 0.05;
+      const priceFalling = priceMomentum < -0.05;
+      if (oiRising && priceRising) return "NEW_LONGS" as const;
+      if (oiRising && priceFalling) return "NEW_SHORTS" as const;
+      if (oiFalling && priceRising) return "SHORT_COVERING" as const;
+      if (oiFalling && priceFalling) return "LONG_LIQUIDATION" as const;
+      return undefined;
+    })();
+
+    const cvdDivergence = (() => {
+      const cvdDelta = indicators.cvdDeltaPct5;
+      if (cvdDelta === undefined) return undefined;
+      const priceMomentum = indicators.recentCandleContext?.momentumPct3 ?? 0;
+      if (priceMomentum > 0.1 && cvdDelta < 5) return "BEARISH" as const;
+      if (priceMomentum < -0.1 && cvdDelta > -5) return "BULLISH" as const;
+      return undefined;
+    })();
+
     // --- Plan 8: MTF Context ---
     let mtfContext: MtfContext | undefined;
     if (input.structureIndicators && input.structureInterval) {
@@ -717,7 +740,10 @@ export class RecommendationEngine {
       fundingAnalysis,
       mtfContext,
       liquidationClusters,
-      journalInsight: input.journalInsight
+      journalInsight: input.journalInsight,
+      tpAnchor,
+      oiContext,
+      cvdDivergence
     };
   }
 

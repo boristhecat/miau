@@ -54,7 +54,7 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     <span class="rec-pair">${rec.pair}</span>
     <span class="rec-conf ${cC(confidence)}" title="Overall trade confidence score">${confidence}%</span>
     ${rec.setupGrade ? badge(`${rec.setupGrade}`, gradeTone(rec.setupGrade), "Setup quality grade (A best, D worst)") : null}
-    ${rec.riskRewardRatio != null ? html`<span class="dim" title="Risk-to-reward ratio">r:r ${fN(rec.riskRewardRatio)}</span>` : null}
+    ${rec.riskRewardRatio != null ? html`<span class="dim" title="${rec.tpAnchor ? `TP constrained by ${rec.tpAnchor} — high-volume node pulled target closer` : "Risk-to-reward ratio"}">r:r ${fN(rec.riskRewardRatio)}</span>` : null}
     ${rec.structureState ? badge(prettyToken(rec.structureState), structureTone(rec.structureState), "Market structure state (swing point labeling)") : null}
     ${rec.mtfContext?.alignment ? badge(`MTF ${prettyToken(rec.mtfContext.alignment)}`, mtfAlignmentTone(rec.mtfContext.alignment), `Multi-timeframe cascade: ${rec.mtfContext.structureInterval} / ${rec.mtfContext.directionalInterval} / exec`) : null}
     ${monitoringBadge}
@@ -66,7 +66,7 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
   const levels = html`
     <div class="rec-lv"><span class="rec-lk">entry</span><span class="rec-lp">${fP(rec.entry)}</span><span></span></div>
     <div class="rec-lv rec-level-stop"><span class="rec-lk">stop</span><span class="rec-lp">${fP(rec.stopLoss)}</span>${stopDist != null ? html`<span class="rec-ld c-red">${fSPct(stopDist)}</span>` : html`<span></span>`}</div>
-    <div class="rec-lv rec-level-target"><span class="rec-lk">target</span><span class="rec-lp">${fP(rec.takeProfit)}</span>${targetDist != null ? html`<span class="rec-ld c-green">${fSPct(targetDist)}</span>` : html`<span></span>`}</div>
+    <div class="rec-lv rec-level-target"><span class="rec-lk">target</span><span class="rec-lp">${fP(rec.takeProfit)}</span>${targetDist != null ? html`<span class="rec-ld c-green">${fSPct(targetDist)}${rec.tpAnchor ? html`<span class="dim" style="margin-left:4px" title="TP constrained by ${rec.tpAnchor} — high-volume node pulled target closer">${rec.tpAnchor.toLowerCase()}</span>` : null}</span>` : html`<span></span>`}</div>
     ${liq ? html`<div class="rec-lv"><span class="rec-lk">liq</span><span class="rec-lp dim">${fP(liq.liquidationPrice)}</span>${liqDist != null ? html`<span class="rec-ld ${liq.risk === "SAFE" || liq.risk === "MODERATE" ? "dim" : "c-red"}">${fSPct(liqDist)} ${badge(liq.risk, liquidationRiskTone(liq.risk), `${fN(liq.liquidationToStopRatio)}x SL distance`)}</span>` : html`<span></span>`}</div>` : null}
   `;
 
@@ -83,6 +83,33 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
   const monitorBtn = rec.signal !== "NO_TRADE"
     ? html`<div class="rec-action"><button type="button" class="btn-primary" onClick=${onMonitor}>Monitor this trade</button></div>`
     : null;
+
+  // Rationale priority sort — key signal events first, generic weight/regime lines last
+  const PRIORITY_PATTERNS = [
+    /VPOC|VAH|VAL/i,
+    /CVD.*divergence|divergence.*CVD/i,
+    /coiled spring|compression breakout/i,
+    /new longs|new shorts|short cover|long liquidat/i,
+    /RSI.*divergence|divergence.*RSI/i,
+    /impulse/i,
+    /BOS|ChoCH/i,
+    /liquidation cluster/i,
+    /HTF.*contradiction|contradiction.*HTF/i
+  ];
+  const DEPRIORITY_PATTERNS = [
+    /^Weight profile/,
+    /^Regime context:.*lagging indicators/,
+    /^Independent channel agreement:/
+  ];
+  function rationaleScore(line) {
+    for (let i = 0; i < PRIORITY_PATTERNS.length; i++) {
+      if (PRIORITY_PATTERNS[i].test(line)) return -(PRIORITY_PATTERNS.length - i);
+    }
+    for (const p of DEPRIORITY_PATTERNS) {
+      if (p.test(line)) return 1;
+    }
+    return 0;
+  }
 
   // col 2: AI opinion
   const agreementLabel = rec.requestedDirection
@@ -128,7 +155,7 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     ...(rec.entryReadinessReasons ?? []),
     ...(rec.sequenceReasons ?? []),
     ...(rec.levelInteractionReasons ?? [])
-  ].filter(Boolean))].slice(0, 6);
+  ].filter(Boolean))].sort((a, b) => rationaleScore(a) - rationaleScore(b)).slice(0, 6);
 
   const playbookTip = rec.playbookRegimeAligned === false
     ? "Setup pattern \u2014 misaligned with current regime"
@@ -151,6 +178,8 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     ${fundingBadgeVisible ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), `Funding ${fPct(fa.currentRate)} (avg ${fPct(fa.averageRate)})`) : null}
     ${clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports trade direction") : null}
     ${clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop \u2014 cascade risk") : null}
+    ${rec.cvdDivergence === "BEARISH" ? badge("cvd div \u2193", "badge-warn", "Price rising but flow weakening \u2014 buyers losing conviction") : null}
+    ${rec.cvdDivergence === "BULLISH" ? badge("cvd div \u2191", "badge-warn", "Price falling but flow absorbing \u2014 sellers losing conviction") : null}
   `;
 
   const appSection = html`
@@ -206,7 +235,13 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
   const perpLines = perp ? [
     [ivPlain("mark", fP(perp.markPrice)), ivPlain("idx", fP(perp.indexPrice))].filter(Boolean),
     [ivPlain("fund", fPct(perp.fundingRate)), ivPlain("avg", fPct(perp.fundingRateAvg)), perp.premiumPct != null ? ivPlain("prem", fPct(perp.premiumPct)) : null].filter(Boolean),
-    [perp.openInterest != null ? ivPlain("oi", fN(perp.openInterest, 0)) : null, perp.openInterestDeltaPct != null ? ivPlain("oi\u0394", fSPct(perp.openInterestDeltaPct)) : null, perp.bidAskSpreadPct != null ? ivPlain("spread", fPct(perp.bidAskSpreadPct)) : null].filter(Boolean)
+    [
+      perp.openInterest != null ? ivPlain("oi", fN(perp.openInterest, 0)) : null,
+      perp.openInterestDeltaPct != null ? iv("oi\u0394", rec.oiContext
+        ? `${fSPct(perp.openInterestDeltaPct)} <span class="dim">${rec.oiContext === "NEW_LONGS" ? "new longs" : rec.oiContext === "NEW_SHORTS" ? "new shorts" : rec.oiContext === "SHORT_COVERING" ? "short cover" : "long liq"}</span>`
+        : fSPct(perp.openInterestDeltaPct)) : null,
+      perp.bidAskSpreadPct != null ? ivPlain("spread", fPct(perp.bidAskSpreadPct)) : null
+    ].filter(Boolean)
   ].filter(arr => arr.length) : [];
 
   const indPerpDetail = (indLines.length || perpLines.length) ? html`

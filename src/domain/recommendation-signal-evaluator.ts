@@ -31,9 +31,7 @@ export interface SignalEvaluationResult {
   breakoutFailureDirection: "UP" | "DOWN" | "NONE";
   regime: "TRADEABLE" | "CHOPPY";
   lowAbsoluteConviction: boolean;
-  winnerRatioInsufficient: boolean;
   htfContradictionCount: number;
-  regimeSignalMismatch: boolean;
   /** Number of independent signal channels (out of 4) agreeing with the chosen direction */
   independentChannelAgreement: number;
   /** Whether the current regime is freshly transitioned or mature */
@@ -107,18 +105,15 @@ export class RecommendationSignalEvaluator {
     });
     const w = (channel: WeightChannel, points: number): number => points * weightProfile.multipliers[channel];
     rationale.push(
-      `Weight profile ${weightProfile.horizonBucket}/${marketRegime}: trend x${weightProfile.multipliers.trend.toFixed(2)}, momentum x${weightProfile.multipliers.momentum.toFixed(2)}, flow x${weightProfile.multipliers.flow.toFixed(2)}, micro x${weightProfile.multipliers.microstructure.toFixed(2)}.`
+      `Weight profile ${weightProfile.horizonBucket}/${marketRegime}: trend x${weightProfile.multipliers.trend.toFixed(2)}, momentum x${weightProfile.multipliers.momentum.toFixed(2)}, micro x${weightProfile.multipliers.microstructure.toFixed(2)}, meanRev x${weightProfile.multipliers.meanReversion.toFixed(2)}, vol x${weightProfile.multipliers.volatility.toFixed(2)}.`
     );
     // Phase 1a: Channel score accumulator — tracks per-channel contributions for capping
     const acc: Record<WeightChannel, { long: number; short: number }> = {
       trend: { long: 0, short: 0 },
       momentum: { long: 0, short: 0 },
-      flow: { long: 0, short: 0 },
       microstructure: { long: 0, short: 0 },
       meanReversion: { long: 0, short: 0 },
-      volatility: { long: 0, short: 0 },
-      fastFilters: { long: 0, short: 0 },
-      consensus: { long: 0, short: 0 }
+      volatility: { long: 0, short: 0 }
     };
     const addL = (ch: WeightChannel, pts: number) => { acc[ch].long += w(ch, pts); };
     const addS = (ch: WeightChannel, pts: number) => { acc[ch].short += w(ch, pts); };
@@ -146,10 +141,10 @@ export class RecommendationSignalEvaluator {
     this.scoreMicrostructure(ctx);
     this.scoreMeanReversion(ctx);
     this.scoreHtfBias(ctx);
-    this.scoreConsensusAndFilters(ctx);
+    this.scoreVolatility(ctx);
 
-    // Phase 1a: Apply channel score caps — limit each channel to ±18 after weight multiplier
-    const CHANNEL_CAP = 18;
+    // Phase 1a: Apply channel score caps
+    const CHANNEL_CAP = 24;
     for (const ch of Object.keys(acc) as WeightChannel[]) {
       longScore += Math.max(-CHANNEL_CAP, Math.min(CHANNEL_CAP, acc[ch].long));
       shortScore += Math.max(-CHANNEL_CAP, Math.min(CHANNEL_CAP, acc[ch].short));
@@ -178,19 +173,6 @@ export class RecommendationSignalEvaluator {
 
     // --- Post-processing: confidence adjustments ---
     const winnerScore = Math.max(longScore, shortScore);
-    const loserScore = Math.min(longScore, shortScore);
-    let winnerRatio = 1;
-    if (loserScore > 0) {
-      winnerRatio = winnerScore / (winnerScore + loserScore);
-    }
-    let winnerRatioInsufficient = false;
-    if (winnerRatio < 0.60) {
-      winnerRatioInsufficient = true;
-      rationale.push(`Winner ratio ${winnerRatio.toFixed(2)} is below 0.60; directional edge is insufficient.`);
-    } else if (winnerRatio < 0.65) {
-      confidence -= 12;
-      rationale.push(`Low winner ratio (${winnerRatio.toFixed(2)}); mixed signals reduce conviction.`);
-    }
 
     let lowAbsoluteConviction = false;
     if (winnerScore < 28) {
@@ -227,26 +209,9 @@ export class RecommendationSignalEvaluator {
       rationale.push(`Volume confirmation is partial (${volumeConfirmation.score} channel aligned).`);
     }
 
-    const optionalParticipationCount = this.countOptionalParticipation({
-      signal, indicators, lastPrice, biasContext, btcContext
-    });
-    rationale.push(`Signal participation: ${optionalParticipationCount} optional channels confirmed direction.`);
-    if (optionalParticipationCount >= 6) {
-      confidence += 5;
-    } else if (optionalParticipationCount <= 2) {
-      confidence -= 6;
-    }
-
     const htfContradictionCount = this.countHtfContradictions(signal, biasContext);
     if (htfContradictionCount > 0) {
       rationale.push(`HTF contradiction count: ${htfContradictionCount}/4 against ${signal}.`);
-    }
-
-    const emaTrendDirection: Exclude<Signal, "NO_TRADE"> = emaTrend;
-    const regimeSignalMismatch =
-      (marketRegime === "RANGE" || marketRegime === "VOLATILE_SPIKE") && signal === emaTrendDirection;
-    if (regimeSignalMismatch) {
-      rationale.push(`Regime mismatch: trend-follow ${signal} in ${marketRegime} regime.`);
     }
 
     if (regime === "CHOPPY") {
@@ -271,30 +236,19 @@ export class RecommendationSignalEvaluator {
       }
     }
 
-    if (marketRegime === "TREND") {
-      if (regimeMaturity === "FRESH") {
-        confidence += 4;
-        rationale.push("Fresh TREND regime: confidence boosted for fresh directional breakout.");
-      } else {
-        confidence -= 4;
-        rationale.push("Mature TREND regime: confidence reduced for potential trend exhaustion.");
-      }
-    }
-
     const signalStrength = Math.round(clamp(confidence, 1, 99));
 
     const confidenceBreakdown = this.computeConfidenceBreakdown({
       indicators, marketRegime, impulseBias, biasContext,
       breakoutValidationFailed, pullbackExtended
     });
-    confidence = Math.round(clamp(confidence * 0.62 + confidenceBreakdown.setupQuality * 0.38, 1, 99));
 
     return {
       signal, confidence, signalStrength, confidenceBreakdown, rationale,
       regime, marketRegime, impulseBias, pullbackExtended,
       breakoutValidationFailed, breakoutFailureDirection,
-      lowAbsoluteConviction, winnerRatioInsufficient,
-      htfContradictionCount, regimeSignalMismatch,
+      lowAbsoluteConviction,
+      htfContradictionCount,
       independentChannelAgreement, regimeMaturity
     };
   }
@@ -453,6 +407,25 @@ export class RecommendationSignalEvaluator {
       }
     }
 
+    // Compression/expansion detection
+    if (recent) {
+      if (recent.rangeExpansionRatio >= 1.5 && recent.breakoutDirection !== "NONE") {
+        // Expansion candle breaking out of prior compression = coiled spring release
+        if (recent.breakoutDirection === "UP") {
+          addL("momentum", 4);
+          rationale.push("Compression breakout: expansion candle breaking out upside — coiled spring released.");
+        } else {
+          addS("momentum", 4);
+          rationale.push("Compression breakout: expansion candle breaking out downside — coiled spring released.");
+        }
+      } else if (recent.rangeExpansionRatio < 0.7 && recent.breakoutDirection === "NONE") {
+        // Tight candle inside prior range = compression building, conviction reduced
+        addL("momentum", -2);
+        addS("momentum", -2);
+        rationale.push("Range compression detected but no breakout yet — momentum conviction reduced.");
+      }
+    }
+
     // Session conditioning
     const session = detectTradingSession();
     if (session === "ASIA") {
@@ -482,7 +455,7 @@ export class RecommendationSignalEvaluator {
     const fundingAccelerating = Math.abs(fundingMomentum) > fundingThreshold * 0.6;
     if (perp.fundingRate > fundingThreshold && perp.fundingRateAvg > 0) {
       const pts = (fundingAccelerating ? 12 : 8) * fundingHorizonScale;
-      addS("flow", pts);
+      addS("microstructure", pts);
       rationale.push(
         fundingAccelerating
           ? "Funding is accelerating positive (increasing long crowding risk)."
@@ -490,7 +463,7 @@ export class RecommendationSignalEvaluator {
       );
     } else if (perp.fundingRate < -fundingThreshold && perp.fundingRateAvg < 0) {
       const pts = (fundingAccelerating ? 12 : 8) * fundingHorizonScale;
-      addL("flow", pts);
+      addL("microstructure", pts);
       rationale.push(
         fundingAccelerating
           ? "Funding is accelerating negative (increasing short crowding risk)."
@@ -500,29 +473,45 @@ export class RecommendationSignalEvaluator {
       rationale.push("Funding is neutral.");
     }
 
-    // Premium
+    // Premium (confirming — partially redundant with funding)
     if (perp.premiumPct > 0.15) {
-      addS("flow", 6);
+      addS("microstructure", 3);
       rationale.push("Mark trades at a premium to index (possible long overheating).");
     } else if (perp.premiumPct < -0.15) {
-      addL("flow", 6);
+      addL("microstructure", 3);
       rationale.push("Mark trades at a discount to index (possible short exhaustion).");
     } else {
       rationale.push("Mark/index premium is balanced.");
     }
 
-    // OI delta
+    // OI-price divergence classification (4-quadrant model)
     const oiThreshold = assetProfile.oiDeltaSignificanceThreshold;
     if (perp.openInterestDeltaPct !== undefined) {
-      if (perp.openInterestDeltaPct > oiThreshold && indicators.macdHistogram > 0) {
-        addL("flow", 6);
-        rationale.push("Open interest is expanding alongside bullish momentum.");
-      } else if (perp.openInterestDeltaPct > oiThreshold && indicators.macdHistogram < 0) {
-        addS("flow", 6);
-        rationale.push("Open interest is expanding alongside bearish momentum.");
-      } else if (perp.openInterestDeltaPct < -oiThreshold) {
-        addL("flow", -4);
-        addS("flow", -4);
+      const oiRising = perp.openInterestDeltaPct > oiThreshold;
+      const oiFalling = perp.openInterestDeltaPct < -oiThreshold;
+      const priceMomentum = indicators.recentCandleContext?.momentumPct3 ?? 0;
+      const priceRising = priceMomentum > 0.05;
+      const priceFalling = priceMomentum < -0.05;
+
+      if (oiRising && priceRising) {
+        addL("microstructure", 5);
+        addS("microstructure", -3);
+        rationale.push("OI expanding + price rising (new longs entering) — healthy bullish continuation.");
+      } else if (oiRising && priceFalling) {
+        addS("microstructure", 5);
+        addL("microstructure", -3);
+        rationale.push("OI expanding + price falling (new shorts entering) — bearish pressure building.");
+      } else if (oiFalling && priceRising) {
+        addL("microstructure", -4);
+        rationale.push("OI contracting + price rising (short covering) — rally is hollow, weak follow-through.");
+      } else if (oiFalling && priceFalling) {
+        addS("microstructure", -4);
+        rationale.push("OI contracting + price falling (long liquidation) — capitulation may be near exhaustion.");
+      } else if (oiRising) {
+        rationale.push("Open interest is expanding; direction is ambiguous.");
+      } else if (oiFalling) {
+        addL("microstructure", -2);
+        addS("microstructure", -2);
         rationale.push("Open interest is fading; follow-through conviction is reduced.");
       }
     }
@@ -540,25 +529,25 @@ export class RecommendationSignalEvaluator {
           }
           rationale.push("Price is near VPOC in range regime; mean reversion toward VPOC favored.");
         } else {
-          addL("flow", -2);
-          addS("flow", -2);
+          addL("microstructure", -2);
+          addS("microstructure", -2);
           rationale.push("Price is near VPOC; may act as resistance/support.");
         }
       } else if (lastPrice > vah) {
-        addL("flow", 7);
+        addL("microstructure", 7);
         rationale.push("Price is above Value Area High; breakout above value area.");
       } else if (lastPrice < val) {
-        addS("flow", 7);
+        addS("microstructure", 7);
         rationale.push("Price is below Value Area Low; breakdown below value area.");
       } else {
         const vaWidth = vah - val;
         if (vaWidth > 0) {
           const posInVa = (lastPrice - val) / vaWidth;
           if (posInVa > 0.7) {
-            addS("flow", 2);
+            addS("microstructure", 2);
             rationale.push("Price is in upper value area; closer to VAH resistance.");
           } else if (posInVa < 0.3) {
-            addL("flow", 2);
+            addL("microstructure", 2);
             rationale.push("Price is in lower value area; closer to VAL support.");
           } else {
             rationale.push(`Price is inside value area (VAL ${val.toFixed(4)} - VAH ${vah.toFixed(4)}).`);
@@ -569,13 +558,13 @@ export class RecommendationSignalEvaluator {
       }
     }
 
-    // MFI
+    // MFI (confirming — overlaps with CVD)
     if (indicators.mfi14 !== undefined) {
       if (indicators.mfi14 >= 55 && indicators.mfi14 < 80) {
-        addL("flow", 4);
+        addL("microstructure", 3);
         rationale.push("MFI confirms buying pressure.");
       } else if (indicators.mfi14 <= 45 && indicators.mfi14 > 20) {
-        addS("flow", 4);
+        addS("microstructure", 3);
         rationale.push("MFI confirms selling pressure.");
       } else if (indicators.mfi14 >= 80) {
         addS("meanReversion", 2);
@@ -586,24 +575,24 @@ export class RecommendationSignalEvaluator {
       }
     }
 
-    // CMF
+    // CMF (confirming — slow, low marginal info)
     if (indicators.cmf20 !== undefined) {
       if (indicators.cmf20 >= 0.08) {
-        addL("flow", 4);
+        addL("microstructure", 3);
         rationale.push("CMF indicates sustained accumulation.");
       } else if (indicators.cmf20 <= -0.08) {
-        addS("flow", 4);
+        addS("microstructure", 3);
         rationale.push("CMF indicates sustained distribution.");
       }
     }
 
-    // OBV
+    // OBV (confirming — captured by CVD delta)
     if (indicators.obvSlope5 !== undefined) {
       if (indicators.obvSlope5 > 0.02) {
-        addL("flow", 3);
+        addL("microstructure", 2);
         rationale.push("OBV slope is rising.");
       } else if (indicators.obvSlope5 < -0.02) {
-        addS("flow", 3);
+        addS("microstructure", 2);
         rationale.push("OBV slope is falling.");
       }
     }
@@ -612,10 +601,10 @@ export class RecommendationSignalEvaluator {
     if (indicators.volumeZScore20 !== undefined && indicators.cvdDeltaPct5 !== undefined) {
       const expansion = indicators.volumeZScore20 >= 1;
       if (expansion && indicators.cvdDeltaPct5 > 10) {
-        addL("flow", 4);
+        addL("microstructure", 4);
         rationale.push("Volume expansion aligns with positive flow delta.");
       } else if (expansion && indicators.cvdDeltaPct5 < -10) {
-        addS("flow", 4);
+        addS("microstructure", 4);
         rationale.push("Volume expansion aligns with negative flow delta.");
       }
     }
@@ -636,12 +625,13 @@ export class RecommendationSignalEvaluator {
       }
     }
 
+    // Microprice (confirming — derived from orderbook which we already score)
     if (perp.microPricePremiumPct !== undefined) {
       if (perp.microPricePremiumPct > 0.01) {
-        addL("microstructure", 8);
+        addL("microstructure", 3);
         rationale.push("Microprice sits above mid; near-term pressure is bid-led.");
       } else if (perp.microPricePremiumPct < -0.01) {
-        addS("microstructure", 8);
+        addS("microstructure", 3);
         rationale.push("Microprice sits below mid; near-term pressure is ask-led.");
       }
     }
@@ -682,12 +672,13 @@ export class RecommendationSignalEvaluator {
     const liq = indicators.liquidityMap;
     if (liq) {
       const atr = indicators.atr14;
+      // FVG proximity (confirming — location signal, not directional)
       if (liq.nearestBullishFvg && (lastPrice - liq.nearestBullishFvg.midpoint) < atr * 0.5 && lastPrice > liq.nearestBullishFvg.midpoint) {
-        addL("microstructure", 3);
+        addL("microstructure", 2);
         rationale.push("Near unmitigated bullish FVG — support zone below.");
       }
       if (liq.nearestBearishFvg && (liq.nearestBearishFvg.midpoint - lastPrice) < atr * 0.5 && lastPrice < liq.nearestBearishFvg.midpoint) {
-        addS("microstructure", 3);
+        addS("microstructure", 2);
         rationale.push("Near unmitigated bearish FVG — resistance zone above.");
       }
       if (liq.nearestBullishOb && (lastPrice - liq.nearestBullishOb.midpoint) < atr * 0.5 && lastPrice > liq.nearestBullishOb.bottom) {
@@ -712,24 +703,23 @@ export class RecommendationSignalEvaluator {
     // Plan 6: Liquidation cluster scoring
     const clusters = indicators.liquidationClusters;
     if (clusters) {
-      // Strong long-liq cluster close below = bearish magnet (forced sells)
+      // Liquidation clusters (confirming — already has guard advisory)
       if (
         clusters.nearestClusterBelow &&
         clusters.nearestClusterBelow.strength >= 50 &&
         clusters.nearestClusterBelow.distanceAtr < 3
       ) {
-        addS("microstructure", 3);
+        addS("microstructure", 2);
         rationale.push(
           `Est. long-liq cluster ${clusters.nearestClusterBelow.distanceAtr.toFixed(1)} ATR below (str ${clusters.nearestClusterBelow.strength}) — bearish cascade magnet.`
         );
       }
-      // Strong short-liq cluster close above = bullish magnet (forced buys)
       if (
         clusters.nearestClusterAbove &&
         clusters.nearestClusterAbove.strength >= 50 &&
         clusters.nearestClusterAbove.distanceAtr < 3
       ) {
-        addL("microstructure", 3);
+        addL("microstructure", 2);
         rationale.push(
           `Est. short-liq cluster ${clusters.nearestClusterAbove.distanceAtr.toFixed(1)} ATR above (str ${clusters.nearestClusterAbove.strength}) — bullish cascade magnet.`
         );
@@ -739,6 +729,7 @@ export class RecommendationSignalEvaluator {
 
   private scoreMeanReversion(ctx: ScoringContext): void {
     const { indicators, lastPrice, addL, addS, rationale } = ctx;
+    let rsiDivergenceDirection: "BULLISH" | "BEARISH" | "NONE" = "NONE";
 
     // RSI extremes
     if (indicators.rsi14 >= 75) {
@@ -767,13 +758,34 @@ export class RecommendationSignalEvaluator {
     // RSI divergence
     if (indicators.rsiDivergence) {
       if (indicators.rsiDivergence.bullish) {
+        rsiDivergenceDirection = "BULLISH";
         addL("meanReversion", 8);
         addS("meanReversion", -4);
         rationale.push("RSI bullish divergence detected (price lower low, RSI higher low).");
       } else if (indicators.rsiDivergence.bearish) {
+        rsiDivergenceDirection = "BEARISH";
         addS("meanReversion", 8);
         addL("meanReversion", -4);
         rationale.push("RSI bearish divergence detected (price higher high, RSI lower high).");
+      }
+    }
+
+    // CVD divergence — price/flow directional mismatch signals exhaustion
+    const priceMomentum = indicators.recentCandleContext?.momentumPct3 ?? 0;
+    const cvdDelta = indicators.cvdDeltaPct5;
+    if (cvdDelta !== undefined) {
+      const bearishCvdDivergence = priceMomentum > 0.1 && cvdDelta < 5;
+      const bullishCvdDivergence = priceMomentum < -0.1 && cvdDelta > -5;
+      if (bearishCvdDivergence) {
+        addS("meanReversion", 6);
+        addL("meanReversion", -3);
+        const confluence = rsiDivergenceDirection === "BEARISH" ? " RSI and CVD divergence both confirm exhaustion." : "";
+        rationale.push(`CVD bearish divergence: price rising but flow weakening — buyers losing conviction.${confluence}`);
+      } else if (bullishCvdDivergence) {
+        addL("meanReversion", 6);
+        addS("meanReversion", -3);
+        const confluence = rsiDivergenceDirection === "BULLISH" ? " RSI and CVD divergence both confirm exhaustion." : "";
+        rationale.push(`CVD bullish divergence: price falling but flow absorbing — sellers losing conviction.${confluence}`);
       }
     }
   }
@@ -813,65 +825,15 @@ export class RecommendationSignalEvaluator {
     }
   }
 
-  private scoreConsensusAndFilters(ctx: ScoringContext): void {
-    const { indicators, lastPrice, emaTrend, macdAligned, macdBearAligned,
-      aboveVwap, shortHorizon, atrPct, addL, addS, rationale } = ctx;
+  private scoreVolatility(ctx: ScoringContext): void {
+    const { atrPct, addL, addS, rationale } = ctx;
 
-    // Directional consensus
-    const recent = indicators.recentCandleContext;
-    const bullishStructureSignals = [
-      emaTrend === "LONG", aboveVwap, macdAligned,
-      (recent?.momentumPct3 ?? 0) > 0, recent?.breakoutDirection === "UP"
-    ].filter(Boolean).length;
-    const bearishStructureSignals = [
-      emaTrend === "SHORT", !aboveVwap, macdBearAligned,
-      (recent?.momentumPct3 ?? 0) < 0, recent?.breakoutDirection === "DOWN"
-    ].filter(Boolean).length;
-    if (shortHorizon && bullishStructureSignals >= 4 && bearishStructureSignals <= 1) {
-      addL("consensus", 10);
-      addS("consensus", -14);
-      rationale.push("Directional consensus: bullish structure dominates trend, momentum, and flow inputs.");
-    } else if (shortHorizon && bearishStructureSignals >= 4 && bullishStructureSignals <= 1) {
-      addS("consensus", 10);
-      addL("consensus", -14);
-      rationale.push("Directional consensus: bearish structure dominates trend, momentum, and flow inputs.");
-    }
-
-    // ATR volatility
     if (atrPct < 0.8) {
       addL("volatility", 3);
       addS("volatility", 3);
       rationale.push("ATR indicates controlled intraday volatility.");
     } else {
       rationale.push("ATR indicates elevated volatility; execution risk rises.");
-    }
-
-    // Fast filters
-    const emaSpreadPct = (Math.abs(indicators.ema20 - indicators.ema50) / Math.max(lastPrice, 1)) * 100;
-    if (shortHorizon && emaSpreadPct < 0.08) {
-      addL("fastFilters", -8);
-      addS("fastFilters", -8);
-      rationale.push("Short-horizon filter: EMA spread is tight; likely chop around crossover.");
-    }
-
-    const bullishFastConfirmations = [
-      macdAligned, aboveVwap, indicators.rsi14 > 52,
-      (indicators.recentCandleContext?.momentumPct3 ?? 0) > 0
-    ].filter(Boolean).length;
-    const bearishFastConfirmations = [
-      macdBearAligned, !aboveVwap, indicators.rsi14 < 48,
-      (indicators.recentCandleContext?.momentumPct3 ?? 0) < 0
-    ].filter(Boolean).length;
-    const emaTrendDirection: Exclude<Signal, "NO_TRADE"> = emaTrend;
-    if (shortHorizon) {
-      if (emaTrendDirection === "LONG" && bullishFastConfirmations === 0) {
-        addL("fastFilters", -12);
-        rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a long.");
-      }
-      if (emaTrendDirection === "SHORT" && bearishFastConfirmations === 0) {
-        addS("fastFilters", -12);
-        rationale.push("Short-horizon filter: EMA trend needs at least one fast confirmation before a short.");
-      }
     }
   }
 
@@ -1010,57 +972,6 @@ export class RecommendationSignalEvaluator {
       score += 1;
     }
     return { score, anyData };
-  }
-
-  private countOptionalParticipation(input: {
-    signal: Exclude<Signal, "NO_TRADE">;
-    indicators: IndicatorSnapshot;
-    lastPrice: number;
-    biasContext?: BiasContext;
-    btcContext?: { emaAbove: boolean; momentumPositive: boolean };
-  }): number {
-    const { signal, indicators, lastPrice, biasContext, btcContext } = input;
-    let count = 0;
-    if ((signal === "LONG" && indicators.rsiDivergence?.bullish) || (signal === "SHORT" && indicators.rsiDivergence?.bearish)) {
-      count += 1;
-    }
-    if (
-      (signal === "LONG" && indicators.volumeProfile !== undefined && lastPrice > indicators.volumeProfile.vah) ||
-      (signal === "SHORT" && indicators.volumeProfile !== undefined && lastPrice < indicators.volumeProfile.val)
-    ) {
-      count += 1;
-    }
-    if (
-      (signal === "LONG" && (indicators.obvSlope5 ?? 0) > 0.02) ||
-      (signal === "SHORT" && (indicators.obvSlope5 ?? 0) < -0.02)
-    ) {
-      count += 1;
-    }
-    if ((signal === "LONG" && (indicators.mfi14 ?? 0) >= 55) || (signal === "SHORT" && (indicators.mfi14 ?? 100) <= 45)) {
-      count += 1;
-    }
-    if ((signal === "LONG" && (indicators.cmf20 ?? 0) >= 0.08) || (signal === "SHORT" && (indicators.cmf20 ?? 0) <= -0.08)) {
-      count += 1;
-    }
-    if (
-      indicators.volumeZScore20 !== undefined &&
-      indicators.cvdDeltaPct5 !== undefined &&
-      indicators.volumeZScore20 >= 1 &&
-      ((signal === "LONG" && indicators.cvdDeltaPct5 > 10) || (signal === "SHORT" && indicators.cvdDeltaPct5 < -10))
-    ) {
-      count += 1;
-    }
-    if (
-      btcContext &&
-      ((signal === "LONG" && btcContext.emaAbove && btcContext.momentumPositive) ||
-        (signal === "SHORT" && !btcContext.emaAbove && !btcContext.momentumPositive))
-    ) {
-      count += 1;
-    }
-    if (biasContext && biasContext.trend === signal) {
-      count += 1;
-    }
-    return count;
   }
 
   /**

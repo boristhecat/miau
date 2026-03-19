@@ -400,12 +400,25 @@ export class TalibWasmIndicatorService implements IndicatorCalculatorPort {
       return undefined;
     }
 
-    const bullishCloseRatio5 = recent.filter((candle) => candle.close > candle.open).length / recent.length;
-    const bearishCloseRatio5 = recent.filter((candle) => candle.close < candle.open).length / recent.length;
+    // Recency-weighted close ratios: [most recent → oldest] = [0.35, 0.25, 0.20, 0.12, 0.08]
+    const recencyWeights = [0.08, 0.12, 0.20, 0.25, 0.35]; // index 0 = oldest (recent[0]), index 4 = newest (recent[4])
+    let bullishCloseRatio5 = 0;
+    let bearishCloseRatio5 = 0;
+    for (let i = 0; i < recent.length; i++) {
+      const w = recencyWeights[i]!;
+      if (recent[i]!.close > recent[i]!.open) bullishCloseRatio5 += w;
+      else if (recent[i]!.close < recent[i]!.open) bearishCloseRatio5 += w;
+    }
 
+    // Recency-weighted momentum: last candle ~50%, second ~30%, third ~20%
     const closeNow = recent[recent.length - 1]!.close;
+    const close1Ago = recent[recent.length - 2]!.close;
+    const close2Ago = recent[recent.length - 3]!.close;
     const close3Ago = recent[recent.length - 4]!.close;
-    const momentumPct3 = ((closeNow - close3Ago) / Math.max(close3Ago, 1)) * 100;
+    const m1 = ((closeNow - close1Ago) / Math.max(close1Ago, 1)) * 100;
+    const m2 = ((close1Ago - close2Ago) / Math.max(close2Ago, 1)) * 100;
+    const m3 = ((close2Ago - close3Ago) / Math.max(close3Ago, 1)) * 100;
+    const momentumPct3 = m1 * 0.50 + m2 * 0.30 + m3 * 0.20;
 
     const avgRangePct5 =
       recent.reduce((sum, candle) => sum + (candle.high - candle.low) / Math.max(candle.close, 1), 0) / recent.length;

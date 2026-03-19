@@ -14,9 +14,7 @@ export function applyTradeGuards(input: {
   breakoutValidationFailed: boolean;
   breakoutFailureDirection: "UP" | "DOWN" | "NONE";
   lowAbsoluteConviction: boolean;
-  winnerRatioInsufficient: boolean;
   htfContradictionCount: number;
-  regimeSignalMismatch: boolean;
   independentChannelAgreement?: number;
   setupQuality: number;
   confidence: number;
@@ -100,9 +98,6 @@ export function applyTradeGuards(input: {
   if (!input.skipLegacyTradeabilityChecks && input.marketRegime === "LOW_LIQ_CHOP") {
     return block("low-liquidity chop regime.");
   }
-  if (input.winnerRatioInsufficient) {
-    return block("winner ratio is below 0.60; directional edge is insufficient.");
-  }
   // Improvement #2: Independent channel agreement hard block
   if (input.independentChannelAgreement !== undefined && input.independentChannelAgreement < 2) {
     return block(`only ${input.independentChannelAgreement}/4 independent channels agree; no cross-domain confluence.`);
@@ -173,11 +168,6 @@ export function applyTradeGuards(input: {
   if (input.htfContradictionCount === 2 && directionalConfidence < 60) {
     return block("HTF context partially contradicts signal; directional strength must be at least 60.");
   }
-  if (input.regimeSignalMismatch) {
-    accumulated.push(
-      `Guard: trend-follow signal in ${input.marketRegime} regime requires higher R/R (1.6) and confidence (55).`
-    );
-  }
   const effectiveSpreadThreshold = input.spreadBlockThreshold ?? 0.12;
   if (!input.skipLegacyTradeabilityChecks && input.bidAskSpreadPct !== undefined && input.bidAskSpreadPct > effectiveSpreadThreshold) {
     return block("orderbook spread is too wide for clean execution.");
@@ -185,10 +175,7 @@ export function applyTradeGuards(input: {
   if (!input.skipLegacyTradeabilityChecks && input.regime === "CHOPPY") {
     return block("choppy regime.");
   }
-  const playbookRiskRewardFloor = Math.max(input.playbookMinRiskReward ?? 0, input.regimeSignalMismatch ? 1.6 : 0, 1.2);
-  if (input.regimeSignalMismatch && input.riskRewardRatio < 1.6) {
-    return block(`trend-follow signal in ${input.marketRegime} regime requires risk/reward >= 1.6.`);
-  }
+  const playbookRiskRewardFloor = Math.max(input.playbookMinRiskReward ?? 0, 1.2);
   if (input.riskRewardRatio < playbookRiskRewardFloor) {
     const floorLabel = Number.isInteger(playbookRiskRewardFloor)
       ? playbookRiskRewardFloor.toFixed(1)
@@ -212,9 +199,6 @@ export function applyTradeGuards(input: {
   }
   if (input.lowAbsoluteConviction && directionalConfidence < 55) {
     return block("directional strength below low-conviction threshold (55).");
-  }
-  if (input.regimeSignalMismatch && directionalConfidence < 55) {
-    return block(`trend-follow signal in ${input.marketRegime} regime requires directional strength >= 55.`);
   }
   let confidenceFloor = 45;
   let setupQualityFloor = 52;
