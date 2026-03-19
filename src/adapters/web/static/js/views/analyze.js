@@ -134,10 +134,17 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     ? html`<div class="rec-sep"></div><ul class="flag-list ai-flags">${aiAdvice.reasons.slice(0, 4).map(r => html`<li>${r}</li>`)}</ul>`
     : null;
 
+  const aiOverruled = aiAdvice?.overruledSignals?.length
+    ? html`<div class="rec-sep"></div><ul class="flag-list ai-overruled">${aiAdvice.overruledSignals.slice(0, 4).map(s => html`<li>${s}</li>`)}</ul>`
+    : null;
+
+  const aiAltThesis = aiAdvice?.altThesis
+    ? html`<div class="rec-sep"></div>${aiRow("alt thesis", aiAdvice.altThesis)}`
+    : null;
+
   const aiFooterParts = [
     aiAdvice?.invalidation ? aiRow("invalidation", aiAdvice.invalidation) : null,
     aiAdvice?.riskNote ? aiRow("risk", aiAdvice.riskNote) : null,
-    aiAdvice?.overruledSignals?.length ? aiRow("overruled", aiAdvice.overruledSignals[0]) : null,
     aiAdvice?.model ? aiRow("model", html`<span class="dim">${aiAdvice.model}</span>`) : null
   ].filter(Boolean);
 
@@ -146,7 +153,7 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     : null;
 
   const aiCol = aiAdvice
-    ? html`${aiRows}${aiReasons}${aiFooter}`
+    ? html`${aiRows}${aiReasons}${aiOverruled}${aiAltThesis}${aiFooter}`
     : html`<span class="rec-empty">AI advisory not available</span>`;
 
   // col 3: rationale + on-demand
@@ -344,9 +351,8 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     <div class="rec ${cls}">
       <div class="rec-head">${head}</div>
       <div class="rec-grid">
-        <div class="rec-col">${levels}${aiLevels}${monitorBtn}</div>
+        <div class="rec-col">${levels}${aiLevels}${monitorBtn}${col3 ? html`<div class="rec-sep"></div>${col3}` : null}</div>
         <div class="rec-col">${aiCol}</div>
-        <div class="rec-col">${col3 || html`<span class="rec-empty">no rationale</span>`}</div>
       </div>
     </div>
   `;

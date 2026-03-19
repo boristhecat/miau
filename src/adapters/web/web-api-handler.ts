@@ -109,7 +109,7 @@ export class WebApiHandler {
     const leverage = Number(body.leverage);
     const positionSizeUsd = Number(body.positionSizeUsd);
     const objectiveHorizon = String(body.objectiveHorizon ?? "15").trim();
-    const aiModel = String(body.aiModel ?? "gpt-5.2").trim();
+    const aiModel = String(body.aiModel ?? "").trim();
     if (!Number.isFinite(leverage) || leverage <= 0) throw new HttpError(400, "Invalid leverage.");
     if (!Number.isFinite(positionSizeUsd) || positionSizeUsd <= 0) throw new HttpError(400, "Invalid position size.");
     if (!objectiveHorizon) throw new HttpError(400, "Objective horizon is required.");

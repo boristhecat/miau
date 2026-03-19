@@ -80,6 +80,7 @@ function MonitorSnapshot({ snapshot, editing }) {
   const health = String(snapshot.healthStatus ?? "").toUpperCase();
   const action = String(snapshot.managementAction ?? "").toUpperCase();
   const reasons = [...new Set([...(snapshot.healthReasons ?? []), ...(snapshot.managementReasons ?? [])].filter(Boolean))];
+  const analysisRationale = [...new Set((snapshot.analysisRationale ?? []).filter(Boolean))];
   const hasSL = (snapshot.trade ?? {}).stopLoss != null;
   const hasTP = (snapshot.trade ?? {}).takeProfit != null;
 
@@ -119,6 +120,9 @@ function MonitorSnapshot({ snapshot, editing }) {
     ${fa && fa.signal !== "NEUTRAL" ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), `Funding ${fPct(fa.currentRate)}`) : null}
     ${hasTP && clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports direction") : null}
     ${hasSL && clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop") : null}
+    ${snapshot.cvdDivergence === "BEARISH" ? badge("cvd div \u2193", "badge-warn", "Price rising but flow weakening \u2014 buyers losing conviction") : null}
+    ${snapshot.cvdDivergence === "BULLISH" ? badge("cvd div \u2191", "badge-warn", "Price falling but flow absorbing \u2014 sellers losing conviction") : null}
+    ${snapshot.oiContext ? html`<span class="dim" title="Open interest context">${snapshot.oiContext === "NEW_LONGS" ? "new longs" : snapshot.oiContext === "NEW_SHORTS" ? "new shorts" : snapshot.oiContext === "SHORT_COVERING" ? "short cover" : "long liq"}</span>` : null}
     ${snapshot.analysisConfidence != null ? html`<span class="${cC(snapshot.analysisConfidence)}" title="Analysis confidence">${snapshot.analysisConfidence}%</span>` : null}
     ${hasTP && metrics.holdingProgressPct != null ? html`<span class="dim" title="Hold time progress">${fPct(metrics.holdingProgressPct)} held</span>` : null}
   `;
@@ -127,10 +131,15 @@ function MonitorSnapshot({ snapshot, editing }) {
     ? html`<ul class="flag-list mon-reasons">${reasons.slice(0, 3).map(r => html`<li>${r}</li>`)}</ul>`
     : null;
 
+  const rationaleMarkup = analysisRationale.length
+    ? html`<ul class="flag-list mon-rationale">${analysisRationale.slice(0, 5).map(r => html`<li>${r}</li>`)}</ul>`
+    : null;
+
   const belowBar = editing ? null : html`
     <div class="mon-stats">${distances}</div>
     <div class="mon-context">${contextParts}</div>
     ${reasonsMarkup}
+    ${rationaleMarkup}
   `;
 
   // Bar anchoring: use SL/TP when both defined, otherwise fall back to ±2 ATR around current price

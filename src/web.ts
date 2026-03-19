@@ -9,6 +9,9 @@ import { RunRecommendationRankingUseCase } from "./application/run-recommendatio
 import { EvaluateOpenTradeUseCase } from "./application/evaluate-open-trade-use-case.js";
 import { BackpackMarketDataClient } from "./adapters/backpack/backpack-market-data-client.js";
 import { BackpackLiveMarketStreamClient } from "./adapters/backpack/backpack-live-market-stream-client.js";
+import { BinancePerpDataClient } from "./adapters/market-data/binance-perp-data-client.js";
+import { BybitPerpDataClient } from "./adapters/market-data/bybit-perp-data-client.js";
+import { AggregatedMarketDataClient } from "./adapters/market-data/aggregated-market-data-client.js";
 import { ReconfigurableAiAdviceService } from "./adapters/ai/reconfigurable-ai-advice-service.js";
 import { AxiosHttpClient } from "./adapters/http/axios-http-client.js";
 import { createIndicatorService } from "./adapters/indicators/indicator-service-factory.js";
@@ -27,8 +30,11 @@ async function main(): Promise<void> {
 
   try {
     const httpClient = new AxiosHttpClient("https://api.backpack.exchange");
-    const marketData = new BackpackMarketDataClient(httpClient);
-    const liveMarketData = new BackpackLiveMarketStreamClient(marketData);
+    const backpackMarketData = new BackpackMarketDataClient(httpClient);
+    const binancePerpData = new BinancePerpDataClient(new AxiosHttpClient("https://fapi.binance.com"));
+    const bybitPerpData = new BybitPerpDataClient(new AxiosHttpClient("https://api.bybit.com"));
+    const marketData = new AggregatedMarketDataClient(backpackMarketData, binancePerpData, bybitPerpData);
+    const liveMarketData = new BackpackLiveMarketStreamClient(backpackMarketData);
     const { service: indicatorService } = await createIndicatorService(logger);
 
     const recommendationEngine = new RecommendationEngine();
@@ -58,7 +64,10 @@ async function main(): Promise<void> {
       }
     })();
     const tradeDefaults = await tradeDefaultsStore.load();
-    const aiAdviceService = new ReconfigurableAiAdviceService("https://api.openai.com", tradeDefaults.aiModel);
+    const aiAdviceService = new ReconfigurableAiAdviceService({
+      baseUrl: "https://api.openai.com/v1",
+      model: tradeDefaults.aiModel
+    });
     const aiEnabled = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
 
     const rankingUseCase = new RunRecommendationRankingUseCase(

@@ -8,6 +8,7 @@ export interface AiAdvice {
   regime: "TREND" | "RANGE" | "CHOPPY" | "VOLATILE";
   overruledSignals: string[];
   reasons: string[];
+  altThesis?: string;
   invalidation: string;
   riskNote: string;
   model?: string;
@@ -23,6 +24,7 @@ export interface AiAdviceRequest {
   setupGrade: "A" | "B" | "C" | "D";
   setupQuality: number;
   marketRegime: "TREND" | "RANGE" | "VOLATILE_SPIKE" | "LOW_LIQ_CHOP";
+  marketTradeability?: string;
   riskRewardRatio: number;
   analysisInterval?: string;
   analysisBiasInterval?: string;
@@ -30,6 +32,7 @@ export interface AiAdviceRequest {
   entry: number;
   stopLoss: number;
   takeProfit: number;
+  tpAnchor?: "VPOC" | "VAH" | "VAL";
   expectedLow?: number;
   expectedHigh?: number;
   indicators: {
@@ -46,6 +49,11 @@ export interface AiAdviceRequest {
     premiumPct: number;
     openInterest: number;
   };
+  oiContext?: "NEW_LONGS" | "NEW_SHORTS" | "SHORT_COVERING" | "LONG_LIQUIDATION";
+  cvdDivergence?: "BULLISH" | "BEARISH";
+  structureBreak?: string;
+  currentSession?: string;
+  independentChannelAgreement?: number;
   keyRationale: string[];
 }
 

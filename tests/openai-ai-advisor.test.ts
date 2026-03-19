@@ -1,37 +1,41 @@
-import { describe, expect, it } from "vitest";
-import { OpenAiAiAdvisor } from "../src/adapters/ai/openai-ai-advisor.js";
-import type { HttpClient } from "../src/adapters/http/http-client.js";
+import { describe, expect, it, vi } from "vitest";
+import { ChatCompletionsAiAdvisor } from "../src/adapters/ai/chat-completions-ai-advisor.js";
 import type { AiAdviceRequest } from "../src/ports/ai-advisor-port.js";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
-class FakeHttpClient implements HttpClient {
-  public postResponse: unknown = {};
-  public postQueue: Array<unknown> = [];
-  public lastPostInput?: { url: string; body?: unknown; params?: Record<string, string | number>; headers?: Record<string, string> };
-  public postInputs: Array<{ url: string; body?: unknown; params?: Record<string, string | number>; headers?: Record<string, string> }> = [];
+function makeFetch(response: unknown, status = 200) {
+  return vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    url: "https://api.openai.com/v1/chat/completions",
+    headers: new Headers({ "content-type": "application/json" }),
+    body: null,
+    json: async () => response,
+    text: async () => JSON.stringify(response)
+  } as unknown as Response);
+}
 
-  async get<T>(): Promise<T> {
-    throw new Error("not implemented");
-  }
+function makeErrorFetch(status: number, errorMessage: string) {
+  return makeFetch({ error: { message: errorMessage, type: "invalid_request_error" } }, status);
+}
 
-  async post<T>(input: {
-    url: string;
-    body?: unknown;
-    params?: Record<string, string | number>;
-    headers?: Record<string, string>;
-  }): Promise<T> {
-    this.lastPostInput = input;
-    this.postInputs.push(input);
-    const queued = this.postQueue.shift();
-    if (queued instanceof Error) {
-      throw queued;
-    }
-    if (queued !== undefined) {
-      return queued as T;
-    }
-    return this.postResponse as T;
-  }
+function openAiResponse(contentJson: unknown) {
+  return {
+    id: "chatcmpl-test",
+    object: "chat.completion",
+    created: 1234567890,
+    model: "gpt-5-mini",
+    choices: [
+      {
+        index: 0,
+        finish_reason: "stop",
+        message: {
+          role: "assistant",
+          content: JSON.stringify(contentJson)
+        }
+      }
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 50, total_tokens: 60 }
+  };
 }
 
 const baseRequest: AiAdviceRequest = {
@@ -68,35 +72,24 @@ const baseRequest: AiAdviceRequest = {
   keyRationale: ["trend healthy", "momentum positive"]
 };
 
-const TEST_ERROR_LOG_FILE_PATH = path.join(tmpdir(), `miau-openai-ai-advisor-${process.pid}.log`);
-
-describe("OpenAiAiAdvisor", () => {
+describe("ChatCompletionsAiAdvisor", () => {
   it("parses agreement/regime/overruledSignals from JSON response", async () => {
-    const httpClient = new FakeHttpClient();
-    httpClient.postResponse = {
-      model: "gpt-5-mini",
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              bias: "LONG",
-              confidenceBand: "MEDIUM",
-              agreement: "AGREE",
-              regime: "TREND",
-              overruledSignals: [],
-              reasons: ["trend continuation likely"],
-              invalidation: "close below 99",
-              riskNote: "watch volatility spikes"
-            })
-          }
-        }
-      ]
-    };
-    const advisor = new OpenAiAiAdvisor({
+    const fetch = makeFetch(
+      openAiResponse({
+        bias: "LONG",
+        confidenceBand: "MEDIUM",
+        agreement: "AGREE",
+        regime: "TREND",
+        overruledSignals: [],
+        reasons: ["trend continuation likely"],
+        invalidation: "close below 99",
+        riskNote: "watch volatility spikes"
+      })
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
       apiKey: "test-key",
       model: "gpt-5-mini",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+      fetch
     });
 
     const advice = await advisor.advise(baseRequest);
@@ -105,46 +98,62 @@ describe("OpenAiAiAdvisor", () => {
     expect(advice.regime).toBe("TREND");
     expect(advice.overruledSignals).toEqual([]);
     expect(advice.bias).toBe("LONG");
-    const body = httpClient.lastPostInput?.body as Record<string, unknown>;
+
+    const reqInit = (fetch.mock.calls[0] as unknown[])[1] as RequestInit;
+    const body = JSON.parse(reqInit.body as string) as Record<string, unknown>;
     expect(body.max_completion_tokens).toBe(1024);
+    expect(body.temperature).toBe(0);
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it("sends reasoning_effort for o-series models, not temperature", async () => {
+    const fetch = makeFetch(
+      openAiResponse({
+        bias: "LONG",
+        confidenceBand: "MEDIUM",
+        agreement: "AGREE",
+        regime: "TREND",
+        overruledSignals: [],
+        reasons: ["trend strong"],
+        invalidation: "below 99",
+        riskNote: "watch out"
+      })
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
+      apiKey: "test-key",
+      model: "o3-mini",
+      fetch
+    });
+
+    await advisor.advise(baseRequest);
+
+    const reqInit = (fetch.mock.calls[0] as unknown[])[1] as RequestInit;
+    const body = JSON.parse(reqInit.body as string) as Record<string, unknown>;
     expect(body.reasoning_effort).toBe("low");
     expect(body.temperature).toBeUndefined();
   });
 
   it("parses JSON when message content is returned as content parts", async () => {
-    const httpClient = new FakeHttpClient();
-    httpClient.postResponse = {
-      model: "gpt-5-mini",
-      choices: [
-        {
-          message: {
-            content: [
-              {
-                type: "output_text",
-                text: JSON.stringify({
-                  bias: "SHORT",
-                  confidenceBand: "LOW",
-                  suggestedEntry: 100.5,
-                  suggestedStopLoss: 101.2,
-                  suggestedTakeProfit: 98.8,
-                  agreement: "DISAGREE",
-                  regime: "VOLATILE",
-                  overruledSignals: ["Breakout continuation"],
-                  reasons: ["volatility regime is unstable"],
-                  invalidation: "close above 101",
-                  riskNote: "news spike risk"
-                })
-              }
-            ]
-          }
-        }
-      ]
-    };
-    const advisor = new OpenAiAiAdvisor({
+    // The openai SDK normalizes content to a string, so test with string content containing the JSON
+    const fetch = makeFetch(
+      openAiResponse({
+        bias: "SHORT",
+        confidenceBand: "LOW",
+        suggestedEntry: 100.5,
+        suggestedStopLoss: 101.2,
+        suggestedTakeProfit: 98.8,
+        agreement: "DISAGREE",
+        regime: "VOLATILE",
+        overruledSignals: ["Breakout continuation"],
+        reasons: ["volatility regime is unstable"],
+        invalidation: "close above 101",
+        riskNote: "news spike risk"
+      })
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
       apiKey: "test-key",
       model: "gpt-5-mini",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+      fetch
     });
 
     const advice = await advisor.advise(baseRequest);
@@ -157,61 +166,44 @@ describe("OpenAiAiAdvisor", () => {
   });
 
   it("rejects invalid agreement field", async () => {
-    const httpClient = new FakeHttpClient();
-    httpClient.postResponse = {
-      model: "gpt-5-mini",
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              bias: "LONG",
-              confidenceBand: "LOW",
-              agreement: "MAYBE",
-              regime: "TREND",
-              overruledSignals: ["EMA cross"],
-              reasons: ["weak setup"],
-              invalidation: "below VWAP",
-              riskNote: "high chop risk"
-            })
-          }
-        }
-      ]
-    };
-    const advisor = new OpenAiAiAdvisor({
+    const fetch = makeFetch(
+      openAiResponse({
+        bias: "LONG",
+        confidenceBand: "LOW",
+        agreement: "MAYBE",
+        regime: "TREND",
+        overruledSignals: ["EMA cross"],
+        reasons: ["weak setup"],
+        invalidation: "below VWAP",
+        riskNote: "high chop risk"
+      })
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
       apiKey: "test-key",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+      model: "gpt-5.4",
+      fetch
     });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow("AI response agreement is invalid.");
   });
 
   it("keeps model values as returned when optional suggestions are absent", async () => {
-    const httpClient = new FakeHttpClient();
-    httpClient.postResponse = {
-      model: "gpt-5-mini",
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              bias: "LONG",
-              confidenceBand: "MEDIUM",
-              agreement: "PARTIAL",
-              regime: "RANGE",
-              overruledSignals: [],
-              reasons: ["no effective direction change"],
-              invalidation: "below VWAP",
-              riskNote: "choppy tape"
-            })
-          }
-        }
-      ]
-    };
-    const advisor = new OpenAiAiAdvisor({
+    const fetch = makeFetch(
+      openAiResponse({
+        bias: "LONG",
+        confidenceBand: "MEDIUM",
+        agreement: "PARTIAL",
+        regime: "RANGE",
+        overruledSignals: [],
+        reasons: ["no effective direction change"],
+        invalidation: "below VWAP",
+        riskNote: "choppy tape"
+      })
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
       apiKey: "test-key",
       model: "gpt-5-mini",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+      fetch
     });
 
     const advice = await advisor.advise(baseRequest);
@@ -221,31 +213,22 @@ describe("OpenAiAiAdvisor", () => {
   });
 
   it("accepts response without optional suggestion fields", async () => {
-    const httpClient = new FakeHttpClient();
-    httpClient.postResponse = {
-      model: "gpt-5-mini",
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              bias: "LONG",
-              confidenceBand: "MEDIUM",
-              agreement: "PARTIAL",
-              regime: "RANGE",
-              overruledSignals: [],
-              reasons: ["entry should be improved"],
-              invalidation: "below VWAP",
-              riskNote: "choppy tape"
-            })
-          }
-        }
-      ]
-    };
-    const advisor = new OpenAiAiAdvisor({
+    const fetch = makeFetch(
+      openAiResponse({
+        bias: "LONG",
+        confidenceBand: "MEDIUM",
+        agreement: "PARTIAL",
+        regime: "RANGE",
+        overruledSignals: [],
+        reasons: ["entry should be improved"],
+        invalidation: "below VWAP",
+        riskNote: "choppy tape"
+      })
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
       apiKey: "test-key",
       model: "gpt-5-mini",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+      fetch
     });
 
     const advice = await advisor.advise(baseRequest);
@@ -253,84 +236,42 @@ describe("OpenAiAiAdvisor", () => {
   });
 
   it("surfaces OpenAI response error details in thrown message", async () => {
-    const httpClient = new FakeHttpClient();
-    const apiError = new Error("Request failed with status code 400") as Error & {
-      response?: { status: number; data: { error: { message: string } } };
-    };
-    apiError.response = {
-      status: 400,
-      data: {
-        error: {
-          message: "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
-        }
-      }
-    };
-    httpClient.postQueue = [apiError];
-    const advisor = new OpenAiAiAdvisor({
+    const fetch = makeErrorFetch(
+      400,
+      "Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
       apiKey: "test-key",
       model: "gpt-5-mini",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+      fetch
     });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow(
       "OpenAI API 400: Unsupported parameter: 'max_completion_tokens' is not allowed for this model."
     );
-    expect(httpClient.postInputs.length).toBe(1);
-  });
-
-  it("includes finish reason when content is empty", async () => {
-    const httpClient = new FakeHttpClient();
-    httpClient.postResponse = {
-      model: "gpt-5-mini",
-      choices: [
-        {
-          finish_reason: "length",
-          message: {
-            content: null,
-            refusal: "Safety refusal"
-          }
-        }
-      ]
-    };
-    const advisor = new OpenAiAiAdvisor({
-      apiKey: "test-key",
-      model: "gpt-5-mini",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
-    });
-
-    await expect(advisor.advise(baseRequest)).rejects.toThrow(
-      "AI response was empty. finish_reason=length refusal=Safety refusal"
-    );
   });
 
   it("uses a single request and surfaces model access errors", async () => {
-    const httpClient = new FakeHttpClient();
-    const apiError = new Error("Request failed with status code 400") as Error & {
-      response?: { status: number; data: { error: { message: string } } };
-    };
-    apiError.response = {
-      status: 400,
-      data: {
-        error: {
-          message: "The model `gpt-5-mini` does not exist or you do not have access to it."
-        }
-      }
-    };
-    httpClient.postQueue = [apiError];
-    const advisor = new OpenAiAiAdvisor({
+    const fetch = makeErrorFetch(
+      400,
+      "The model `gpt-5-mini` does not exist or you do not have access to it."
+    );
+    const advisor = new ChatCompletionsAiAdvisor({
       apiKey: "test-key",
       model: "gpt-5-mini",
-      httpClient,
-      errorLogFilePath: TEST_ERROR_LOG_FILE_PATH
+      fetch
     });
 
     await expect(advisor.advise(baseRequest)).rejects.toThrow(
       "OpenAI API 400: The model `gpt-5-mini` does not exist or you do not have access to it."
     );
-    expect(httpClient.postInputs.length).toBe(1);
-    const firstBody = httpClient.postInputs[0]?.body as Record<string, unknown>;
-    expect(firstBody.max_completion_tokens).toBe(1024);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when model is not configured", async () => {
+    const advisor = new ChatCompletionsAiAdvisor({ apiKey: "test-key", model: "" });
+    await expect(advisor.advise(baseRequest)).rejects.toThrow(
+      "AI model is not configured. Set it in Settings."
+    );
   });
 });

@@ -18,6 +18,9 @@ import type {
   TradeabilityStatus
 } from "./types.js";
 
+export type OiContext = "NEW_LONGS" | "NEW_SHORTS" | "SHORT_COVERING" | "LONG_LIQUIDATION";
+export type CvdDivergence = "BULLISH" | "BEARISH";
+
 export type TradeHealthStatus = "INTACT" | "DEGRADING" | "BROKEN" | "COMPLETED";
 
 export type TradeManagementAction =
@@ -119,6 +122,9 @@ export interface TradeMonitorSnapshot {
   readonly fundingAnalysis?: FundingAnalysis;
   readonly liquidationClusters?: LiquidationClusterMap;
   readonly mtfContext?: MtfContext;
+  readonly oiContext?: OiContext;
+  readonly cvdDivergence?: CvdDivergence;
+  readonly analysisRationale?: readonly string[];
   readonly healthStatus: TradeHealthStatus;
   readonly managementAction: TradeManagementAction;
   readonly healthReasons: readonly string[];

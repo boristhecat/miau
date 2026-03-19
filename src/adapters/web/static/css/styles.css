@@ -297,7 +297,7 @@ button, input, select { font: inherit; }
 
 .rec-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(200px, 1.2fr) minmax(200px, 1.2fr);
+  grid-template-columns: 1fr 1fr;
 }
 
 .rec-col {
@@ -395,7 +395,9 @@ button, input, select { font: inherit; }
 .rec-long .flag-list li::before  { color: var(--green); }
 .rec-short .flag-list li::before { color: var(--red); }
 
-.ai-flags li::before { color: var(--accent) !important; }
+.ai-flags li::before    { color: var(--accent) !important; }
+.ai-overruled li::before { color: var(--yellow) !important; }
+.ai-overruled li         { color: var(--text-dim); }
 
 .rec-action {
   margin-top: 4px;
@@ -883,6 +885,26 @@ button, input, select { font: inherit; }
 
 .mon-reasons {
   margin: 4px 0 0;
+}
+
+.mon-rationale {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mon-rationale li {
+  position: relative;
+  padding: 2px 0 2px 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mon-rationale li::before {
+  content: ">";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
 }
 
 .mon-edit-form {

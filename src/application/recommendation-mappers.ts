@@ -12,6 +12,7 @@ export function toAiAdviceRequest(recommendation: Recommendation): AiAdviceReque
     setupGrade: recommendation.setupGrade,
     setupQuality: recommendation.confidenceBreakdown.setupQuality,
     marketRegime: recommendation.marketRegime,
+    marketTradeability: recommendation.marketTradeability,
     riskRewardRatio: recommendation.riskRewardRatio,
     analysisInterval: recommendation.analysisInterval,
     analysisBiasInterval: recommendation.analysisBiasInterval,
@@ -19,6 +20,7 @@ export function toAiAdviceRequest(recommendation: Recommendation): AiAdviceReque
     entry: recommendation.entry,
     stopLoss: recommendation.stopLoss,
     takeProfit: recommendation.takeProfit,
+    tpAnchor: recommendation.tpAnchor,
     expectedLow: recommendation.expectedLow,
     expectedHigh: recommendation.expectedHigh,
     indicators: {
@@ -35,7 +37,12 @@ export function toAiAdviceRequest(recommendation: Recommendation): AiAdviceReque
       premiumPct: recommendation.perp.premiumPct,
       openInterest: recommendation.perp.openInterest
     },
-    keyRationale: recommendation.rationale.slice(0, 5)
+    oiContext: recommendation.oiContext,
+    cvdDivergence: recommendation.cvdDivergence,
+    structureBreak: recommendation.structureBreak,
+    currentSession: recommendation.sessionContext?.currentSession,
+    independentChannelAgreement: recommendation.independentChannelAgreement,
+    keyRationale: recommendation.rationale.slice(0, 8)
   };
 }
 

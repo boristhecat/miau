@@ -24,6 +24,7 @@ Use these when the user asks you to switch persona or references one by name. Al
 - `persona/market-structure-trader.md` — crypto domain expert, thinks in liquidity and structure
 - `persona/senior-fullstack-engineer.md` — TypeScript implementer, clean architecture
 - `persona/signal-designer.md` — information design, progressive disclosure, terminal aesthetic
+- `persona/ai-engineer.md` — prompt design, SDK integration, model routing, provider switching
 
 ## Orientation
 - Entry point: `src/web.ts` (composition root, DI wiring)
