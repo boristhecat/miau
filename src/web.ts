@@ -83,6 +83,9 @@ async function main(): Promise<void> {
     const buildBaselineUseCase = new BuildOpenTradeBaselineUseCase(recommendationUseCase);
     const evaluateOpenTradeUseCase = new EvaluateOpenTradeUseCase(marketData, recommendationUseCase);
 
+    const evaluateSimulation = new EvaluateSimulationUseCase(marketData);
+    const learningLoop = new LearningLoopService(logger, recommendationUseCase, learning, marketData, evaluateSimulation);
+
     const server = new WebServer({
       recommendationUseCase,
       rankingUseCase,
@@ -95,6 +98,7 @@ async function main(): Promise<void> {
       monitorSessionStore,
       tradeJournalStore: journalStore,
       aiAdviceUseCase: aiAdviceService,
+      learningLoop,
       onDefaultsSaved: (defaults) => {
         aiAdviceService.setProvider({
           provider: defaults.aiProvider as "openai" | "anthropic",
@@ -105,9 +109,6 @@ async function main(): Promise<void> {
     });
 
     await server.start(port);
-
-    const evaluateSimulation = new EvaluateSimulationUseCase(marketData);
-    const learningLoop = new LearningLoopService(logger, recommendationUseCase, learning, marketData, evaluateSimulation);
     learningLoop.start();
 
     const shutdown = (): void => {

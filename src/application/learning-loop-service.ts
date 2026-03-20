@@ -8,6 +8,7 @@ import { resolveAdaptiveTimeframes } from "./timeframe-policy.js";
 const LEARNING_HORIZONS_MINUTES = [15, 30, 90, 120, 240] as const;
 const TOP_SYMBOLS = 5;
 const ERROR_RETRY_DELAY_MS = 60_000;
+const MAX_EVENTS = 60;
 
 interface Slot {
   pair: string;
@@ -22,9 +23,58 @@ interface Candidate {
   openedAtMs: number;
 }
 
+export type SlotPhase = "ANALYSING" | "WAITING" | "EVALUATING";
+
+export interface SlotStatus {
+  pair: string;
+  horizonMinutes: number;
+  phase: SlotPhase;
+  updatedAtMs: number;
+  nextActionAtMs?: number;
+}
+
+export interface ActivityEvent {
+  id: number;
+  timestampMs: number;
+  pair: string;
+  horizonMinutes: number;
+  type: "OUTCOME" | "NO_TRADE" | "ANALYSE_ERROR" | "EVALUATE_ERROR";
+  status?: string;
+  pnlUsd?: number;
+}
+
 export class LearningLoopService {
   private readonly pendingTimers = new Set<NodeJS.Timeout>();
   private stopped = false;
+  private eventCounter = 0;
+  private readonly recentEvents: ActivityEvent[] = [];
+  private readonly slotPhases = new Map<string, SlotStatus>();
+
+  getActivity(): { slots: SlotStatus[]; recentEvents: ActivityEvent[] } {
+    const slots = [...this.slotPhases.values()].sort(
+      (a, b) => a.pair.localeCompare(b.pair) || a.horizonMinutes - b.horizonMinutes
+    );
+    return { slots, recentEvents: [...this.recentEvents].reverse() };
+  }
+
+  private slotKey(slot: Slot): string {
+    return `${slot.pair}:${slot.horizonMinutes}`;
+  }
+
+  private setSlotPhase(slot: Slot, phase: SlotPhase, nextActionAtMs?: number): void {
+    this.slotPhases.set(this.slotKey(slot), {
+      pair: slot.pair,
+      horizonMinutes: slot.horizonMinutes,
+      phase,
+      updatedAtMs: Date.now(),
+      nextActionAtMs
+    });
+  }
+
+  private pushEvent(event: Omit<ActivityEvent, "id" | "timestampMs">): void {
+    this.recentEvents.push({ id: ++this.eventCounter, timestampMs: Date.now(), ...event });
+    if (this.recentEvents.length > MAX_EVENTS) this.recentEvents.shift();
+  }
 
   constructor(
     private readonly logger: LoggerPort,
@@ -72,17 +122,23 @@ export class LearningLoopService {
   private async runSlot(slot: Slot): Promise<void> {
     if (this.stopped) return;
 
+    this.setSlotPhase(slot, "ANALYSING");
     const candidate = await this.analyse(slot);
 
     if (!candidate) {
       // Analysis failed or returned NO_TRADE — retry after the horizon delay so we
       // don't busy-loop, but with a minimum of ERROR_RETRY_DELAY_MS on hard errors.
+      const nextAt = Date.now() + slot.horizonMinutes * 60_000;
+      this.setSlotPhase(slot, "WAITING", nextAt);
       this.schedule(slot.horizonMinutes * 60_000, () => this.runSlot(slot));
       return;
     }
 
     // Wait for the horizon to pass, then evaluate.
+    const nextAt = Date.now() + candidate.horizonMinutes * 60_000;
+    this.setSlotPhase(slot, "WAITING", nextAt);
     this.schedule(candidate.horizonMinutes * 60_000, async () => {
+      this.setSlotPhase(slot, "EVALUATING");
       await this.evaluate(candidate);
       // Immediately start the next cycle for this slot.
       void this.runSlot(slot);
@@ -103,6 +159,7 @@ export class LearningLoopService {
 
       if (recommendation.signal === "NO_TRADE") {
         this.logger.info(`[learning-loop] ${slot.pair} ${slot.horizonMinutes}m → NO_TRADE, skipping.`);
+        this.pushEvent({ pair: slot.pair, horizonMinutes: slot.horizonMinutes, type: "NO_TRADE" });
         return null;
       }
 
@@ -117,6 +174,7 @@ export class LearningLoopService {
       this.logger.error(
         `[learning-loop] Analysis failed for ${slot.pair} ${slot.horizonMinutes}m: ${error instanceof Error ? error.message : String(error)} — retrying in 60s.`
       );
+      this.pushEvent({ pair: slot.pair, horizonMinutes: slot.horizonMinutes, type: "ANALYSE_ERROR" });
       // Back off before the caller reschedules.
       await delay(ERROR_RETRY_DELAY_MS);
       return null;
@@ -147,10 +205,18 @@ export class LearningLoopService {
       this.logger.info(
         `[learning-loop] ${candidate.pair} ${candidate.horizonMinutes}m → ${result.status} (${result.reason})`
       );
+      this.pushEvent({
+        pair: candidate.pair,
+        horizonMinutes: candidate.horizonMinutes,
+        type: "OUTCOME",
+        status: result.status,
+        pnlUsd: result.pnlUsd
+      });
     } catch (error) {
       this.logger.error(
         `[learning-loop] Evaluation failed for ${candidate.pair} ${candidate.horizonMinutes}m: ${error instanceof Error ? error.message : String(error)}`
       );
+      this.pushEvent({ pair: candidate.pair, horizonMinutes: candidate.horizonMinutes, type: "EVALUATE_ERROR" });
       // Non-fatal — slot continues on next cycle regardless.
     }
   }

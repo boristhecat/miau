@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "preact/hooks";
 import { fN, prettyToken } from "./lib/format.js";
 import { errorBlock } from "./lib/ui.js";
 import { AnalyzeResult } from "./views/analyze.js";
-import { LearningResult } from "./views/learning.js";
+import { LearningResult, LearningActivity } from "./views/learning.js";
 import { MonitorBoard } from "./views/monitor.js";
 import { ScanResult } from "./views/scanner.js";
 
@@ -43,6 +43,7 @@ function App() {
   const [learningData, setLearningData] = useState(null);
   const [learningError, setLearningError] = useState(null);
   const [learningRunning, setLearningRunning] = useState(false);
+  const [learningActivity, setLearningActivity] = useState(null);
   const [settingsStatus, setSettingsStatus] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -574,6 +575,20 @@ function App() {
       .catch(e => showToast(e.message, "error"));
   }, []);
 
+  // ── Learning activity polling ──
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const data = await api("GET", "/learning/activity");
+        if (!cancelled) setLearningActivity(data);
+      } catch { /* ignore */ }
+    }
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
   // ── Compute analysis-is-monitored ──
   const analysisIsMonitored = lastAnalysis?.recommendation?.pair
     && Array.from(monitorSessions.values()).some(s =>
@@ -713,18 +728,21 @@ function App() {
 
         ${"\n"}
         <section class="panel ${activeTab === "learning" ? "active" : ""}">
-          <div class="learning-bar">
-            <form class="compact-form" onSubmit=${(e) => { e.preventDefault(); loadLearning(); }}>
-              <label class="field-lev"><span>lookback days</span><input ref=${learningLookbackRef} type="number" min="1" step="1" placeholder="14" defaultValue=${14} /></label>
-              <button type="submit" class="btn-primary field-action ${learningRunning ? "is-running" : ""}" disabled=${learningRunning}>${learningRunning ? "Loading\u2026" : "Load Stats"}</button>
-            </form>
-          </div>
-          <div class="output-area">
-            ${learningData
-              ? html`<${LearningResult} data=${learningData} />`
-              : learningError
-                ? errorBlock(learningError)
-                : html`<div class="empty-state">stats not loaded</div>`}
+          <div class="learning-two-col">
+            <div class="learning-stats-col">
+              <div class="learning-stats-bar">
+                <form class="compact-form" onSubmit=${(e) => { e.preventDefault(); loadLearning(); }}>
+                  <label class="field-lev"><span>lookback days</span><input ref=${learningLookbackRef} type="number" min="1" step="1" placeholder="14" defaultValue=${14} /></label>
+                  <button type="submit" class="btn-primary field-action ${learningRunning ? "is-running" : ""}" disabled=${learningRunning}>${learningRunning ? "Loading\u2026" : "Load Stats"}</button>
+                </form>
+              </div>
+              ${learningData
+                ? html`<${LearningResult} data=${learningData} />`
+                : learningError
+                  ? errorBlock(learningError)
+                  : html`<div class="empty-state">stats not loaded</div>`}
+            </div>
+            <${LearningActivity} activity=${learningActivity} />
           </div>
         </section>
 

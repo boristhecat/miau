@@ -8,6 +8,7 @@ import type { Recommendation } from "../../domain/types.js";
 import { clamp } from "../../domain/interval-utils.js";
 import { parseIntervalToMinutes } from "../../domain/interval-utils.js";
 import type { LiveMarketDataPort, LivePerpStream } from "../../ports/live-market-data-port.js";
+import type { LearningLoopService } from "../../application/learning-loop-service.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -24,12 +25,14 @@ export class WebServer {
   private readonly server: http.Server;
   private readonly staticDir: string;
   private readonly liveMarketData: LiveMarketDataPort;
+  private readonly learningLoop: LearningLoopService | undefined;
   private readonly reloadClients: Set<http.ServerResponse> = new Set();
   private fileWatcher: fs.FSWatcher | undefined;
 
-  constructor(deps: WebApiDeps & { liveMarketData: LiveMarketDataPort }) {
+  constructor(deps: WebApiDeps & { liveMarketData: LiveMarketDataPort; learningLoop?: LearningLoopService }) {
     this.handler = new WebApiHandler(deps);
     this.liveMarketData = deps.liveMarketData;
+    this.learningLoop = deps.learningLoop;
     this.staticDir = path.join(process.cwd(), "src/adapters/web/static");
     this.server = http.createServer((req, res) => void this.handleRequest(req, res));
     this.watchStaticDir();
@@ -95,6 +98,12 @@ export class WebServer {
     if (method === "GET" && pathname === "/api/learning/stats") {
       const result = await this.handler.handleLearningStats(query);
       this.sendJson(res, 200, result);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/learning/activity") {
+      const activity = this.learningLoop?.getActivity() ?? { slots: [], recentEvents: [] };
+      this.sendJson(res, 200, activity);
       return;
     }
 
