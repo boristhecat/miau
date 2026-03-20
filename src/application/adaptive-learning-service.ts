@@ -67,7 +67,10 @@ export class AdaptiveLearningService {
       marketRegime: input.recommendation.marketRegime
     });
     if (!policy.active) {
-      return input.recommendation;
+      return {
+        ...input.recommendation,
+        learningContext: { active: false, sampleSize: policy.sampleSize, confidenceDelta: 0 }
+      };
     }
 
     let rec: Recommendation = {
@@ -124,7 +127,16 @@ export class AdaptiveLearningService {
         };
       }
     }
-    return rec;
+    return {
+      ...rec,
+      learningContext: {
+        active: true,
+        sampleSize: policy.sampleSize,
+        winRate: policy.winRate,
+        confidenceDelta: policy.confidenceDelta,
+        dominantFailureType: policy.dominantFailureType
+      }
+    };
   }
 
   async recordSimulationOutcome(input: {

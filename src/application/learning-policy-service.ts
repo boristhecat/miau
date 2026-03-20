@@ -18,6 +18,8 @@ export interface LearningPolicy {
   note?: string;
   sampleSize: number;
   active: boolean;
+  winRate?: number;
+  dominantFailureType?: string;
   failureBreakdown?: FailureBreakdown;
 }
 
@@ -139,11 +141,29 @@ export class LearningPolicyService {
       tpNarrowingFactor,
       sampleSize: specific.samples,
       active: true,
+      winRate: weightedWinRate,
+      dominantFailureType: computeDominantFailureType(failureBreakdown),
       failureBreakdown,
       note:
         `learning win ${Math.round(weightedWinRate * 100)}% (specific ${Math.round(specific.winRate * 100)}%, blended ${Math.round(blendedWinRate * 100)}%) / failures: dir=${failureBreakdown.wrongDirection} tight=${tightStopFailures} timeout=${failureBreakdown.timeoutLoss} whip=${failureBreakdown.whipsaw} / avg ${blendedAvgPnlUsd.toFixed(2)} USDC (specific ${specific.samples}, effective ${effectiveSamples}, shrink ${Math.round((1 - shrinkage) * 100)}%, sl+${Math.round(stopWideningFactor * 100)}% tp-${Math.round(tpNarrowingFactor * 100)}%)`
     };
   }
+}
+
+// Trader threshold: only flag a dominant failure type if it represents >= 40% of
+// failures AND has at least 3 instances — below that it's noise, not signal.
+function computeDominantFailureType(breakdown: FailureBreakdown): string | undefined {
+  if (breakdown.total === 0) return undefined;
+  const candidates: Array<[string, number]> = [
+    ["WRONG_DIRECTION", breakdown.wrongDirection],
+    ["STOP_TOO_TIGHT_REBOUND", breakdown.stopTooTight],
+    ["TIMEOUT_LOSS", breakdown.timeoutLoss],
+    ["WHIPSAW_SL_TP", breakdown.whipsaw]
+  ];
+  for (const [type, count] of candidates) {
+    if (count >= 3 && count / breakdown.total >= 0.4) return type;
+  }
+  return undefined;
 }
 
 function computeFailureBreakdown(recentOutcomes: LearningOutcomeSummary[]): FailureBreakdown {

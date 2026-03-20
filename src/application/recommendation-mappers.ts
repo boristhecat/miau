@@ -42,7 +42,18 @@ export function toAiAdviceRequest(recommendation: Recommendation): AiAdviceReque
     structureBreak: recommendation.structureBreak,
     currentSession: recommendation.sessionContext?.currentSession,
     independentChannelAgreement: recommendation.independentChannelAgreement,
-    keyRationale: recommendation.rationale.slice(0, 8)
+    keyRationale: recommendation.rationale.slice(0, 8),
+    learningContext:
+      recommendation.learningContext?.active &&
+      recommendation.learningContext.sampleSize >= 20 &&
+      recommendation.learningContext.winRate !== undefined
+        ? {
+            winRate: recommendation.learningContext.winRate,
+            sampleSize: recommendation.learningContext.sampleSize,
+            confidenceDelta: recommendation.learningContext.confidenceDelta,
+            dominantFailureType: recommendation.learningContext.dominantFailureType
+          }
+        : undefined
   };
 }
 

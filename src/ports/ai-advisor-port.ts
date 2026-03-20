@@ -55,6 +55,12 @@ export interface AiAdviceRequest {
   currentSession?: string;
   independentChannelAgreement?: number;
   keyRationale: string[];
+  learningContext?: {
+    winRate: number;
+    sampleSize: number;
+    confidenceDelta: number;
+    dominantFailureType?: string;
+  };
 }
 
 export interface AiAdvisorPort {

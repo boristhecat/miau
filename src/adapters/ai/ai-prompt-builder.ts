@@ -11,6 +11,7 @@ export function buildSystemPrompt(): string {
     "- session: Asia = range/accumulation, low-conviction breakouts; London = expansion and fakeouts into stops; New York = real directional moves and volatile closes",
     "- tpAnchor: TP is capped at a volume node (VPOC/VAH/VAL) — the path to target has a natural ceiling, factor into R:R quality",
     "- independentChannelAgreement: fraction of scoring channels aligned — below 0.6 means the setup is contested across indicators",
+    "- learningContext: historical performance data for this setup type in this regime. winRate and sampleSize tell you how reliable this data is. dominantFailureType (if present) is the most common failure mode (>= 40% of failures, >= 3 instances) — this is real signal. Treat sampleSize 20-40 as a weak prior; above 80 it carries meaningful weight. Do not override your structural read solely on this data, but flag contradictions explicitly.",
     "",
     "Reasoning priorities (address what's relevant, skip what isn't):",
     "1. Liquidity — who is trapped, where are stop clusters, is there a sweep before the move?",
@@ -61,7 +62,8 @@ export function buildUserPrompt(input: AiAdviceRequest): string {
     structureBreak: input.structureBreak,
     session: input.currentSession,
     independentChannelAgreement: input.independentChannelAgreement,
-    keyRationale: input.keyRationale
+    keyRationale: input.keyRationale,
+    learningContext: input.learningContext
   };
 
   for (const key of Object.keys(snapshot)) {

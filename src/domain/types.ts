@@ -516,4 +516,12 @@ export interface Recommendation {
   readonly oiContext?: "NEW_LONGS" | "NEW_SHORTS" | "SHORT_COVERING" | "LONG_LIQUIDATION";
   /** CVD divergence direction when price/flow mismatch is detected */
   readonly cvdDivergence?: "BULLISH" | "BEARISH";
+  /** Learning system context attached after policy application */
+  readonly learningContext?: {
+    readonly active: boolean;
+    readonly sampleSize: number;
+    readonly winRate?: number;
+    readonly confidenceDelta: number;
+    readonly dominantFailureType?: string;
+  };
 }
