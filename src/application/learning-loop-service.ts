@@ -4,11 +4,15 @@ import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { LoggerPort } from "../ports/logger-port.js";
 import { EvaluateSimulationUseCase } from "./evaluate-simulation-use-case.js";
 import { resolveAdaptiveTimeframes } from "./timeframe-policy.js";
-import { mapWithConcurrency } from "./map-with-concurrency.js";
 
 const LEARNING_HORIZONS_MINUTES = [15, 30, 90, 120, 240] as const;
 const TOP_SYMBOLS = 5;
-const SCAN_INTERVAL_MS = 4 * 60 * 60_000;
+const ERROR_RETRY_DELAY_MS = 60_000;
+
+interface Slot {
+  pair: string;
+  horizonMinutes: number;
+}
 
 interface Candidate {
   pair: string;
@@ -20,7 +24,6 @@ interface Candidate {
 
 export class LearningLoopService {
   private readonly pendingTimers = new Set<NodeJS.Timeout>();
-  private scanTimer: NodeJS.Timeout | undefined;
   private stopped = false;
 
   constructor(
@@ -33,95 +36,91 @@ export class LearningLoopService {
 
   start(): void {
     this.logger.info("[learning-loop] Starting.");
-    void this.runCycle();
-    this.scheduleScan();
+    void this.bootstrap();
   }
 
   stop(): void {
     this.stopped = true;
-    if (this.scanTimer) clearTimeout(this.scanTimer);
     for (const timer of this.pendingTimers) clearTimeout(timer);
     this.pendingTimers.clear();
     this.logger.info("[learning-loop] Stopped.");
   }
 
-  private scheduleScan(): void {
-    this.scanTimer = setTimeout(() => {
-      if (this.stopped) return;
-      void this.runCycle();
-      this.scheduleScan();
-    }, SCAN_INTERVAL_MS);
-  }
-
-  private async runCycle(): Promise<void> {
+  // Fetch top symbols once at startup and kick off a self-perpetuating slot per symbol+horizon.
+  private async bootstrap(): Promise<void> {
     if (this.stopped) return;
-    this.logger.info("[learning-loop] Running scan.");
-
     try {
       const symbols = await this.marketData.getTopPerpSymbolsByVolume(TOP_SYMBOLS + 10);
       const topSymbols = symbols.slice(0, TOP_SYMBOLS);
-      const candidates: Candidate[] = [];
+      this.logger.info(`[learning-loop] Bootstrapping slots for ${topSymbols.join(", ")}.`);
 
       for (const symbol of topSymbols) {
-        if (this.stopped) break;
         const pair = symbol.includes("-") ? symbol : `${symbol}-USD`;
-
-        const perHorizon = await mapWithConcurrency(
-          LEARNING_HORIZONS_MINUTES,
-          2,
-          async (horizonMinutes): Promise<Candidate | null> => {
-            if (this.stopped) return null;
-            try {
-              const { timeframe, biasTimeframe } = resolveAdaptiveTimeframes(String(horizonMinutes));
-              // Raw engine output — no learning policy, no AI
-              const recommendation = await this.recommendationUseCase.execute({
-                pair,
-                interval: timeframe,
-                biasInterval: biasTimeframe,
-                leverage: 20,
-                positionSizeUsd: 250,
-                objectiveHorizon: String(horizonMinutes)
-              });
-
-              if (recommendation.signal === "NO_TRADE") return null;
-
-              return { pair, recommendation, interval: timeframe, horizonMinutes, openedAtMs: Date.now() };
-            } catch (error) {
-              this.logger.error(
-                `[learning-loop] ${pair} ${horizonMinutes}m failed: ${error instanceof Error ? error.message : String(error)}`
-              );
-              return null;
-            }
-          }
-        );
-
-        for (const candidate of perHorizon) {
-          if (candidate) candidates.push(candidate);
+        for (const horizonMinutes of LEARNING_HORIZONS_MINUTES) {
+          void this.runSlot({ pair, horizonMinutes });
         }
-      }
-
-      this.logger.info(
-        `[learning-loop] Scan complete. symbols=${topSymbols.join(",")} scheduled=${candidates.length}`
-      );
-
-      for (const candidate of candidates) {
-        this.scheduleEvaluation(candidate);
       }
     } catch (error) {
       this.logger.error(
-        `[learning-loop] Scan failed: ${error instanceof Error ? error.message : String(error)}`
+        `[learning-loop] Bootstrap failed: ${error instanceof Error ? error.message : String(error)} — retrying in 60s.`
       );
+      this.schedule(ERROR_RETRY_DELAY_MS, () => this.bootstrap());
     }
   }
 
-  private scheduleEvaluation(candidate: Candidate): void {
-    const delayMs = candidate.horizonMinutes * 60_000;
-    const timer = setTimeout(async () => {
-      this.pendingTimers.delete(timer);
-      if (this.stopped) return;
+  // One full cycle for a slot: analyse → wait horizon → evaluate → record → repeat.
+  private async runSlot(slot: Slot): Promise<void> {
+    if (this.stopped) return;
+
+    const candidate = await this.analyse(slot);
+
+    if (!candidate) {
+      // Analysis failed or returned NO_TRADE — retry after the horizon delay so we
+      // don't busy-loop, but with a minimum of ERROR_RETRY_DELAY_MS on hard errors.
+      this.schedule(slot.horizonMinutes * 60_000, () => this.runSlot(slot));
+      return;
+    }
+
+    // Wait for the horizon to pass, then evaluate.
+    this.schedule(candidate.horizonMinutes * 60_000, async () => {
       await this.evaluate(candidate);
-    }, delayMs);
-    this.pendingTimers.add(timer);
+      // Immediately start the next cycle for this slot.
+      void this.runSlot(slot);
+    });
+  }
+
+  private async analyse(slot: Slot): Promise<Candidate | null> {
+    try {
+      const { timeframe, biasTimeframe } = resolveAdaptiveTimeframes(String(slot.horizonMinutes));
+      const recommendation = await this.recommendationUseCase.execute({
+        pair: slot.pair,
+        interval: timeframe,
+        biasInterval: biasTimeframe,
+        leverage: 20,
+        positionSizeUsd: 250,
+        objectiveHorizon: String(slot.horizonMinutes)
+      });
+
+      if (recommendation.signal === "NO_TRADE") {
+        this.logger.info(`[learning-loop] ${slot.pair} ${slot.horizonMinutes}m → NO_TRADE, skipping.`);
+        return null;
+      }
+
+      return {
+        pair: slot.pair,
+        recommendation,
+        interval: timeframe,
+        horizonMinutes: slot.horizonMinutes,
+        openedAtMs: Date.now()
+      };
+    } catch (error) {
+      this.logger.error(
+        `[learning-loop] Analysis failed for ${slot.pair} ${slot.horizonMinutes}m: ${error instanceof Error ? error.message : String(error)} — retrying in 60s.`
+      );
+      // Back off before the caller reschedules.
+      await delay(ERROR_RETRY_DELAY_MS);
+      return null;
+    }
   }
 
   private async evaluate(candidate: Candidate): Promise<void> {
@@ -152,6 +151,20 @@ export class LearningLoopService {
       this.logger.error(
         `[learning-loop] Evaluation failed for ${candidate.pair} ${candidate.horizonMinutes}m: ${error instanceof Error ? error.message : String(error)}`
       );
+      // Non-fatal — slot continues on next cycle regardless.
     }
   }
+
+  private schedule(delayMs: number, fn: () => void | Promise<void>): void {
+    const timer = setTimeout(() => {
+      this.pendingTimers.delete(timer);
+      if (this.stopped) return;
+      void fn();
+    }, delayMs);
+    this.pendingTimers.add(timer);
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }

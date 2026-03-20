@@ -715,8 +715,8 @@ function App() {
         <section class="panel ${activeTab === "learning" ? "active" : ""}">
           <div class="learning-bar">
             <form class="compact-form" onSubmit=${(e) => { e.preventDefault(); loadLearning(); }}>
-              <label class="field-lev"><input ref=${learningLookbackRef} type="number" min="1" step="1" placeholder="14" value="14" /></label>
-              <button type="submit" class="btn-primary field-action ${learningRunning ? "is-running" : ""}" disabled=${learningRunning}>${learningRunning ? "Loading\u2026" : "Load"}</button>
+              <label class="field-lev"><span>lookback days</span><input ref=${learningLookbackRef} type="number" min="1" step="1" placeholder="14" defaultValue=${14} /></label>
+              <button type="submit" class="btn-primary field-action ${learningRunning ? "is-running" : ""}" disabled=${learningRunning}>${learningRunning ? "Loading\u2026" : "Load Stats"}</button>
             </form>
           </div>
           <div class="output-area">
