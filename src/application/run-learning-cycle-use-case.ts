@@ -46,17 +46,15 @@ export class RunLearningCycleUseCase {
           }
           try {
             const adaptiveTimeframes = resolveAdaptiveTimeframes(String(horizonMinutes));
-            let recommendation = await this.recommendationUseCase.execute({
+            // Store raw engine output — no learning policy, no AI.
+            // The loop evaluates the engine's signal quality independently.
+            const recommendation = await this.recommendationUseCase.execute({
               pair,
               interval: adaptiveTimeframes.timeframe,
               biasInterval: adaptiveTimeframes.biasTimeframe,
               leverage: input.leverage,
               positionSizeUsd: input.positionSizeUsd,
               objectiveHorizon: String(horizonMinutes)
-            });
-            recommendation = await this.learning.applyPolicy({
-              recommendation,
-              timeframe: adaptiveTimeframes.timeframe
             });
 
             return {

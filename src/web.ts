@@ -22,6 +22,8 @@ import { SqliteMonitorSessionStore } from "./adapters/persistence/sqlite-monitor
 import { createTradeJournalStore } from "./adapters/persistence/sqlite-trade-journal-store.js";
 import { RecommendationEngine } from "./domain/recommendation-engine.js";
 import { RankTopOpportunitiesUseCase } from "./application/rank-top-opportunities-use-case.js";
+import { EvaluateSimulationUseCase } from "./application/evaluate-simulation-use-case.js";
+import { LearningLoopService } from "./application/learning-loop-service.js";
 import { WebServer } from "./adapters/web/web-server.js";
 
 async function main(): Promise<void> {
@@ -104,8 +106,13 @@ async function main(): Promise<void> {
 
     await server.start(port);
 
+    const evaluateSimulation = new EvaluateSimulationUseCase(marketData);
+    const learningLoop = new LearningLoopService(logger, recommendationUseCase, learning, marketData, evaluateSimulation);
+    learningLoop.start();
+
     const shutdown = (): void => {
       console.log("\nShutting down...");
+      learningLoop.stop();
       server.close();
       process.exit(0);
     };
