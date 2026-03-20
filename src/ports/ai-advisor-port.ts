@@ -56,9 +56,8 @@ export interface AiAdviceRequest {
   independentChannelAgreement?: number;
   keyRationale: string[];
   learningContext?: {
-    winRate: number;
+    winRatePct: number;
     sampleSize: number;
-    confidenceDelta: number;
     dominantFailureType?: string;
   };
 }

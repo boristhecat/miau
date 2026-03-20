@@ -48,9 +48,8 @@ export function toAiAdviceRequest(recommendation: Recommendation): AiAdviceReque
       recommendation.learningContext.sampleSize >= 20 &&
       recommendation.learningContext.winRate !== undefined
         ? {
-            winRate: recommendation.learningContext.winRate,
+            winRatePct: Math.round(recommendation.learningContext.winRate * 100),
             sampleSize: recommendation.learningContext.sampleSize,
-            confidenceDelta: recommendation.learningContext.confidenceDelta,
             dominantFailureType: recommendation.learningContext.dominantFailureType
           }
         : undefined
