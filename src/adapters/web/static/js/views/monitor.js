@@ -14,6 +14,7 @@ import {
   structureTone,
   tradeabilityTone
 } from "../lib/ui.js";
+import { tips } from "../lib/tips.js";
 
 export function MonitorBoard({ sessions, onStop, onRemove, onEdit, onSaveEdit, onCancelEdit, onAnalyze }) {
   const sorted = Array.from(sessions.values()).sort((a, b) => b.startedAt - a.startedAt);
@@ -57,9 +58,9 @@ function MonitorCard({ session, onStop, onRemove, onEdit, onSaveEdit, onCancelEd
     <article id="monitor-session-${session.id}" class=${classes}>
       <div class="monitor-card-head">
         <span class="pair-name pair-link" title="Re-analyze ${session.symbol}" onClick=${() => onAnalyze(session.symbol)}>${session.symbol}</span>
-        ${signalBadge(session.side)}
+        ${signalBadge(session.side, session.side === "LONG" ? tips.signal.long : tips.signal.short)}
         ${stateBadge}
-        <span class="dim">${fP(session.entry)} | ${session.leverage ? `${fN(session.leverage, 0)}x` : ""}</span>
+        <span class="dim" title=${tips.monitor.entryLeverage}>${fP(session.entry)} | ${session.leverage ? `${fN(session.leverage, 0)}x` : ""}</span>
         ${editBtn}
         <button type="button" class=${btnTone} onClick=${() => session.active ? onStop(session.id) : onRemove(session.id)}>${actionLabel}</button>
       </div>
@@ -88,13 +89,15 @@ function MonitorSnapshot({ snapshot, editing }) {
   const slTpActions = ["MOVE_TO_BREAKEVEN", "TAKE_PARTIAL", "TARGET_HIT"];
   const actionMeaningful = hasSL && hasTP || !slTpActions.includes(action);
 
+  const healthTip = health === "INTACT" ? tips.monitor.healthIntact : health === "DEGRADING" ? tips.monitor.healthDegrading : tips.monitor.healthBroken;
+  const actionTip = action === "HOLD" ? tips.monitor.actionHold : action === "AT_RISK" ? tips.monitor.actionAtRisk : action === "MOVE_TO_BREAKEVEN" ? tips.monitor.actionBreakeven : action === "TAKE_PARTIAL" ? tips.monitor.actionPartial : action === "EXIT_EARLY" ? tips.monitor.actionExitEarly : action === "STOP_HIT" ? tips.monitor.actionStopHit : tips.monitor.actionTargetHit;
   const pnlLine = html`
-    <span class="mon-pnl ${pC(grossPnl)}">${fSPct(grossPnl)}</span>
-    ${metrics.grossUnrealizedPnlUsd != null ? html`<span class="dim">${fSUsd(metrics.grossUnrealizedPnlUsd)}</span>` : null}
-    ${hasSL ? html`<span class="dim">${fS(metrics.currentR)}R</span>` : null}
-    <span class="dim">${fDur(metrics.timeInTradeSeconds)}</span>
-    ${badge(prettyToken(health), statusTone(health, ["INTACT"], ["DEGRADING", "MIXED"]), "Trade health based on price action vs levels")}
-    ${actionMeaningful ? badge(prettyToken(action), actionTone(action), "Recommended management action") : null}
+    <span class="mon-pnl ${pC(grossPnl)}" title=${tips.monitor.grossPnlPct}>${fSPct(grossPnl)}</span>
+    ${metrics.grossUnrealizedPnlUsd != null ? html`<span class="dim" title=${tips.monitor.grossPnlUsd}>${fSUsd(metrics.grossUnrealizedPnlUsd)}</span>` : null}
+    ${hasSL ? html`<span class="dim" title=${tips.monitor.currentR}>${fS(metrics.currentR)}R</span>` : null}
+    <span class="dim" title=${tips.monitor.duration}>${fDur(metrics.timeInTradeSeconds)}</span>
+    ${badge(prettyToken(health), statusTone(health, ["INTACT"], ["DEGRADING", "MIXED"]), healthTip)}
+    ${actionMeaningful ? badge(prettyToken(action), actionTone(action), actionTip) : null}
   `;
 
   const distances = html`
@@ -109,24 +112,26 @@ function MonitorSnapshot({ snapshot, editing }) {
   const liq = snapshot.liquidation;
   const clusterCtx = snapshot.liquidationClusters;
 
+  const monLiqTip = liq ? (tips.liquidationRisk[liq.risk.toLowerCase()] || "") : "";
+  const monOiTip = snapshot.oiContext === "NEW_LONGS" ? tips.market.oiNewLongs : snapshot.oiContext === "NEW_SHORTS" ? tips.market.oiNewShorts : snapshot.oiContext === "SHORT_COVERING" ? tips.market.oiShortCover : tips.market.oiLongLiq;
   const contextParts = html`
-    ${snapshot.analysisSetupGrade ? badge(`${snapshot.analysisSetupGrade}`, gradeTone(snapshot.analysisSetupGrade), "Setup quality grade") : null}
-    ${snapshot.structureState ? badge(prettyToken(snapshot.structureState), structureTone(snapshot.structureState), "Market structure state") : null}
-    ${snapshot.mtfContext?.alignment ? badge(`MTF ${prettyToken(snapshot.mtfContext.alignment)}`, mtfAlignmentTone(snapshot.mtfContext.alignment), "Multi-timeframe alignment") : null}
-    ${snapshot.marketRegime ? html`<span class="dim" title="Market regime">${prettyToken(snapshot.marketRegime)}</span>` : null}
-    ${snapshot.marketTradeability ? badge(prettyToken(snapshot.marketTradeability), tradeabilityTone(snapshot.marketTradeability), "Whether conditions are safe to trade") : null}
-    ${sc ? badge(sc.currentSession, sessionTone(sc.currentSession), `${sc.minutesIntoSession}m into session`) : null}
-    ${liq ? badge(liq.risk, liquidationRiskTone(liq.risk), hasSL ? `Liq ${fP(liq.liquidationPrice)} (${fN(liq.liquidationToStopRatio)}x SL)` : `Liq ${fP(liq.liquidationPrice)}`) : null}
-    ${fa && fa.signal !== "NEUTRAL" ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), `Funding ${fPct(fa.currentRate)}`) : null}
-    ${hasTP && clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports direction") : null}
-    ${hasSL && clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop") : null}
-    ${snapshot.cvdDivergence === "BEARISH" ? badge("cvd div \u2193", "badge-warn", "Price rising but flow weakening \u2014 buyers losing conviction") : null}
-    ${snapshot.cvdDivergence === "BULLISH" ? badge("cvd div \u2191", "badge-warn", "Price falling but flow absorbing \u2014 sellers losing conviction") : null}
-    ${snapshot.fibLevels ? html`<span class="dim" title="Fib retracement interval">fib ${snapshot.fibLevels.fibInterval}</span>` : null}
-    ${snapshot.fibLevels?.priceInGoldenZone ? badge("golden zone", "badge-warn", "Price is inside 0.618\u20130.79 fib retracement zone") : null}
-    ${snapshot.oiContext ? html`<span class="dim" title="Open interest context">${snapshot.oiContext === "NEW_LONGS" ? "new longs" : snapshot.oiContext === "NEW_SHORTS" ? "new shorts" : snapshot.oiContext === "SHORT_COVERING" ? "short cover" : "long liq"}</span>` : null}
-    ${snapshot.analysisConfidence != null ? html`<span class="${cC(snapshot.analysisConfidence)}" title="Analysis confidence">${snapshot.analysisConfidence}%</span>` : null}
-    ${hasTP && metrics.holdingProgressPct != null ? html`<span class="dim" title="Hold time progress">${fPct(metrics.holdingProgressPct)} held</span>` : null}
+    ${snapshot.analysisSetupGrade ? badge(`${snapshot.analysisSetupGrade}`, gradeTone(snapshot.analysisSetupGrade), tips.header.grade) : null}
+    ${snapshot.structureState ? badge(prettyToken(snapshot.structureState), structureTone(snapshot.structureState), tips.header.structureState) : null}
+    ${snapshot.mtfContext?.alignment ? badge(`MTF ${prettyToken(snapshot.mtfContext.alignment)}`, mtfAlignmentTone(snapshot.mtfContext.alignment), tips.header.mtfAlignment) : null}
+    ${snapshot.marketRegime ? html`<span class="dim" title=${tips.regime[snapshot.marketRegime === "VOLATILE_SPIKE" ? "volatileSpike" : snapshot.marketRegime === "LOW_LIQ_CHOP" ? "lowLiqChop" : snapshot.marketRegime.toLowerCase()] || tips.regime.label}>${prettyToken(snapshot.marketRegime)}</span>` : null}
+    ${snapshot.marketTradeability ? badge(prettyToken(snapshot.marketTradeability), tradeabilityTone(snapshot.marketTradeability), tips.tradeability[snapshot.marketTradeability === "DO_NOT_TRADE" ? "doNotTrade" : snapshot.marketTradeability.toLowerCase()] || "") : null}
+    ${sc ? badge(sc.currentSession, sessionTone(sc.currentSession), tips.session[sc.currentSession.toLowerCase()] || "") : null}
+    ${liq ? badge(liq.risk, liquidationRiskTone(liq.risk), monLiqTip) : null}
+    ${fa && fa.signal !== "NEUTRAL" ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), tips.funding[fa.signal === "STRONG_CONTRA_LONG" ? "strongContraLong" : fa.signal === "WEAK_CONTRA_LONG" ? "weakContraLong" : fa.signal === "WEAK_CONTRA_SHORT" ? "weakContraShort" : fa.signal === "STRONG_CONTRA_SHORT" ? "strongContraShort" : "neutral"] || "") : null}
+    ${hasTP && clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", tips.cluster.supportsDirection) : null}
+    ${hasSL && clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", tips.cluster.blocksTarget) : null}
+    ${snapshot.cvdDivergence === "BEARISH" ? badge("cvd div \u2193", "badge-warn", tips.cvd.bearish) : null}
+    ${snapshot.cvdDivergence === "BULLISH" ? badge("cvd div \u2191", "badge-warn", tips.cvd.bullish) : null}
+    ${snapshot.fibLevels ? html`<span class="dim" title=${tips.fib.header}>fib ${snapshot.fibLevels.fibInterval}</span>` : null}
+    ${snapshot.fibLevels?.priceInGoldenZone ? badge("golden zone", "badge-warn", tips.fib.goldenZoneBadge) : null}
+    ${snapshot.oiContext ? html`<span class="dim" title=${monOiTip}>${snapshot.oiContext === "NEW_LONGS" ? "new longs" : snapshot.oiContext === "NEW_SHORTS" ? "new shorts" : snapshot.oiContext === "SHORT_COVERING" ? "short cover" : "long liq"}</span>` : null}
+    ${snapshot.analysisConfidence != null ? html`<span class="${cC(snapshot.analysisConfidence)}" title=${tips.header.confidence}>${snapshot.analysisConfidence}%</span>` : null}
+    ${hasTP && metrics.holdingProgressPct != null ? html`<span class="dim" title=${tips.monitor.heldPct}>${fPct(metrics.holdingProgressPct)} held</span>` : null}
   `;
 
   const reasonsMarkup = reasons.length
@@ -200,12 +205,11 @@ function MonitorSnapshot({ snapshot, editing }) {
       .map(c => {
         const pct = toBarPct(c.price);
         if (pct < 1 || pct > 99) return null;
-        const adverse = trade.entry != null
-          ? (trade.side === "LONG" ? c.price < trade.entry : c.price > trade.entry)
-          : false;
-        const color = adverse ? "var(--red)" : "var(--green)";
+        const dumps = c.side === "LONG_LIQUIDATIONS";
+        const color = dumps ? "var(--red)" : "var(--green)";
+        const impact = dumps ? "dumps price" : "pumps price";
         const width = Math.round(8 + (c.strength / 100) * 20);
-        const title = `Liq cluster ${fP(c.price)} · strength ${c.strength} · ${adverse ? "adverse" : "favorable"}`;
+        const title = `Liq cluster ${fP(c.price)} · strength ${c.strength} · ${impact}`;
         return html`<span
           class="cluster-tick"
           style=${"left:" + pct + "%;width:" + width + "px;background:linear-gradient(to right,transparent," + color + " 50%,transparent)"}
@@ -213,6 +217,46 @@ function MonitorSnapshot({ snapshot, editing }) {
         ></span>`;
       })
       .filter(Boolean);
+  })();
+
+  // Fib ratio labels below the rail — positioned at their price, collision-checked
+  const fibLabels = (() => {
+    const fib = snapshot.fibLevels;
+    if (!fib?.levels?.length || barRange === 0) return null;
+
+    // Priority: golden zone > extensions > anchors > rest
+    const priority = (lv) => {
+      if (lv.isGoldenZone) return 0;
+      if (lv.ratio < 0) return 1;
+      if (lv.ratio === 0 || lv.ratio === 1) return 2;
+      return 3;
+    };
+
+    // Build candidates sorted by priority
+    const candidates = fib.levels
+      .map(lv => {
+        const pct = toBarPct(lv.price);
+        if (pct < 3 || pct > 97) return null;
+        const cls = lv.isGoldenZone ? "fib-lbl-golden" : lv.ratio < 0 ? "fib-lbl-ext" : "";
+        return { lv, pct, cls, prio: priority(lv) };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.prio - b.prio);
+
+    // Greedy collision prevention — 5% min gap between labels
+    const placed = [];
+    for (const c of candidates) {
+      if (placed.every(p => Math.abs(p.pct - c.pct) >= 5)) {
+        placed.push(c);
+      }
+    }
+    // Re-sort by position for rendering
+    placed.sort((a, b) => a.pct - b.pct);
+
+    if (!placed.length) return null;
+    return html`<div class="progress-fib-labels">
+      ${placed.map(c => html`<span class=${c.cls || null} style=${"left:" + c.pct + "%"} title=${tips.fib.ratio[c.lv.label] || null}>${c.lv.label}</span>`)}
+    </div>`;
   })();
 
   const barLeftLabel = hasSL ? `SL ${fP(trade.stopLoss)}` : fP(barLow);
@@ -223,15 +267,16 @@ function MonitorSnapshot({ snapshot, editing }) {
     <div class="mon-top">${pnlLine}</div>
     <div class="progress-shell">
       <div class="progress-top">
-        <span class="progress-mark-label" style=${"left:" + dynamicRailPct + "%"}>${fP(markPrice)}</span>
+        <span class="progress-mark-label" style=${"left:" + dynamicRailPct + "%"} title=${tips.rail.markPrice}>${fP(markPrice)}</span>
       </div>
       <div class="progress-rail" style=${"--pct:" + dynamicRailPct}>
         ${fibGoldenBand}
         ${fibTicks}
         ${clusterTicks}
-        ${entryPct != null ? html`<span class="entry-line" style=${"left:" + entryPct + "%"}></span>` : null}
+        ${entryPct != null ? html`<span class="entry-line" style=${"left:" + entryPct + "%"} title=${tips.rail.entryLine}></span>` : null}
         <span class="progress-marker"></span>
       </div>
+      ${fibLabels}
       <div class="progress-labels">
         <span class=${useAtrWindow ? "dim" : ""}>${barLeftLabel}</span>
         <span>${barCenterLabel}</span>

@@ -14,15 +14,16 @@ import {
   structureTone,
   tradeabilityTone
 } from "../lib/ui.js";
+import { tips } from "../lib/tips.js";
 
-function iv(label, value) {
+function iv(label, value, title) {
   if (value == null || value === "") return null;
-  return html`<span class="iv"><span class="iv-k">${label}</span> <span dangerouslySetInnerHTML=${{ __html: value }}></span></span>`;
+  return html`<span class="iv" title=${title || null}><span class="iv-k">${label}</span> <span dangerouslySetInnerHTML=${{ __html: value }}></span></span>`;
 }
 
-function ivPlain(label, value) {
+function ivPlain(label, value, title) {
   if (value == null || value === "") return null;
-  return html`<span class="iv"><span class="iv-k">${label}</span> ${value}</span>`;
+  return html`<span class="iv" title=${title || null}><span class="iv-k">${label}</span> ${value}</span>`;
 }
 
 function aiRow(label, value) {
@@ -40,41 +41,43 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
 
   // header
   const forcedBias = rec.requestedDirection && rec.requestedDirection !== rec.signal
-    ? html`<span class="dim">forced ${prettyToken(rec.requestedDirection)}</span>`
+    ? html`<span class="dim" title=${tips.signal.forced}>forced ${prettyToken(rec.requestedDirection)}</span>`
     : null;
 
   const monitoringBadge = isMonitored
     ? html`<span class="badge-accent" style="cursor:pointer" title="Click to go to Monitor tab" onClick=${onGoToMonitor}>monitoring</span>`
     : null;
 
+  const signalTip = rec.signal === "LONG" ? tips.signal.long : rec.signal === "SHORT" ? tips.signal.short : tips.signal.noTrade;
   const head = html`
-    ${signalBadge(rec.signal)}
+    ${signalBadge(rec.signal, signalTip)}
     <span class="rec-signal">${label}</span>
     ${forcedBias}
     <span class="rec-pair">${rec.pair}</span>
-    <span class="rec-conf ${cC(confidence)}" title="Overall trade confidence score">${confidence}%</span>
-    ${rec.setupGrade ? badge(`${rec.setupGrade}`, gradeTone(rec.setupGrade), "Setup quality grade (A best, D worst)") : null}
-    ${rec.riskRewardRatio != null ? html`<span class="dim" title="${rec.tpAnchor ? `TP constrained by ${rec.tpAnchor} — high-volume node pulled target closer` : "Risk-to-reward ratio"}">r:r ${fN(rec.riskRewardRatio)}</span>` : null}
-    ${rec.structureState ? badge(prettyToken(rec.structureState), structureTone(rec.structureState), "Market structure state (swing point labeling)") : null}
-    ${rec.mtfContext?.alignment ? badge(`MTF ${prettyToken(rec.mtfContext.alignment)}`, mtfAlignmentTone(rec.mtfContext.alignment), `Multi-timeframe cascade: ${rec.mtfContext.structureInterval} / ${rec.mtfContext.directionalInterval} / exec`) : null}
+    <span class="rec-conf ${cC(confidence)}" title=${tips.header.confidence}>${confidence}%</span>
+    ${rec.setupGrade ? badge(`${rec.setupGrade}`, gradeTone(rec.setupGrade), tips.header.grade) : null}
+    ${rec.riskRewardRatio != null ? html`<span class="dim" title="${rec.tpAnchor ? `TP constrained by ${rec.tpAnchor} — high-volume node pulled target closer` : tips.header.riskReward}">r:r ${fN(rec.riskRewardRatio)}</span>` : null}
+    ${rec.structureState ? badge(prettyToken(rec.structureState), structureTone(rec.structureState), tips.header.structureState) : null}
+    ${rec.mtfContext?.alignment ? badge(`MTF ${prettyToken(rec.mtfContext.alignment)}`, mtfAlignmentTone(rec.mtfContext.alignment), tips.header.mtfAlignment) : null}
     ${monitoringBadge}
   `;
 
   // col 1: levels
   const liq = rec.liquidation;
   const liqDist = liq ? ((liq.liquidationPrice - rec.entry) / rec.entry * 100) : null;
+  const liqRiskTip = liq ? (tips.liquidationRisk[liq.risk.toLowerCase()] || "") + ` (${fN(liq.liquidationToStopRatio)}x SL distance)` : "";
   const levels = html`
-    <div class="rec-lv"><span class="rec-lk">entry</span><span class="rec-lp">${fP(rec.entry)}</span><span></span></div>
-    <div class="rec-lv rec-level-stop"><span class="rec-lk">stop</span><span class="rec-lp">${fP(rec.stopLoss)}</span>${stopDist != null ? html`<span class="rec-ld c-red">${fSPct(stopDist)}</span>` : html`<span></span>`}</div>
-    <div class="rec-lv rec-level-target"><span class="rec-lk">target</span><span class="rec-lp">${fP(rec.takeProfit)}</span>${targetDist != null ? html`<span class="rec-ld c-green">${fSPct(targetDist)}${rec.tpAnchor ? html`<span class="dim" style="margin-left:4px" title="TP constrained by ${rec.tpAnchor} — high-volume node pulled target closer">${rec.tpAnchor.toLowerCase()}</span>` : null}</span>` : html`<span></span>`}</div>
-    ${liq ? html`<div class="rec-lv"><span class="rec-lk">liq</span><span class="rec-lp dim">${fP(liq.liquidationPrice)}</span>${liqDist != null ? html`<span class="rec-ld ${liq.risk === "SAFE" || liq.risk === "MODERATE" ? "dim" : "c-red"}">${fSPct(liqDist)} ${badge(liq.risk, liquidationRiskTone(liq.risk), `${fN(liq.liquidationToStopRatio)}x SL distance`)}</span>` : html`<span></span>`}</div>` : null}
+    <div class="rec-lv" title=${tips.levels.entry}><span class="rec-lk">entry</span><span class="rec-lp">${fP(rec.entry)}</span><span></span></div>
+    <div class="rec-lv rec-level-stop" title=${tips.levels.stop}><span class="rec-lk">stop</span><span class="rec-lp">${fP(rec.stopLoss)}</span>${stopDist != null ? html`<span class="rec-ld c-red">${fSPct(stopDist)}</span>` : html`<span></span>`}</div>
+    <div class="rec-lv rec-level-target" title=${tips.levels.target}><span class="rec-lk">target</span><span class="rec-lp">${fP(rec.takeProfit)}</span>${targetDist != null ? html`<span class="rec-ld c-green">${fSPct(targetDist)}${rec.tpAnchor ? html`<span class="dim" style="margin-left:4px" title="TP constrained by ${rec.tpAnchor} — high-volume node pulled target closer">${rec.tpAnchor.toLowerCase()}</span>` : null}</span>` : html`<span></span>`}</div>
+    ${liq ? html`<div class="rec-lv" title=${tips.levels.liquidation}><span class="rec-lk">liq</span><span class="rec-lp dim">${fP(liq.liquidationPrice)}</span>${liqDist != null ? html`<span class="rec-ld ${liq.risk === "SAFE" || liq.risk === "MODERATE" ? "dim" : "c-red"}">${fSPct(liqDist)} ${badge(liq.risk, liquidationRiskTone(liq.risk), liqRiskTip)}</span>` : html`<span></span>`}</div>` : null}
   `;
 
   // AI suggested levels
   const hasAiLevels = aiAdvice && (aiAdvice.suggestedEntry != null || aiAdvice.suggestedStopLoss != null || aiAdvice.suggestedTakeProfit != null);
   const aiLevels = hasAiLevels ? html`
     <div class="rec-sep"></div>
-    <div class="rec-line dim">AI levels</div>
+    <div class="rec-line dim" title=${tips.levels.aiLevels}>AI levels</div>
     ${aiAdvice.suggestedEntry != null ? html`<div class="rec-lv"><span class="rec-lk">entry</span><span class="rec-lp dim">${fP(aiAdvice.suggestedEntry)}</span><span></span></div>` : null}
     ${aiAdvice.suggestedStopLoss != null ? html`<div class="rec-lv"><span class="rec-lk">stop</span><span class="rec-lp dim">${fP(aiAdvice.suggestedStopLoss)}</span><span></span></div>` : null}
     ${aiAdvice.suggestedTakeProfit != null ? html`<div class="rec-lv"><span class="rec-lk">target</span><span class="rec-lp dim">${fP(aiAdvice.suggestedTakeProfit)}</span><span></span></div>` : null}
@@ -122,12 +125,18 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     ? aiRow("both see", html`<span title="App engine and AI both lean this direction, but guards blocked the trade">${signalBadge(rec.modelSignal)}</span>`)
     : null;
 
+  const aiAgreementTip = aiAdvice?.agreement
+    ? tips.ai[String(aiAdvice.agreement).toLowerCase()] || ""
+    : "";
+  const aiConfTip = aiAdvice?.confidenceBand
+    ? tips.ai["confidence" + String(aiAdvice.confidenceBand).charAt(0).toUpperCase() + String(aiAdvice.confidenceBand).slice(1).toLowerCase()] || ""
+    : "";
   const aiRows = aiAdvice ? html`
-    ${aiRow("bias", aiAdvice.bias ? signalBadge(aiAdvice.bias) : html`<span class="dim">${"\u2014"}</span>`)}
-    ${aiRow(agreementLabel, aiAdvice.agreement ? badge(prettyToken(aiAdvice.agreement), agreementTone(aiAdvice.agreement), "AI agreement with the app recommendation") : html`<span class="dim">${"\u2014"}</span>`)}
+    ${aiRow("bias", aiAdvice.bias ? signalBadge(aiAdvice.bias, tips.ai.bias) : html`<span class="dim">${"\u2014"}</span>`)}
+    ${aiRow(agreementLabel, aiAdvice.agreement ? badge(prettyToken(aiAdvice.agreement), agreementTone(aiAdvice.agreement), aiAgreementTip) : html`<span class="dim">${"\u2014"}</span>`)}
     ${biasConvergenceRow}
-    ${aiRow("confidence", aiAdvice.confidenceBand ? badge(prettyToken(aiAdvice.confidenceBand), confidenceBandTone(aiAdvice.confidenceBand), "AI confidence in its own assessment") : html`<span class="dim">${"\u2014"}</span>`)}
-    ${aiAdvice.regime ? aiRow("regime", html`<span title="AI market regime classification">${prettyToken(aiAdvice.regime)}</span>`) : null}
+    ${aiRow("confidence", aiAdvice.confidenceBand ? badge(prettyToken(aiAdvice.confidenceBand), confidenceBandTone(aiAdvice.confidenceBand), aiConfTip) : html`<span class="dim">${"\u2014"}</span>`)}
+    ${aiAdvice.regime ? aiRow("regime", html`<span title=${tips.ai.regime}>${prettyToken(aiAdvice.regime)}</span>`) : null}
   ` : null;
 
   const aiReasons = aiAdvice?.reasons?.length
@@ -139,13 +148,13 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     : null;
 
   const aiAltThesis = aiAdvice?.altThesis
-    ? html`<div class="rec-sep"></div>${aiRow("alt thesis", aiAdvice.altThesis)}`
+    ? html`<div class="rec-sep"></div>${aiRow("alt thesis", html`<span title=${tips.ai.altThesis}>${aiAdvice.altThesis}</span>`)}`
     : null;
 
   const aiFooterParts = [
-    aiAdvice?.invalidation ? aiRow("invalidation", aiAdvice.invalidation) : null,
-    aiAdvice?.riskNote ? aiRow("risk", aiAdvice.riskNote) : null,
-    aiAdvice?.model ? aiRow("model", html`<span class="dim">${aiAdvice.model}</span>`) : null
+    aiAdvice?.invalidation ? aiRow("invalidation", html`<span title=${tips.ai.invalidation}>${aiAdvice.invalidation}</span>`) : null,
+    aiAdvice?.riskNote ? aiRow("risk", html`<span title=${tips.ai.riskNote}>${aiAdvice.riskNote}</span>`) : null,
+    aiAdvice?.model ? aiRow("model", html`<span class="dim" title=${tips.ai.model}>${aiAdvice.model}</span>`) : null
   ].filter(Boolean);
 
   const aiFooter = aiFooterParts.length
@@ -177,22 +186,22 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
 
     const entryDot = rec.entry ? (() => {
       const p = toPos(rec.entry);
-      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--text-strong)"} title="Entry ${fP(rec.entry)}"></span>` : null;
+      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--text-strong)"} title=${tips.fib.posBarEntry}></span>` : null;
     })() : null;
     const slDot = rec.stopLoss ? (() => {
       const p = toPos(rec.stopLoss);
-      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--red)"} title="SL ${fP(rec.stopLoss)}"></span>` : null;
+      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--red)"} title=${tips.fib.posBarSl}></span>` : null;
     })() : null;
     const tpDot = rec.takeProfit ? (() => {
       const p = toPos(rec.takeProfit);
-      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--green)"} title="TP ${fP(rec.takeProfit)}"></span>` : null;
+      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--green)"} title=${tips.fib.posBarTp}></span>` : null;
     })() : null;
 
     const posBar = html`
       <div class="fib-pos">
-        <span class="fib-pos-golden" style=${"left:" + gzLeft + "%;width:" + gzWidth + "%"}></span>
+        <span class="fib-pos-golden" style=${"left:" + gzLeft + "%;width:" + gzWidth + "%"} title=${tips.fib.posBarGoldenBand}></span>
         ${slDot}${tpDot}${entryDot}
-        <span class="fib-pos-marker" style=${"left:" + pricePos + "%"} title="Price ${fP(lastPrice)}"></span>
+        <span class="fib-pos-marker" style=${"left:" + pricePos + "%"} title=${tips.fib.posBarMarker}></span>
       </div>
     `;
 
@@ -210,16 +219,16 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     // Role tags for each ratio
     const isUp = fib.swingDirection === "UPSWING";
     const roleTag = (ratio) => {
-      if (ratio === -1)    return "ext target";
-      if (ratio === -0.62) return "ext target";
-      if (ratio === -0.27) return "ext target";
-      if (ratio === 0)     return isUp ? "swing low"  : "swing high";
-      if (ratio === 0.28)  return "shallow";
-      if (ratio === 0.618) return "entry zone";
-      if (ratio === 0.705) return "midline";
-      if (ratio === 0.79)  return "entry zone";
-      if (ratio === 1)     return isUp ? "swing high" : "swing low";
-      return "";
+      if (ratio === -1)    return ["ext target",  tips.fib.tag.extTarget];
+      if (ratio === -0.62) return ["ext target",  tips.fib.tag.extTarget];
+      if (ratio === -0.27) return ["ext target",  tips.fib.tag.extTarget];
+      if (ratio === 0)     return [isUp ? "swing low"  : "swing high", isUp ? tips.fib.tag.swingLow : tips.fib.tag.swingHigh];
+      if (ratio === 0.28)  return ["shallow",     tips.fib.tag.shallow];
+      if (ratio === 0.618) return ["entry zone",  tips.fib.tag.entryZone];
+      if (ratio === 0.705) return ["midline",     tips.fib.tag.midline];
+      if (ratio === 0.79)  return ["entry zone",  tips.fib.tag.entryZone];
+      if (ratio === 1)     return [isUp ? "swing high" : "swing low", isUp ? tips.fib.tag.swingHigh : tips.fib.tag.swingLow];
+      return ["", ""];
     };
 
     const fibRows = fib.levels.map((lv, i) => {
@@ -234,28 +243,29 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
       ].filter(Boolean).join(" ");
 
       const marker = isNearest ? "\u25B8 " : "";
+      const ratioTip = tips.fib.ratio[lv.label] || "";
 
-      // Tag: engine alignment overrides the role tag when it applies
-      let tag = roleTag(lv.ratio);
+      // Tag: engine alignment badge appends when it applies
+      const [tag, tagTip] = roleTag(lv.ratio);
       let tagExtra = null;
-      if (closeEnough(lv.price, rec.entry))          tagExtra = html`<span class="fib-align fib-align-entry">\u00b7 E</span>`;
-      else if (closeEnough(lv.price, rec.stopLoss))   tagExtra = html`<span class="fib-align fib-align-sl">\u00b7 SL</span>`;
-      else if (closeEnough(lv.price, rec.takeProfit))  tagExtra = html`<span class="fib-align fib-align-tp">\u00b7 TP</span>`;
+      if (closeEnough(lv.price, rec.entry))          tagExtra = html`<span class="fib-align fib-align-entry" title=${tips.fib.alignEntry}>\u00b7 E</span>`;
+      else if (closeEnough(lv.price, rec.stopLoss))   tagExtra = html`<span class="fib-align fib-align-sl" title=${tips.fib.alignSl}>\u00b7 SL</span>`;
+      else if (closeEnough(lv.price, rec.takeProfit))  tagExtra = html`<span class="fib-align fib-align-tp" title=${tips.fib.alignTp}>\u00b7 TP</span>`;
 
       return html`
-        <div class=${rowCls}>
-          <span class="fib-label">${marker}${lv.label}</span>
+        <div class=${rowCls} title=${isNearest ? tips.fib.nearest : null}>
+          <span class="fib-label" title=${ratioTip}>${marker}${lv.label}</span>
           <span class="fib-price">${fP(lv.price)}</span>
           <span class="fib-dist">${fSPct(dist)}</span>
-          <span class="fib-tag">${tag}${tagExtra ? html` ${tagExtra}` : null}</span>
+          <span class="fib-tag" title=${tagTip}>${tag}${tagExtra ? html` ${tagExtra}` : null}</span>
         </div>
       `;
     });
 
     const fibHeader = html`
       <div class="rec-line">
-        fib ${fib.fibInterval} ${arrow}
-        ${fib.priceInGoldenZone ? badge("golden zone", "badge-warn", "Current price is inside the 0.618\u20130.79 retracement zone") : null}
+        <span title=${tips.fib.header}>fib ${fib.fibInterval} ${arrow}</span>
+        ${fib.priceInGoldenZone ? badge("golden zone", "badge-warn", tips.fib.goldenZoneBadge) : null}
       </div>
       <div class="fib-lv dim" style="margin-bottom:2px">
         <span class="fib-label">swing</span>
@@ -345,8 +355,8 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
   ].filter(Boolean))].sort((a, b) => rationaleScore(a) - rationaleScore(b)).slice(0, 6);
 
   const playbookTip = rec.playbookRegimeAligned === false
-    ? "Setup pattern \u2014 misaligned with current regime"
-    : "Detected setup pattern for this trade";
+    ? tips.playbook.misaligned
+    : tips.playbook.label;
   const sc = rec.sessionContext;
   const fa = rec.fundingAnalysis;
   const breakLabel = rec.structureBreak && rec.structureBreak !== "NONE"
@@ -357,16 +367,16 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
 
   const appBadges = html`
     ${rec.setupPlaybook ? badge(prettyToken(rec.setupPlaybook), rec.playbookRegimeAligned === false ? "badge-bad" : "badge-accent", playbookTip) : null}
-    ${rec.marketRegime ? badge(prettyToken(rec.marketRegime), "badge-neutral", "Current market regime classification") : null}
-    ${rec.marketTradeability ? badge(prettyToken(rec.marketTradeability), tradeabilityTone(rec.marketTradeability), "Whether conditions are safe to trade") : null}
-    ${rec.entryReadiness ? badge(prettyToken(rec.entryReadiness), readinessTone(rec.entryReadiness), "Whether price is at a good entry point now") : null}
-    ${sc ? badge(sc.currentSession, sessionTone(sc.currentSession), `${sc.minutesIntoSession}m into session${sc.isSessionOpenWindow ? " \u2014 fakeout window" : ""}`) : null}
-    ${breakLabel ? badge(breakLabel, rec.structureBreak === "CHOCH" ? "badge-warn" : "badge-accent", `Structure ${rec.structureBreak} ${rec.structureBreakDirection ?? ""}`) : null}
-    ${fundingBadgeVisible ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), `Funding ${fPct(fa.currentRate)} (avg ${fPct(fa.averageRate)})`) : null}
-    ${clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", "Liquidation cluster cascade supports trade direction") : null}
-    ${clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop \u2014 cascade risk") : null}
-    ${rec.cvdDivergence === "BEARISH" ? badge("cvd div \u2193", "badge-warn", "Price rising but flow weakening \u2014 buyers losing conviction") : null}
-    ${rec.cvdDivergence === "BULLISH" ? badge("cvd div \u2191", "badge-warn", "Price falling but flow absorbing \u2014 sellers losing conviction") : null}
+    ${rec.marketRegime ? badge(prettyToken(rec.marketRegime), "badge-neutral", tips.regime[rec.marketRegime === "VOLATILE_SPIKE" ? "volatileSpike" : rec.marketRegime === "LOW_LIQ_CHOP" ? "lowLiqChop" : rec.marketRegime.toLowerCase()] || tips.regime.label) : null}
+    ${rec.marketTradeability ? badge(prettyToken(rec.marketTradeability), tradeabilityTone(rec.marketTradeability), tips.tradeability[rec.marketTradeability === "DO_NOT_TRADE" ? "doNotTrade" : rec.marketTradeability.toLowerCase()] || "") : null}
+    ${rec.entryReadiness ? badge(prettyToken(rec.entryReadiness), readinessTone(rec.entryReadiness), tips.entryReadiness[rec.entryReadiness === "READY_NOW" ? "readyNow" : rec.entryReadiness === "WAIT_PULLBACK" ? "waitPullback" : rec.entryReadiness === "WAIT_BREAKOUT_RETEST" ? "waitBreakoutRetest" : rec.entryReadiness === "WAIT_CONFIRMATION" ? "waitConfirmation" : "tooLate"] || "") : null}
+    ${sc ? badge(sc.currentSession, sessionTone(sc.currentSession), tips.session[sc.currentSession.toLowerCase()] + (sc.isSessionOpenWindow ? " \u2014 " + tips.session.fakeoutWindow : "")) : null}
+    ${breakLabel ? badge(breakLabel, rec.structureBreak === "CHOCH" ? "badge-warn" : "badge-accent", tips.structureBreak[rec.structureBreak.toLowerCase()] || "") : null}
+    ${fundingBadgeVisible ? badge(prettyToken(fa.signal), fundingSignalTone(fa.signal), tips.funding[fa.signal === "STRONG_CONTRA_LONG" ? "strongContraLong" : fa.signal === "WEAK_CONTRA_LONG" ? "weakContraLong" : fa.signal === "WEAK_CONTRA_SHORT" ? "weakContraShort" : fa.signal === "STRONG_CONTRA_SHORT" ? "strongContraShort" : "neutral"] || "") : null}
+    ${clusterCtx?.clusterSupportsDirection ? badge("cluster \u2192 TP", "badge-good", tips.cluster.supportsDirection) : null}
+    ${clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", tips.cluster.blocksTarget) : null}
+    ${rec.cvdDivergence === "BEARISH" ? badge("cvd div \u2193", "badge-warn", tips.cvd.bearish) : null}
+    ${rec.cvdDivergence === "BULLISH" ? badge("cvd div \u2191", "badge-warn", tips.cvd.bullish) : null}
   `;
 
   const appSection = html`
@@ -407,27 +417,28 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
 
   const ind = rec.indicators;
   const indLines = ind ? [
-    [ivPlain("rsi", ind.rsi14 != null ? fN(ind.rsi14) : null), ivPlain("adx", ind.adx14 != null ? fN(ind.adx14) : null), ivPlain("atr", ind.atr14 != null ? fN(ind.atr14, 4) : null)].filter(Boolean),
-    [ivPlain("ema20", ind.ema20 != null ? fP(ind.ema20) : null), ivPlain("ema50", ind.ema50 != null ? fP(ind.ema50) : null), ivPlain("vwap", ind.vwap != null ? fP(ind.vwap) : null)].filter(Boolean),
+    [ivPlain("rsi", ind.rsi14 != null ? fN(ind.rsi14) : null, tips.indicators.rsi), ivPlain("adx", ind.adx14 != null ? fN(ind.adx14) : null, tips.indicators.adx), ivPlain("atr", ind.atr14 != null ? fN(ind.atr14, 4) : null, tips.indicators.atr)].filter(Boolean),
+    [ivPlain("ema20", ind.ema20 != null ? fP(ind.ema20) : null, tips.indicators.ema), ivPlain("ema50", ind.ema50 != null ? fP(ind.ema50) : null, tips.indicators.ema), ivPlain("vwap", ind.vwap != null ? fP(ind.vwap) : null, tips.indicators.vwap)].filter(Boolean),
     [
-      iv("macd", ind.macd != null ? fN(ind.macd, 4) : null),
-      iv("hist", ind.macdHistogram != null ? `<span class="${pC(ind.macdHistogram)}">${fS(ind.macdHistogram, 4)}</span>` : null),
-      ivPlain("stk", ind.stochRsiK != null ? fN(ind.stochRsiK) : null),
-      ivPlain("std", ind.stochRsiD != null ? fN(ind.stochRsiD) : null)
+      iv("macd", ind.macd != null ? fN(ind.macd, 4) : null, tips.indicators.macd),
+      iv("hist", ind.macdHistogram != null ? `<span class="${pC(ind.macdHistogram)}">${fS(ind.macdHistogram, 4)}</span>` : null, tips.indicators.macdHistogram),
+      ivPlain("stk", ind.stochRsiK != null ? fN(ind.stochRsiK) : null, tips.indicators.stochRsi),
+      ivPlain("std", ind.stochRsiD != null ? fN(ind.stochRsiD) : null, tips.indicators.stochRsi)
     ].filter(Boolean),
-    [ind.mfi14 != null ? ivPlain("mfi", fN(ind.mfi14)) : null, ind.cmf20 != null ? ivPlain("cmf", fS(ind.cmf20, 4)) : null].filter(Boolean)
+    [ind.mfi14 != null ? ivPlain("mfi", fN(ind.mfi14), tips.indicators.mfi) : null, ind.cmf20 != null ? ivPlain("cmf", fS(ind.cmf20, 4), tips.indicators.cmf) : null].filter(Boolean)
   ].filter(arr => arr.length) : [];
 
   const perp = rec.perp;
+  const oiCtxTip = rec.oiContext === "NEW_LONGS" ? tips.market.oiNewLongs : rec.oiContext === "NEW_SHORTS" ? tips.market.oiNewShorts : rec.oiContext === "SHORT_COVERING" ? tips.market.oiShortCover : rec.oiContext === "LONG_LIQUIDATION" ? tips.market.oiLongLiq : tips.market.oiDelta;
   const perpLines = perp ? [
-    [ivPlain("mark", fP(perp.markPrice)), ivPlain("idx", fP(perp.indexPrice))].filter(Boolean),
-    [ivPlain("fund", fPct(perp.fundingRate)), ivPlain("avg", fPct(perp.fundingRateAvg)), perp.premiumPct != null ? ivPlain("prem", fPct(perp.premiumPct)) : null].filter(Boolean),
+    [ivPlain("mark", fP(perp.markPrice), tips.market.markPrice), ivPlain("idx", fP(perp.indexPrice), tips.market.indexPrice)].filter(Boolean),
+    [ivPlain("fund", fPct(perp.fundingRate), tips.market.fundingRate), ivPlain("avg", fPct(perp.fundingRateAvg), tips.market.fundingRate), perp.premiumPct != null ? ivPlain("prem", fPct(perp.premiumPct), tips.market.premium) : null].filter(Boolean),
     [
-      perp.openInterest != null ? ivPlain("oi", fN(perp.openInterest, 0)) : null,
+      perp.openInterest != null ? ivPlain("oi", fN(perp.openInterest, 0), tips.market.openInterest) : null,
       perp.openInterestDeltaPct != null ? iv("oi\u0394", rec.oiContext
         ? `${fSPct(perp.openInterestDeltaPct)} <span class="dim">${rec.oiContext === "NEW_LONGS" ? "new longs" : rec.oiContext === "NEW_SHORTS" ? "new shorts" : rec.oiContext === "SHORT_COVERING" ? "short cover" : "long liq"}</span>`
-        : fSPct(perp.openInterestDeltaPct)) : null,
-      perp.bidAskSpreadPct != null ? ivPlain("spread", fPct(perp.bidAskSpreadPct)) : null
+        : fSPct(perp.openInterestDeltaPct), oiCtxTip) : null,
+      perp.bidAskSpreadPct != null ? ivPlain("spread", fPct(perp.bidAskSpreadPct), tips.market.spread) : null
     ].filter(Boolean)
   ].filter(arr => arr.length) : [];
 
@@ -443,19 +454,19 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
   ` : null;
 
   const cb = rec.confidenceBreakdown ?? {};
-  const confLine = [
-    cb.trend != null ? `trend ${Math.round(cb.trend)}` : "",
-    cb.momentum != null ? `mom ${Math.round(cb.momentum)}` : "",
-    cb.volatility != null ? `vol ${Math.round(cb.volatility)}` : "",
-    cb.structure != null ? `struct ${Math.round(cb.structure)}` : "",
-    cb.context != null ? `ctx ${Math.round(cb.context)}` : "",
-    cb.setupQuality != null ? `setup ${Math.round(cb.setupQuality)}` : ""
-  ].filter(Boolean).join(" / ");
+  const confParts = [
+    cb.trend != null ? html`<span title=${tips.confidenceBreakdown.trend}>trend ${Math.round(cb.trend)}</span>` : null,
+    cb.momentum != null ? html`<span title=${tips.confidenceBreakdown.momentum}>mom ${Math.round(cb.momentum)}</span>` : null,
+    cb.volatility != null ? html`<span title=${tips.confidenceBreakdown.volatility}>vol ${Math.round(cb.volatility)}</span>` : null,
+    cb.structure != null ? html`<span title=${tips.confidenceBreakdown.structure}>struct ${Math.round(cb.structure)}</span>` : null,
+    cb.context != null ? html`<span title=${tips.confidenceBreakdown.context}>ctx ${Math.round(cb.context)}</span>` : null,
+    cb.setupQuality != null ? html`<span title=${tips.confidenceBreakdown.setupQuality}>setup ${Math.round(cb.setupQuality)}</span>` : null
+  ].filter(Boolean);
 
-  const confDetail = confLine ? html`
+  const confDetail = confParts.length ? html`
     <details class="rec-detail">
       <summary>Confidence breakdown</summary>
-      <div class="rec-detail-body"><div class="rec-line">${confLine}</div></div>
+      <div class="rec-detail-body"><div class="rec-line">${confParts.reduce((acc, part, i) => i === 0 ? [part] : [...acc, " / ", part], [])}</div></div>
     </details>
   ` : null;
 

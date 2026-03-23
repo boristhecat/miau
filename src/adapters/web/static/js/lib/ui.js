@@ -5,11 +5,11 @@ export function badge(text, tone = "badge-neutral", title = "") {
   return html`<span class=${tone} title=${title || null}>${text}</span>`;
 }
 
-export function signalBadge(signal) {
+export function signalBadge(signal, title) {
   const normalized = String(signal ?? "").toUpperCase();
-  if (normalized === "LONG") return html`<span class="signal-badge badge-good">Long</span>`;
-  if (normalized === "SHORT") return html`<span class="signal-badge badge-bad">Short</span>`;
-  return html`<span class="signal-badge badge-muted">No Trade</span>`;
+  if (normalized === "LONG") return html`<span class="signal-badge badge-good" title=${title || null}>Long</span>`;
+  if (normalized === "SHORT") return html`<span class="signal-badge badge-bad" title=${title || null}>Short</span>`;
+  return html`<span class="signal-badge badge-muted" title=${title || null}>No Trade</span>`;
 }
 
 export function gradeTone(grade) {

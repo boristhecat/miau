@@ -1,6 +1,7 @@
 import { html } from "htm/preact";
 import { cC, fPct, fSUsd, pC } from "../lib/format.js";
 import { summaryCell } from "../lib/ui.js";
+import { tips } from "../lib/tips.js";
 
 function phaseClass(phase) {
   if (phase === "ANALYSING") return "analysing";
@@ -41,6 +42,17 @@ function eventTagLabel(event) {
   return s.toLowerCase() || "?";
 }
 
+function eventTagTip(event) {
+  if (event.type === "NO_TRADE") return tips.learning.eventNoTrade;
+  if (event.type === "ANALYSE_ERROR" || event.type === "EVALUATE_ERROR") return tips.learning.eventError;
+  const s = event.status ?? "";
+  if (s === "WIN") return tips.learning.eventWin;
+  if (s === "LOSS") return tips.learning.eventLoss;
+  if (s === "TIMEOUT_WIN") return tips.learning.eventTimeoutWin;
+  if (s === "TIMEOUT_LOSS") return tips.learning.eventTimeoutLoss;
+  return "";
+}
+
 function fTime(ms) {
   const d = new Date(ms);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -58,7 +70,7 @@ export function LearningActivity({ activity }) {
       <div class="slot-row" key=${s.pair + s.horizonMinutes}>
         <span class="slot-pair">${s.pair.replace("-USD", "")}</span>
         <span class="slot-horizon">${s.horizonMinutes}m</span>
-        <span class="slot-phase ${phaseClass(s.phase)}">${phaseLabel(s.phase, s.nextActionAtMs)}</span>
+        <span class="slot-phase ${phaseClass(s.phase)}" title=${s.phase === "ANALYSING" ? tips.learning.phaseAnalysing : s.phase === "EVALUATING" ? tips.learning.phaseEvaluating : tips.learning.phaseWaiting}>${phaseLabel(s.phase, s.nextActionAtMs)}</span>
       </div>
     `)
     : html`<div class="activity-empty">no active slots</div>`;
@@ -70,7 +82,7 @@ export function LearningActivity({ activity }) {
         const label = `${e.pair.replace("-USD", "")} ${e.horizonMinutes}m`;
         return html`
           <div class="event-row" key=${e.id}>
-            <span class="event-tag ${tagCls}">${tag}</span>
+            <span class="event-tag ${tagCls}" title=${eventTagTip(e)}>${tag}</span>
             <span class="event-label">${label}</span>
             <span class="event-pnl ${e.pnlUsd != null ? pC(e.pnlUsd) : ""}">${e.pnlUsd != null ? fSUsd(e.pnlUsd) : fTime(e.timestampMs)}</span>
           </div>
@@ -122,8 +134,8 @@ export function LearningResult({ data }) {
                 <td class="r">${row.samples}</td>
                 <td class="r c-green">${row.wins}</td>
                 <td class="r c-red">${row.losses}</td>
-                <td class="r ${cC((row.winRate ?? 0) * 100)}">${fPct((row.winRate ?? 0) * 100)}</td>
-                <td class="r ${pC(row.avgPnlUsd ?? 0)}">${fSUsd(row.avgPnlUsd)}</td>
+                <td class="r ${cC((row.winRate ?? 0) * 100)}" title=${tips.learning.winRate}>${fPct((row.winRate ?? 0) * 100)}</td>
+                <td class="r ${pC(row.avgPnlUsd ?? 0)}" title=${tips.learning.avgPnl}>${fSUsd(row.avgPnlUsd)}</td>
               </tr>
             `)}
           </tbody>
@@ -135,12 +147,12 @@ export function LearningResult({ data }) {
   return html`
     <div class="learning-board">
       <div class="summary-strip">
-        ${summaryCell("samples", overview.totalSamples ?? 0)}
-        ${summaryCell("wins", html`<span class="c-green">${overview.wins ?? 0}</span>`)}
-        ${summaryCell("losses", html`<span class="c-red">${overview.losses ?? 0}</span>`)}
-        ${summaryCell("win rate", html`<span class=${cC(winRate)}>${fPct(winRate)}</span>`)}
-        ${summaryCell("avg pnl", html`<span class=${pC(overview.avgPnlUsd ?? 0)}>${fSUsd(overview.avgPnlUsd)}</span>`)}
-        ${summaryCell("lookback", `${data.lookbackDays ?? 14}d`)}
+        ${summaryCell("samples", html`<span title=${tips.learning.samples}>${overview.totalSamples ?? 0}</span>`)}
+        ${summaryCell("wins", html`<span class="c-green" title=${tips.learning.eventWin}>${overview.wins ?? 0}</span>`)}
+        ${summaryCell("losses", html`<span class="c-red" title=${tips.learning.eventLoss}>${overview.losses ?? 0}</span>`)}
+        ${summaryCell("win rate", html`<span class=${cC(winRate)} title=${tips.learning.winRate}>${fPct(winRate)}</span>`)}
+        ${summaryCell("avg pnl", html`<span class=${pC(overview.avgPnlUsd ?? 0)} title=${tips.learning.avgPnl}>${fSUsd(overview.avgPnlUsd)}</span>`)}
+        ${summaryCell("lookback", html`<span title=${tips.learning.lookback}>${data.lookbackDays ?? 14}d</span>`)}
       </div>
       ${tableMarkup}
     </div>

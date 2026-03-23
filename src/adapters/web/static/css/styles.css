@@ -442,7 +442,9 @@ button, input, select { font: inherit; }
   position: absolute;
   top: 0;
   height: 100%;
-  background: rgba(212, 172, 80, 0.12);
+  background: rgba(212, 172, 80, 0.25);
+  border-left: 1px solid rgba(212, 172, 80, 0.4);
+  border-right: 1px solid rgba(212, 172, 80, 0.4);
   pointer-events: none;
   border-radius: 2px;
 }
@@ -1104,11 +1106,26 @@ button, input, select { font: inherit; }
   letter-spacing: 0.03em;
 }
 
+.progress-fib-labels {
+  position: relative;
+  height: 13px;
+  margin-top: 2px;
+}
+.progress-fib-labels span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 9px;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+.progress-fib-labels .fib-lbl-golden { color: var(--yellow); }
+.progress-fib-labels .fib-lbl-ext    { color: var(--accent); }
+
 .progress-labels {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 2px;
   color: var(--text-dim);
   font-size: 10px;
   letter-spacing: 0.03em;

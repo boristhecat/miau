@@ -1,6 +1,7 @@
 import { html } from "htm/preact";
 import { cC, fN, prettyToken } from "../lib/format.js";
 import { badge, gradeTone, meter, signalBadge, structureTone } from "../lib/ui.js";
+import { tips } from "../lib/tips.js";
 
 export function ScanResult({ data, onAnalyze, onMonitor }) {
   if (!data) return null;
@@ -24,13 +25,13 @@ export function ScanResult({ data, onAnalyze, onMonitor }) {
       <button type="button" class="scan-row body" onClick=${() => onAnalyze(symbol)}>
         <span class="dim">${String(index + 1).padStart(2, "0")}</span>
         <span class="scan-pair">${symbol}</span>
-        <span>${signalBadge(rec.signal)}</span>
-        <span>${meter(confidence)}</span>
-        <span class=${cC(confidence)}>${confidence}</span>
-        <span title="Risk-to-reward ratio">${fN(rec.riskRewardRatio)}</span>
-        <span>${rec.setupGrade ? badge(`${rec.setupGrade}`, gradeTone(rec.setupGrade), "Setup quality grade (A best, D worst)") : "\u2014"}</span>
-        <span class="dim" title="Detected setup pattern">${rec.setupPlaybook ? prettyToken(rec.setupPlaybook) : "\u2014"}</span>
-        <span>${rec.structureState ? badge(prettyToken(rec.structureState).slice(0, 4), structureTone(rec.structureState), `Market structure: ${prettyToken(rec.structureState)}`) : "\u2014"}</span>
+        <span>${signalBadge(rec.signal, rec.signal === "LONG" ? tips.signal.long : rec.signal === "SHORT" ? tips.signal.short : tips.signal.noTrade)}</span>
+        <span title=${tips.scanner.confidenceMeter}>${meter(confidence)}</span>
+        <span class=${cC(confidence)} title=${tips.scanner.confidenceNumber}>${confidence}</span>
+        <span title=${tips.header.riskReward}>${fN(rec.riskRewardRatio)}</span>
+        <span>${rec.setupGrade ? badge(`${rec.setupGrade}`, gradeTone(rec.setupGrade), tips.header.grade) : "\u2014"}</span>
+        <span class="dim" title=${tips.scanner.playbook}>${rec.setupPlaybook ? prettyToken(rec.setupPlaybook) : "\u2014"}</span>
+        <span>${rec.structureState ? badge(prettyToken(rec.structureState).slice(0, 4), structureTone(rec.structureState), tips.header.structureState) : "\u2014"}</span>
         ${monitorBtn}
       </button>
     `;
