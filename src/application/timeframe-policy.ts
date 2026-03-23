@@ -48,6 +48,19 @@ export function resolveAdaptiveTimeframes(objectiveHorizon?: string): AdaptiveTi
   };
 }
 
+export function resolveFibTimeframe(objectiveHorizon?: string): string {
+  if (!objectiveHorizon || !/^\d+$/.test(objectiveHorizon.trim())) {
+    return "4h";
+  }
+  const minutes = Number(objectiveHorizon);
+  if (Number.isNaN(minutes) || minutes <= 0) {
+    return "4h";
+  }
+  if (minutes <= 30) return "1h";
+  if (minutes <= 240) return "4h";
+  return "1d";
+}
+
 export function resolveSimulationHorizonMinutes(objectiveHorizon?: string): number {
   if (!objectiveHorizon) {
     return 15;

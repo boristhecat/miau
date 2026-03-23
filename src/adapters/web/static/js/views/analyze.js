@@ -156,6 +156,186 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
     ? html`${aiRows}${aiReasons}${aiOverruled}${aiAltThesis}${aiFooter}`
     : html`<span class="rec-empty">AI advisory not available</span>`;
 
+  // col 2: Fib levels
+  const fibCol = (() => {
+    const fib = rec.fibLevels;
+    if (!fib) return html`<span class="rec-empty">No fib levels</span>`;
+
+    const arrow = fib.swingDirection === "UPSWING" ? "\u2191" : "\u2193";
+    const lastPrice = rec.entry || 0;
+
+    // Position bar — maps full fib range spatially
+    const prices = fib.levels.map(l => l.price);
+    const barLow = Math.min(...prices);
+    const barHigh = Math.max(...prices);
+    const barRange = barHigh - barLow;
+    const toPos = p => barRange ? ((p - barLow) / barRange) * 100 : 50;
+
+    const gzLeft = toPos(fib.goldenZoneBottom);
+    const gzWidth = toPos(fib.goldenZoneTop) - gzLeft;
+    const pricePos = Math.max(2, Math.min(98, toPos(lastPrice)));
+
+    const entryDot = rec.entry ? (() => {
+      const p = toPos(rec.entry);
+      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--text-strong)"} title="Entry ${fP(rec.entry)}"></span>` : null;
+    })() : null;
+    const slDot = rec.stopLoss ? (() => {
+      const p = toPos(rec.stopLoss);
+      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--red)"} title="SL ${fP(rec.stopLoss)}"></span>` : null;
+    })() : null;
+    const tpDot = rec.takeProfit ? (() => {
+      const p = toPos(rec.takeProfit);
+      return p >= 0 && p <= 100 ? html`<span class="fib-pos-dot" style=${"left:" + p + "%;background:var(--green)"} title="TP ${fP(rec.takeProfit)}"></span>` : null;
+    })() : null;
+
+    const posBar = html`
+      <div class="fib-pos">
+        <span class="fib-pos-golden" style=${"left:" + gzLeft + "%;width:" + gzWidth + "%"}></span>
+        ${slDot}${tpDot}${entryDot}
+        <span class="fib-pos-marker" style=${"left:" + pricePos + "%"} title="Price ${fP(lastPrice)}"></span>
+      </div>
+    `;
+
+    // Nearest level detection
+    let nearestIdx = 0;
+    let nearestDist = Infinity;
+    fib.levels.forEach((lv, i) => {
+      const d = Math.abs(lv.price - lastPrice);
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    });
+
+    // Engine level alignment (within 0.5%)
+    const closeEnough = (a, b) => b ? Math.abs(a - b) / b < 0.005 : false;
+
+    // Role tags for each ratio
+    const isUp = fib.swingDirection === "UPSWING";
+    const roleTag = (ratio) => {
+      if (ratio === -1)    return "ext target";
+      if (ratio === -0.62) return "ext target";
+      if (ratio === -0.27) return "ext target";
+      if (ratio === 0)     return isUp ? "swing low"  : "swing high";
+      if (ratio === 0.28)  return "shallow";
+      if (ratio === 0.618) return "entry zone";
+      if (ratio === 0.705) return "midline";
+      if (ratio === 0.79)  return "entry zone";
+      if (ratio === 1)     return isUp ? "swing high" : "swing low";
+      return "";
+    };
+
+    const fibRows = fib.levels.map((lv, i) => {
+      const dist = lastPrice ? ((lv.price - lastPrice) / lastPrice * 100) : 0;
+      const isExt = lv.ratio < 0;
+      const isAnchor = lv.ratio === 0 || lv.ratio === 1;
+      const isNearest = i === nearestIdx;
+
+      const rowCls = [
+        "fib-lv",
+        lv.isGoldenZone ? "fib-lv-golden" : isExt ? "fib-lv-ext" : isAnchor ? "fib-lv-anchor" : ""
+      ].filter(Boolean).join(" ");
+
+      const marker = isNearest ? "\u25B8 " : "";
+
+      // Tag: engine alignment overrides the role tag when it applies
+      let tag = roleTag(lv.ratio);
+      let tagExtra = null;
+      if (closeEnough(lv.price, rec.entry))          tagExtra = html`<span class="fib-align fib-align-entry">\u00b7 E</span>`;
+      else if (closeEnough(lv.price, rec.stopLoss))   tagExtra = html`<span class="fib-align fib-align-sl">\u00b7 SL</span>`;
+      else if (closeEnough(lv.price, rec.takeProfit))  tagExtra = html`<span class="fib-align fib-align-tp">\u00b7 TP</span>`;
+
+      return html`
+        <div class=${rowCls}>
+          <span class="fib-label">${marker}${lv.label}</span>
+          <span class="fib-price">${fP(lv.price)}</span>
+          <span class="fib-dist">${fSPct(dist)}</span>
+          <span class="fib-tag">${tag}${tagExtra ? html` ${tagExtra}` : null}</span>
+        </div>
+      `;
+    });
+
+    const fibHeader = html`
+      <div class="rec-line">
+        fib ${fib.fibInterval} ${arrow}
+        ${fib.priceInGoldenZone ? badge("golden zone", "badge-warn", "Current price is inside the 0.618\u20130.79 retracement zone") : null}
+      </div>
+      <div class="fib-lv dim" style="margin-bottom:2px">
+        <span class="fib-label">swing</span>
+        <span>${fP(fib.swingLow)} \u2013 ${fP(fib.swingHigh)}</span>
+        <span></span>
+        <span></span>
+      </div>
+    `;
+
+    // Contextual bullets — dynamic, derived from the fib data
+    const fibNotes = [];
+
+    // 1. Swing direction read
+    const swingVerb = fib.swingDirection === "UPSWING" ? "upswing" : "downswing";
+    fibNotes.push(`Retracing ${fib.fibInterval} ${swingVerb} (${fP(fib.swingLow)}\u2013${fP(fib.swingHigh)})`);
+
+    // 2. Price position relative to golden zone
+    if (fib.priceInGoldenZone) {
+      fibNotes.push("Price inside golden zone \u2014 fib entry area");
+    } else {
+      const aboveGz = lastPrice > fib.goldenZoneTop;
+      const gzDistPct = aboveGz
+        ? ((lastPrice - fib.goldenZoneTop) / lastPrice * 100)
+        : ((fib.goldenZoneBottom - lastPrice) / lastPrice * 100);
+      fibNotes.push(`Price ${aboveGz ? "above" : "below"} golden zone by ${fPct(gzDistPct)}`);
+    }
+
+    // 3. Nearest extension target (for trade direction context)
+    if (rec.signal !== "NO_TRADE") {
+      const isLong = rec.signal === "LONG";
+      const extTargets = fib.levels.filter(lv => lv.ratio < 0);
+      const relevantExt = isLong
+        ? extTargets.filter(lv => lv.price > lastPrice).sort((a, b) => a.price - b.price)[0]
+        : extTargets.filter(lv => lv.price < lastPrice).sort((a, b) => b.price - a.price)[0];
+      if (relevantExt) {
+        const extDist = ((relevantExt.price - lastPrice) / lastPrice * 100);
+        fibNotes.push(`Next ext target ${relevantExt.label} at ${fP(relevantExt.price)} (${fSPct(extDist)})`);
+      }
+    }
+
+    // 4. Confluence — describe the implication, not just the alignment
+    const confluences = [];
+    fib.levels.forEach(lv => {
+      if (closeEnough(lv.price, rec.entry) && lv.isGoldenZone)
+        confluences.push(`Entry sits at fib ${lv.label} \u2014 golden zone confluence`);
+      else if (closeEnough(lv.price, rec.entry))
+        confluences.push(`Entry aligns with fib ${lv.label}`);
+      if (closeEnough(lv.price, rec.stopLoss))
+        confluences.push(`Stop anchored at fib ${lv.label} \u2014 structural level`);
+      if (closeEnough(lv.price, rec.takeProfit) && lv.ratio < 0)
+        confluences.push(`TP targets fib ${lv.label} extension`);
+      else if (closeEnough(lv.price, rec.takeProfit))
+        confluences.push(`TP aligns with fib ${lv.label}`);
+    });
+    confluences.forEach(c => fibNotes.push(c));
+
+    const fibBullets = fibNotes.length
+      ? html`<div class="rec-sep"></div><ul class="flag-list fib-flags">${fibNotes.map(n => html`<li>${n}</li>`)}</ul>`
+      : null;
+
+    const fibLegend = html`
+      <details class="rec-detail">
+        <summary>Fib legend</summary>
+        <div class="rec-detail-body">
+          <div class="fib-lv fib-lv-golden"><span class="fib-label">0.618\u20130.79</span><span class="fib-price">golden zone</span><span></span><span class="fib-tag">entry area for retracement trades</span></div>
+          <div class="fib-lv fib-lv-golden"><span class="fib-label">0.705</span><span class="fib-price">midline</span><span></span><span class="fib-tag">center of the golden zone</span></div>
+          <div class="fib-lv fib-lv-ext"><span class="fib-label">-0.27\u2013-1</span><span class="fib-price">extensions</span><span></span><span class="fib-tag">take-profit targets beyond swing</span></div>
+          <div class="fib-lv fib-lv-anchor"><span class="fib-label">0 / 1</span><span class="fib-price">swing anchors</span><span></span><span class="fib-tag">high/low that define the range</span></div>
+          <div class="fib-lv"><span class="fib-label">0.28</span><span class="fib-price">shallow</span><span></span><span class="fib-tag">weak retrace, trend still strong</span></div>
+          <div class="rec-sep"></div>
+          <div class="rec-line dim">\u25B8 marks the level nearest to current price</div>
+          <div class="rec-line dim">\u2191 upswing (low\u2192high) \u00b7 \u2193 downswing (high\u2192low)</div>
+          <div class="rec-line dim">E / SL / TP = engine level aligns with fib</div>
+        </div>
+      </details>
+    `;
+
+    return html`${fibHeader}${posBar}${fibRows}${fibBullets}${fibLegend}`;
+  })();
+
   // col 3: rationale + on-demand
   const appReasons = [...new Set([
     ...(rec.rationale ?? []),
@@ -352,6 +532,7 @@ export function AnalyzeResult({ rec, aiAdvice, onMonitor, isMonitored, onGoToMon
       <div class="rec-head">${head}</div>
       <div class="rec-grid">
         <div class="rec-col">${levels}${aiLevels}${monitorBtn}${col3 ? html`<div class="rec-sep"></div>${col3}` : null}</div>
+        <div class="rec-col">${fibCol}</div>
         <div class="rec-col">${aiCol}</div>
       </div>
     </div>

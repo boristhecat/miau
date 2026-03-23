@@ -297,7 +297,7 @@ button, input, select { font: inherit; }
 
 .rec-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
 }
 
 .rec-col {
@@ -350,6 +350,103 @@ button, input, select { font: inherit; }
 .rec-level-stop .rec-lp  { color: var(--red); }
 .rec-level-target .rec-lp { color: var(--green); }
 
+/* Fib position bar */
+.fib-pos {
+  position: relative;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  margin: 4px 0 6px;
+}
+.fib-pos-golden {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(212, 172, 80, 0.15);
+}
+.fib-pos-marker {
+  position: absolute;
+  top: -1px;
+  width: 6px;
+  height: calc(100% + 2px);
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--text-strong);
+  z-index: 2;
+}
+.fib-pos-dot {
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+/* Fib level rows */
+.fib-lv {
+  display: grid;
+  grid-template-columns: 42px 1fr auto auto;
+  gap: 0 6px;
+  align-items: baseline;
+  padding: 0 0 0 6px;
+  border-left: 2px solid transparent;
+  line-height: 1.6;
+}
+.fib-lv-golden {
+  border-left-color: var(--yellow);
+  background: rgba(212, 172, 80, 0.06);
+}
+.fib-lv-ext {
+  border-left-color: var(--accent);
+}
+.fib-lv-anchor {
+  border-left-color: var(--border);
+}
+.fib-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.fib-lv-golden .fib-label { color: var(--yellow); font-weight: 600; }
+.fib-lv-ext .fib-label { color: var(--accent); }
+.fib-price {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.fib-lv-golden .fib-price { color: var(--yellow); }
+.fib-lv-ext .fib-price { color: var(--accent); }
+.fib-dist {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: right;
+}
+.fib-tag {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: right;
+  white-space: nowrap;
+}
+.fib-lv-golden .fib-tag { color: var(--yellow); }
+.fib-lv-ext .fib-tag    { color: var(--accent); }
+.fib-align {
+  font-size: 9px;
+  margin-left: 3px;
+}
+.fib-align-entry { color: var(--text-strong); }
+.fib-align-sl    { color: var(--red); }
+.fib-align-tp    { color: var(--green); }
+
+/* Golden zone band on monitor rail */
+.fib-golden-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(212, 172, 80, 0.12);
+  pointer-events: none;
+  border-radius: 2px;
+}
+
 .rec-ld {
   font-size: 11px;
 }
@@ -398,6 +495,7 @@ button, input, select { font: inherit; }
 .ai-flags li::before    { color: var(--accent) !important; }
 .ai-overruled li::before { color: var(--yellow) !important; }
 .ai-overruled li         { color: var(--text-dim); }
+.fib-flags li::before   { color: var(--yellow) !important; }
 
 .rec-action {
   margin-top: 4px;
@@ -964,6 +1062,21 @@ button, input, select { font: inherit; }
   transform: translateX(-50%);
   pointer-events: auto;
   border-radius: 2px;
+}
+
+.fib-tick {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  border-left: 1px dashed var(--yellow);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  opacity: 0.6;
+}
+
+.fib-tick.fib-tick-ext {
+  border-left-color: var(--accent);
 }
 
 .entry-line {

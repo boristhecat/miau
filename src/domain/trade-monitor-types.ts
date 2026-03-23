@@ -1,5 +1,6 @@
 import type {
   EntryReadinessStatus,
+  FibLevels,
   FundingAnalysis,
   LevelInteractionReference,
   LevelInteractionStatus,
@@ -122,6 +123,7 @@ export interface TradeMonitorSnapshot {
   readonly fundingAnalysis?: FundingAnalysis;
   readonly liquidationClusters?: LiquidationClusterMap;
   readonly mtfContext?: MtfContext;
+  readonly fibLevels?: FibLevels;
   readonly oiContext?: OiContext;
   readonly cvdDivergence?: CvdDivergence;
   readonly analysisRationale?: readonly string[];

@@ -169,6 +169,29 @@ export interface LiquidationClusterMap {
   readonly clusterSupportsDirection: boolean;
 }
 
+// --- Fibonacci Retracement/Extension ---
+export type FibSwingDirection = "UPSWING" | "DOWNSWING";
+
+export interface FibLevel {
+  readonly ratio: number;
+  readonly price: number;
+  readonly label: string;
+  readonly isGoldenZone: boolean;
+  readonly relativeToPrice: "ABOVE" | "BELOW" | "AT";
+}
+
+export interface FibLevels {
+  readonly swingHigh: number;
+  readonly swingLow: number;
+  readonly swingDirection: FibSwingDirection;
+  readonly fibInterval: string;
+  readonly levels: readonly FibLevel[];
+  readonly goldenZoneTop: number;
+  readonly goldenZoneMid: number;
+  readonly goldenZoneBottom: number;
+  readonly priceInGoldenZone: boolean;
+}
+
 // --- Plan 5: Funding Rate Signals ---
 export type FundingSignal = "STRONG_CONTRA_LONG" | "WEAK_CONTRA_LONG" | "NEUTRAL" | "WEAK_CONTRA_SHORT" | "STRONG_CONTRA_SHORT";
 export type FundingTrend = "RISING" | "FALLING" | "FLIPPING_POSITIVE" | "FLIPPING_NEGATIVE" | "STABLE";
@@ -516,6 +539,8 @@ export interface Recommendation {
   readonly oiContext?: "NEW_LONGS" | "NEW_SHORTS" | "SHORT_COVERING" | "LONG_LIQUIDATION";
   /** CVD divergence direction when price/flow mismatch is detected */
   readonly cvdDivergence?: "BULLISH" | "BEARISH";
+  /** Fibonacci retracement/extension levels from higher timeframe */
+  readonly fibLevels?: FibLevels;
   /** Learning system context attached after policy application */
   readonly learningContext?: {
     readonly active: boolean;

@@ -122,6 +122,8 @@ function MonitorSnapshot({ snapshot, editing }) {
     ${hasSL && clusterCtx?.clusterBlocksTarget ? badge("cluster risk", "badge-warn", "Liquidation cluster between entry and stop") : null}
     ${snapshot.cvdDivergence === "BEARISH" ? badge("cvd div \u2193", "badge-warn", "Price rising but flow weakening \u2014 buyers losing conviction") : null}
     ${snapshot.cvdDivergence === "BULLISH" ? badge("cvd div \u2191", "badge-warn", "Price falling but flow absorbing \u2014 sellers losing conviction") : null}
+    ${snapshot.fibLevels ? html`<span class="dim" title="Fib retracement interval">fib ${snapshot.fibLevels.fibInterval}</span>` : null}
+    ${snapshot.fibLevels?.priceInGoldenZone ? badge("golden zone", "badge-warn", "Price is inside 0.618\u20130.79 fib retracement zone") : null}
     ${snapshot.oiContext ? html`<span class="dim" title="Open interest context">${snapshot.oiContext === "NEW_LONGS" ? "new longs" : snapshot.oiContext === "NEW_SHORTS" ? "new shorts" : snapshot.oiContext === "SHORT_COVERING" ? "short cover" : "long liq"}</span>` : null}
     ${snapshot.analysisConfidence != null ? html`<span class="${cC(snapshot.analysisConfidence)}" title="Analysis confidence">${snapshot.analysisConfidence}%</span>` : null}
     ${hasTP && metrics.holdingProgressPct != null ? html`<span class="dim" title="Hold time progress">${fPct(metrics.holdingProgressPct)} held</span>` : null}
@@ -156,6 +158,41 @@ function MonitorSnapshot({ snapshot, editing }) {
 
   const entryPct = trade.entry != null ? toBarPct(trade.entry) : null;
 
+  const fibGoldenBand = (() => {
+    const fib = snapshot.fibLevels;
+    if (!fib || barRange === 0) return null;
+    const leftPct = toBarPct(fib.goldenZoneBottom);
+    const rightPct = toBarPct(fib.goldenZoneTop);
+    if (rightPct < 0 || leftPct > 100) return null;
+    const cl = Math.max(0, leftPct);
+    const cr = Math.min(100, rightPct);
+    return html`<span
+      class="fib-golden-band"
+      style=${"left:" + cl + "%;width:" + (cr - cl) + "%"}
+      title="Golden zone (0.618\u20130.79)"
+    ></span>`;
+  })();
+
+  const fibTicks = (() => {
+    const fib = snapshot.fibLevels;
+    if (!fib?.levels?.length || barRange === 0) return null;
+    // Show golden zone + extension ticks
+    return fib.levels
+      .filter(lv => lv.isGoldenZone || lv.ratio < 0)
+      .map(lv => {
+        const pct = toBarPct(lv.price);
+        if (pct < 1 || pct > 99) return null;
+        const isExt = lv.ratio < 0;
+        const title = `Fib ${lv.label} ${fP(lv.price)}${lv.isGoldenZone ? " (golden zone)" : ""}`;
+        return html`<span
+          class=${isExt ? "fib-tick fib-tick-ext" : "fib-tick"}
+          style=${"left:" + pct + "%"}
+          title=${title}
+        ></span>`;
+      })
+      .filter(Boolean);
+  })();
+
   const clusterTicks = (() => {
     const clusters = clusterCtx?.clusters;
     if (!clusters?.length || barRange === 0) return null;
@@ -189,6 +226,8 @@ function MonitorSnapshot({ snapshot, editing }) {
         <span class="progress-mark-label" style=${"left:" + dynamicRailPct + "%"}>${fP(markPrice)}</span>
       </div>
       <div class="progress-rail" style=${"--pct:" + dynamicRailPct}>
+        ${fibGoldenBand}
+        ${fibTicks}
         ${clusterTicks}
         ${entryPct != null ? html`<span class="entry-line" style=${"left:" + entryPct + "%"}></span>` : null}
         <span class="progress-marker"></span>

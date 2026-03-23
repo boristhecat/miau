@@ -92,6 +92,7 @@ export class EvaluateOpenTradeUseCase implements IEvaluateOpenTradeUseCase {
         fundingAnalysis: analysisRecommendation.fundingAnalysis,
         liquidationClusters: analysisRecommendation.liquidationClusters,
         mtfContext: analysisRecommendation.mtfContext,
+        fibLevels: analysisRecommendation.fibLevels,
         oiContext: analysisRecommendation.oiContext,
         cvdDivergence: analysisRecommendation.cvdDivergence,
         analysisRationale: analysisRecommendation.rationale,

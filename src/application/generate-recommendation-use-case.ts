@@ -1,10 +1,12 @@
 import type { Recommendation } from "../domain/types.js";
 import { parseIntervalToMinutes } from "../domain/interval-utils.js";
+import { buildFibLevels } from "../domain/fib-levels.js";
 import type { IndicatorCalculatorPort } from "../ports/indicator-calculator-port.js";
 import type { MarketDataPort } from "../ports/market-data-port.js";
 import type { RecommendationPolicyPort } from "../ports/recommendation-policy-port.js";
 import { inferBiasContext } from "../domain/recommendation-signal-evaluator.js";
 import { selectMtfTimeframes } from "../domain/mtf-context-analyzer.js";
+import { resolveFibTimeframe } from "./timeframe-policy.js";
 
 interface UseCaseDeps {
   marketData: MarketDataPort;
@@ -46,7 +48,12 @@ export class GenerateRecommendationUseCase {
     const structureInterval = mtfTimeframes.structureInterval;
     const needsStructureCandles = structureInterval !== interval && structureInterval !== biasInterval;
 
-    const [candles, biasCandles, btcCandles, structureCandles] = await Promise.all([
+    // Fib timeframe resolution
+    const fibInterval = resolveFibTimeframe(input.objectiveHorizon);
+    const needsFibCandles = fibInterval !== interval && fibInterval !== biasInterval
+      && (!needsStructureCandles || fibInterval !== structureInterval);
+
+    const [candles, biasCandles, btcCandles, structureCandles, fibCandles] = await Promise.all([
       this.deps.marketData.getCandles({
         pair: input.pair,
         interval,
@@ -64,6 +71,9 @@ export class GenerateRecommendationUseCase {
         : Promise.resolve(null),
       needsStructureCandles
         ? this.deps.marketData.getCandles({ pair: input.pair, interval: structureInterval, limit }).catch(() => null)
+        : Promise.resolve(null),
+      needsFibCandles
+        ? this.deps.marketData.getCandles({ pair: input.pair, interval: fibInterval, limit }).catch(() => null)
         : Promise.resolve(null)
     ]);
 
@@ -96,10 +106,19 @@ export class GenerateRecommendationUseCase {
       resolvedStructureInterval = biasInterval;
     }
 
+    // Fib levels: resolve candles for the fib interval, preferring dedicated fetch
+    const resolvedFibCandles = fibCandles
+      ?? (fibInterval === biasInterval ? biasCandles : null)
+      ?? (fibInterval === interval ? candles : null)
+      ?? (fibInterval === structureInterval ? structureCandles : null);
     const lastPrice = candles[candles.length - 1]!.close;
+    const fibLevels = resolvedFibCandles && resolvedFibCandles.length >= 5
+      ? buildFibLevels(resolvedFibCandles, lastPrice, fibInterval)
+      : null;
+
     const perp = await this.deps.marketData.getPerpSnapshot({ pair: input.pair });
 
-    return this.deps.recommendationEngine.build({
+    const baseRec = this.deps.recommendationEngine.build({
       pair: input.pair,
       lastPrice,
       indicators,
@@ -120,6 +139,8 @@ export class GenerateRecommendationUseCase {
       structureIndicators: resolvedStructureInterval ? structureIndicators : undefined,
       structureInterval: resolvedStructureInterval
     });
+
+    return fibLevels ? { ...baseRec, fibLevels } : baseRec;
   }
 }
 
